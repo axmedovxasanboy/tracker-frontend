@@ -1,0 +1,48 @@
+# Build output
+dist/
+dist-ssr/
+build/
+.vite/
+*.tsbuildinfo
+
+# Dependencies
+node_modules/
+
+# IDE / editor
+.idea/
+.vscode/
+.claude/
+*.iml
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# VCS
+.git/
+.gitignore
+.gitattributes
+.github/
+
+# Secrets — never bake into the image
+.env
+.env.*
+*.pem
+*.key
+
+# Logs / OS junk
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+.DS_Store
+Thumbs.db
+
+# Test / coverage
+coverage/
+.nyc_output/
+
+# Docs
+HANDOFF.md
+DEPLOY.md
+README.md
