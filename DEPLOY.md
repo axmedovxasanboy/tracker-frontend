@@ -5,8 +5,8 @@ then pulled on the server over SSH.
 
 Service name on the server: **`frontend`** (used by `docker compose pull/up`).
 
-The image contains the static Vite bundle served by nginx-unprivileged on
-**port 8080**. Caddy in front terminates TLS and reverse-proxies `/` to it.
+The image contains the static Vite bundle served by `nginx:1.27-alpine` on
+**port 80**. Caddy in front terminates TLS and reverse-proxies `/` to it.
 
 ---
 
@@ -52,16 +52,13 @@ Caddy reverse-proxy snippet (already in your Caddyfile, just adjust the upstream
 your.public.domain {
     encode zstd gzip
 
-    # SPA — proxied to the unprivileged nginx in the frontend container
+    # Backend routes go to the Spring Boot container
     reverse_proxy /api/* backend:8080
     reverse_proxy /actuator/* backend:8080
-    reverse_proxy frontend:8080
+    # Everything else goes to the nginx-served SPA
+    reverse_proxy frontend:80
 }
 ```
-
-> **Port note.** The container listens on 8080, not 80 — `nginxinc/nginx-unprivileged`
-> runs as a non-root user and can't bind privileged ports. Caddy proxies to
-> `frontend:8080` accordingly.
 
 ## API URL configuration
 
