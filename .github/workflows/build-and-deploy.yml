@@ -36,15 +36,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # No build-args: src/api/client.ts hard-codes BASE_URL='/api/v1' and the
-      # SPA depends on Caddy reverse-proxying that prefix to the backend. If you
-      # ever introduce a VITE_* env var, pass it here via build-args.
+      # VITE_* vars are baked into the static bundle at build time, so they must
+      # be passed as build-args (the Dockerfile re-exports them as ENV before
+      # `npm run build`). VITE_API_BASE_URL points the SPA at the public API origin.
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile
           push: true
+          build-args: |
+            VITE_API_BASE_URL=https://api.tracker.xasanboy.dev/api/v1
           tags: |
             ${{ steps.img.outputs.name }}:latest
             ${{ steps.img.outputs.name }}:${{ steps.meta.outputs.short_sha }}

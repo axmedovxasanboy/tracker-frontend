@@ -11,9 +11,12 @@ RUN npm ci
 # Now the source
 COPY . .
 
-# Vite + tsc → static bundle in /app/dist
-# (No VITE_* env vars are read in src/. The app calls the API at /api/v1,
-#  which Caddy reverse-proxies to the backend container at runtime.)
+# Vite + tsc → static bundle in /app/dist.
+# VITE_API_BASE_URL is baked into the bundle here (Vite inlines import.meta.env
+# at build time). Passed in via build-args from CI; unset → src/api/client.ts
+# falls back to the relative '/api/v1' (reverse-proxied at runtime).
+ARG VITE_API_BASE_URL
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 RUN npm run build
 
 # ─── Runtime stage ────────────────────────────────────────────────────────────

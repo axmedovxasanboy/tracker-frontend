@@ -11,6 +11,14 @@ interface BackendStatusContextValue extends BackendStatus {
   forceCheck: () => Promise<void>
 }
 
+// When VITE_API_BASE_URL points the SPA at a remote backend (no Caddy/nginx
+// reverse-proxy of /api), the health ping must hit that origin too. Derive it by
+// stripping the /api/v1 suffix off the configured base URL; otherwise use the
+// proxied relative path.
+const HEALTH_URL = import.meta.env.VITE_API_BASE_URL
+  ? `${import.meta.env.VITE_API_BASE_URL.replace('/api/v1', '')}/actuator/health`
+  : '/actuator/health'
+
 const BackendStatusContext = createContext<BackendStatusContextValue | null>(null)
 
 export function BackendStatusProvider({ children }: { children: React.ReactNode }) {
@@ -41,7 +49,7 @@ export function BackendStatusProvider({ children }: { children: React.ReactNode 
     if (status.isOnline) return
     const interval = setInterval(async () => {
       try {
-        await fetch('/actuator/health', { signal: AbortSignal.timeout(3000) })
+        await fetch(HEALTH_URL, { signal: AbortSignal.timeout(3000) })
         setStatus((prev) => {
           const now = new Date().toISOString()
           return { ...prev, isOnline: true, lastOnline: now, lastChecked: now }
@@ -55,7 +63,7 @@ export function BackendStatusProvider({ children }: { children: React.ReactNode 
 
   const forceCheck = async () => {
     try {
-      await fetch('/actuator/health', { signal: AbortSignal.timeout(3000) })
+      await fetch(HEALTH_URL, { signal: AbortSignal.timeout(3000) })
       const now = new Date().toISOString()
       setStatus({ isOnline: true, lastOnline: now, lastChecked: now })
     } catch {
