@@ -62,10 +62,15 @@ your.public.domain {
 
 ## API URL configuration
 
-`src/api/client.ts:5` hard-codes `BASE_URL = '/api/v1'`. The browser sends API
-calls to the same origin it's served from; Caddy routes `/api/*` to the backend
-container. There is **no `VITE_API_URL` env var** — if you ever need one, add
-it to source first, then expose it as a `build-args:` entry in the workflow.
+`src/api/client.ts:5` reads `BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1'`.
+Vite inlines `import.meta.env.*` **at build time**, so the API origin is baked into the
+static bundle — it can't be changed at container runtime. The `VITE_API_BASE_URL` value is
+passed as a Docker **`build-arg`** (the Dockerfile re-exports it as `ENV` before `npm run build`);
+the workflow's `build-args:` sets it to `https://api.tracker.xasanboy.dev/api/v1`, and
+`.env.production` mirrors it for local `npm run build`. When the var is **unset**, the SPA falls
+back to the relative `/api/v1` and calls the same origin it's served from (Caddy then routes
+`/api/*` to the backend container). To point a build at a different API origin, change the
+`build-args:` value in the workflow (and `.env.production` if you build locally).
 
 ## Manual trigger
 
