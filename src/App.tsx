@@ -15,6 +15,7 @@ import { Categories } from './pages/Categories'
 import { Cards } from './pages/Cards'
 import { Finance } from './pages/Finance'
 import { Overview } from './pages/Overview'
+import { Months } from './pages/Months'
 import { Settings } from './pages/Settings'
 import { Developer } from './pages/Developer'
 import { Login } from './pages/Login'
@@ -66,6 +67,7 @@ function AppRoutes() {
             <Route path="/finance/:tab" element={<Finance />} />
             <Route path="/overview" element={<Navigate to="/overview/dashboard" replace />} />
             <Route path="/overview/:tab" element={<Overview currency={currency} />} />
+            <Route path="/months" element={<Months currency={currency} />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/developer" element={<Developer />} />
             {/* Already signed in — bounce the auth screens back to the app. */}

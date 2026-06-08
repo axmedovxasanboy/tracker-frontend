@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, TrendingUp, TrendingDown, Scale, Hash, Wallet } from 'lucide-react'
+import { Plus, TrendingUp, TrendingDown, Hash, Wallet, Landmark } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { SummaryCard } from '../components/dashboard/SummaryCard'
 import { IncomeExpenseChart } from '../components/dashboard/IncomeExpenseChart'
@@ -31,10 +31,10 @@ export function Dashboard({ currency }: Props) {
   const recent   = useApi(() => transactionsApi.getRecent(currency), [currency])
 
   const s = summary.data
-  // Older cached payloads (or stale backend before restart) may not include availableBalance.
+  // Older cached payloads (or stale backend before restart) may not include the newer fields.
   const availableBalance = s?.availableBalance ?? 0
-  const netBalance = s?.netBalance ?? availableBalance
-  const netColor = netBalance >= 0 ? 'indigo' : 'rose'
+  const spendable = s?.spendableBalance ?? availableBalance
+  const netWorth = s?.netWorth ?? (s?.netBalance ?? availableBalance)
 
   const handleDeleteFromDetail = async (id: number) => {
     if (!await confirm({ message: 'Delete this transaction?', destructive: true })) return
@@ -69,9 +69,9 @@ export function Dashboard({ currency }: Props) {
       {/* Summary cards — clickable. Values rendered with K/M/B abbreviations. */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         <SummaryCard
-          title="Available Balance" icon={Wallet} color="indigo"
-          value={s ? formatCurrency(availableBalance, currency, true) : '—'}
-          subtitle="Across cards + cash"
+          title="Spendable" icon={Wallet} color="indigo"
+          value={s ? formatCurrency(spendable, currency, true) : '—'}
+          subtitle="Cards + cash to spend"
           isCached={summary.isCached} cachedAt={summary.cachedAt}
           onClick={() => navigate('/cards')}
         />
@@ -88,11 +88,11 @@ export function Dashboard({ currency }: Props) {
           onClick={() => navigate('/transactions?type=EXPENSE')}
         />
         <SummaryCard
-          title="Net Balance" icon={Scale} color={netColor}
-          value={s ? formatCurrency(netBalance, currency, true) : '—'}
-          subtitle={s ? (netBalance >= 0 ? 'Surplus' : 'Deficit') : undefined}
+          title="Net Worth" icon={Landmark} color="emerald"
+          value={s ? formatCurrency(netWorth, currency, true) : '—'}
+          subtitle="Incl. investments & savings"
           isCached={summary.isCached} cachedAt={summary.cachedAt}
-          onClick={() => navigate(`/transactions?currency=${currency}`)}
+          onClick={() => navigate('/months')}
         />
         <SummaryCard
           title="Transactions" icon={Hash} color="amber"

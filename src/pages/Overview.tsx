@@ -9,6 +9,7 @@ import {
 import { format, parse } from 'date-fns'
 import { useApi } from '../hooks/useApi'
 import { overviewApi } from '../api/overview'
+import { financeApi } from '../api/finance'
 import { formatCurrency } from '../utils/format'
 import { Spinner } from '../components/ui/Spinner'
 import { InvestmentsPage } from './InvestmentsPage'
@@ -19,7 +20,8 @@ import { PayBankInstallmentModal } from '../components/overview/PayBankInstallme
 import { PayPersonalLoanModal } from '../components/overview/PayPersonalLoanModal'
 import { AllocationRulesModal } from '../components/overview/AllocationRulesModal'
 import { BucketHistoryPanel } from '../components/overview/BucketHistoryPanel'
-import type { ActionItem, AllocationLine, Bucket, Currency, OverviewTierResponse } from '../types'
+import { PaySubscriptionModal } from '../components/finance/PaySubscriptionModal'
+import type { ActionItem, AllocationLine, Bucket, Currency, MonthlyPaymentResponse, OverviewTierResponse, PendingSubscription } from '../types'
 
 type OverviewTab = 'dashboard' | 'investments' | 'donations' | 'emergencies'
 
@@ -62,12 +64,27 @@ export function Overview({ currency }: Props) {
   }
 
   const income = useApi(() => overviewApi.getIncome(month, currency), [month, currency])
+  // Tier fetched here so the badge can sit ABOVE the tabs (always visible); the same result
+  // is handed to the Dashboard tab so there's a single fetch + a single refetch after pays.
+  const tier = useApi(() => overviewApi.getTier(month, currency), [month, currency])
+  const t = tier.data
+  // Only surface the badge once the tier is actually resolved (income set, tracking started,
+  // subscriptions paid) — otherwise the Dashboard tab shows the relevant "locked" message.
+  const showTierBadge = !!t && !t.missingStableIncome && !t.beforeTrackingStart
+    && !t.subscriptionsPending && t.level != null
 
   const activeTab: OverviewTab = (tab as OverviewTab) ?? 'dashboard'
 
+  // Pay-first gate: hide the Overview tabs (and keep the user on the dashboard) until mandatory
+  // subscriptions AND the debt action items are paid. Open while the tier is still loading so the
+  // tabs don't flicker away on first paint.
+  const gateOpen = !t || (!t.subscriptionsPending && !t.allocation?.allocationLocked)
+
   return (
     <div className="p-6 space-y-6">
-      {/* Header tile — income for the selected month */}
+      {/* Earned card + tier badge — side by side */}
+      <div className={`grid grid-cols-1 gap-4 items-stretch ${showTierBadge ? 'lg:grid-cols-2' : ''}`}>
+      {/* Earned this month */}
       <section className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3">
@@ -117,43 +134,83 @@ export function Overview({ currency }: Props) {
         )}
       </section>
 
-      {/* Allocation ledger — running backlog of recommended-vs-paid across months */}
-      <AllocationLedgerPanel currency={currency} month={month} />
+      {/* Tier badge — beside the earned card */}
+      {showTierBadge && t && <LevelBadge tier={t} />}
+      </div>
 
-      {/* Tab strip */}
-      <nav className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-x-auto">
-        <div className="flex">
-          {TABS.map(({ id, label, icon: Icon }) => (
-            <NavLink key={id}
-              to={`/overview/${id}${window.location.search}`}
-              replace
-              className={({ isActive }) =>
-                `flex items-center gap-2 px-5 py-3.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
-                  isActive || id === activeTab
-                    ? 'border-indigo-600 text-indigo-700 bg-indigo-50/40'
-                    : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
-                }`
-              }>
-              <Icon className="w-4 h-4" />
-              {label}
-            </NavLink>
-          ))}
+      {/* Tier breakdown cards — before the tabs */}
+      {t && !t.missingStableIncome && (
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+          <BreakdownCard
+            icon={TrendingUp} color="emerald"
+            label="Stable Income"
+            value={formatCurrency(t.income, currency, true)}
+            hint="From Settings" />
+          <BreakdownCard
+            icon={ListChecks} color="violet"
+            label="Mandatory (Subscriptions)"
+            value={formatCurrency(t.mandatorySubscriptions, currency, true)}
+            hint="Active monthly subscriptions" />
+          <BreakdownCard
+            icon={Wallet} color="indigo"
+            label="Left Money"
+            value={formatCurrency(t.leftMoney, currency, true)}
+            hint="Income − mandatory · sets your level (1 if < 15M)" />
+          <BreakdownCard
+            icon={Scale}
+            color={t.debtRatio != null && t.debtRatio > 0.7 ? 'rose' : 'amber'}
+            label="Debt Payments"
+            value={formatCurrency(t.debtPayments, currency, true)}
+            hint={t.debtRatio != null
+              ? `${(t.debtRatio * 100).toFixed(1)}% of income · drives sub-level`
+              : 'Debt math — drives sub-level'} />
         </div>
-      </nav>
+      )}
 
-      {/* Tab content */}
+      {/* Overview tabs — hidden until subscriptions + debt action items are paid. The
+          "Allocation Due" ledger now lives inside the dashboard tab, AFTER the action items. */}
+      {gateOpen && (
+        <nav className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-x-auto">
+          <div className="flex">
+            {TABS.map(({ id, label, icon: Icon }) => (
+              <NavLink key={id}
+                to={`/overview/${id}${window.location.search}`}
+                replace
+                className={({ isActive }) =>
+                  `flex items-center gap-2 px-5 py-3.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                    isActive || id === activeTab
+                      ? 'border-indigo-600 text-indigo-700 bg-indigo-50/40'
+                      : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+                  }`
+                }>
+                <Icon className="w-4 h-4" />
+                {label}
+              </NavLink>
+            ))}
+          </div>
+        </nav>
+      )}
+
+      {/* Tab content. While anything's unpaid (gate closed) we force the dashboard, so the
+          pay-first sections are all the user sees. */}
       <div>
-        {activeTab === 'dashboard' && <TierDashboard currency={currency} month={month} />}
-        {activeTab === 'investments' && <InvestmentsPage />}
-        {activeTab === 'donations' && <DonationsPage />}
-        {activeTab === 'emergencies' && <EmergenciesPage />}
+        {!gateOpen ? (
+          <TierDashboard currency={currency} month={month} tier={tier} />
+        ) : (
+          <>
+            {activeTab === 'dashboard' && <TierDashboard currency={currency} month={month} tier={tier} />}
+            {activeTab === 'investments' && <InvestmentsPage />}
+            {activeTab === 'donations' && <DonationsPage />}
+            {activeTab === 'emergencies' && <EmergenciesPage />}
+          </>
+        )}
       </div>
     </div>
   )
 }
 
 // ────────────────────────────────────────────────────────────────────────────────
-// Allocation ledger panel — running backlog of recommended-vs-paid across months
+// Allocation helpers — shared by the unified Allocation section (guidance + ledger)
 // ────────────────────────────────────────────────────────────────────────────────
 
 function fmtPct(n: number): string {
@@ -167,160 +224,6 @@ function bucketTitle(b: string): string {
 function rangeLabel(start: string, end: string | null): string {
   if (!end || end === start) return formatMonthLabel(start)
   return `${formatMonthLabel(start)} – ${formatMonthLabel(end)}`
-}
-
-function AllocationLedgerPanel({ currency, month }: { currency: Currency; month: string }) {
-  const ledger = useApi(() => overviewApi.getAllocationLedger(month, currency), [month, currency])
-  const [showBreakdown, setShowBreakdown] = useState(false)
-  const d = ledger.data
-
-  if (ledger.loading && !d) {
-    return (
-      <section className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
-        <div className="h-16 flex items-center justify-center"><Spinner /></div>
-      </section>
-    )
-  }
-  if (!d) return null
-
-  if (d.missingStableIncome) {
-    return (
-      <section className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
-        <div className="flex items-center gap-2 text-sm text-slate-500">
-          <PiggyBank className="w-4 h-4 text-violet-500 shrink-0" />
-          <span>
-            Set a monthly stable income in{' '}
-            <NavLink to="/settings" className="font-semibold text-indigo-600 underline">Settings</NavLink>{' '}
-            to track allocation dues.
-          </span>
-        </div>
-      </section>
-    )
-  }
-
-  const totalDue = d.totalDueNow ?? 0
-  const carried = d.carriedFromPrevious ?? 0
-  const dueThis = d.dueThisMonth ?? 0
-  const allClear = totalDue <= 0
-
-  return (
-    <section className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 space-y-4">
-      {/* Headline */}
-      <div className="flex items-center gap-3">
-        <div className="w-11 h-11 rounded-xl bg-violet-100 flex items-center justify-center shrink-0">
-          <PiggyBank className="w-5 h-5 text-violet-600" />
-        </div>
-        <div>
-          <p className="text-xs text-slate-400 font-medium uppercase tracking-wider">Allocation due</p>
-          <p className={`text-2xl font-bold ${allClear ? 'text-emerald-600' : 'text-slate-800'}`}>
-            {allClear ? 'All caught up' : formatCurrency(totalDue, currency, true)}
-          </p>
-          <p className="text-xs text-slate-400 mt-0.5">
-            {carried > 0 && d.carriedStartMonth && (
-              <>
-                <span className="text-amber-600 font-medium">{formatCurrency(carried, currency, true)}</span>
-                {' '}carried from {rangeLabel(d.carriedStartMonth, d.carriedEndMonth)} ·{' '}
-              </>
-            )}
-            {formatCurrency(dueThis, currency, true)} recommended this month
-            {d.bonusThisMonth != null && d.bonusThisMonth > 0 && (
-              <> · incl. bonus {formatCurrency(d.bonusThisMonth, currency, true)}</>
-            )}
-          </p>
-        </div>
-      </div>
-
-      {/* Per-bucket ledger */}
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-[11px] uppercase tracking-wider text-slate-400 text-left">
-              <th className="py-1.5 font-medium">Bucket</th>
-              <th className="py-1.5 font-medium text-right">Due this month</th>
-              <th className="py-1.5 font-medium text-right">Carried</th>
-              <th className="py-1.5 font-medium text-right">Outstanding</th>
-            </tr>
-          </thead>
-          <tbody>
-            {d.buckets.map(b => (
-              <tr key={b.bucket} className="border-t border-slate-50">
-                <td className="py-2 pr-2">
-                  <span className="font-medium text-slate-700">{b.label}</span>
-                  {b.percent != null
-                    ? <span className="ml-2 text-[11px] text-slate-400">{fmtPct(b.percent)}%</span>
-                    : <span className="ml-2 text-[11px] text-slate-300">not recommended</span>}
-                  {b.overAllocated && b.effectivePercent != null && (
-                    <span className="ml-2 text-[11px] text-emerald-600 font-medium">
-                      gave {fmtPct(b.effectivePercent)}%
-                    </span>
-                  )}
-                </td>
-                <td className="py-2 text-right text-slate-600 whitespace-nowrap">{formatCurrency(b.recommended, currency)}</td>
-                <td className={`py-2 text-right whitespace-nowrap ${b.carried > 0 ? 'text-amber-600' : b.carried < 0 ? 'text-emerald-600' : 'text-slate-300'}`}>
-                  {b.carried === 0
-                    ? '—'
-                    : b.carried > 0
-                      ? formatCurrency(b.carried, currency)
-                      : `+${formatCurrency(-b.carried, currency)}`}
-                </td>
-                <td className={`py-2 text-right font-semibold whitespace-nowrap ${b.outstanding > 0 ? 'text-rose-600' : 'text-emerald-500'}`}>
-                  {b.outstanding > 0 ? formatCurrency(b.outstanding, currency) : '✓'}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Transparent per-month breakdown */}
-      {d.months.length > 0 && (
-        <div>
-          <button type="button" onClick={() => setShowBreakdown(v => !v)}
-            className="flex items-center gap-1.5 text-xs font-medium text-indigo-600 hover:text-indigo-700">
-            {showBreakdown ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-            How this is calculated
-          </button>
-          {showBreakdown && (
-            <div className="mt-3 space-y-2.5">
-              {d.months.map(mo => (
-                <div key={mo.month}
-                  className={`rounded-xl border p-3 ${mo.selected ? 'border-indigo-200 bg-indigo-50/40' : 'border-slate-100 bg-slate-50/50'}`}>
-                  <div className="flex items-center justify-between gap-2 flex-wrap mb-1.5">
-                    <p className="text-xs font-semibold text-slate-700">
-                      {formatMonthLabel(mo.month)}
-                      {mo.selected && <span className="ml-2 text-[10px] text-indigo-500 uppercase tracking-wider">this month</span>}
-                    </p>
-                    <p className="text-[11px] text-slate-400">
-                      Level {mo.subLevel ?? mo.level ?? '—'} · income {formatCurrency(mo.stableIncome, currency, true)}
-                      {mo.bonus > 0 && <> + bonus {formatCurrency(mo.bonus, currency, true)}</>}
-                    </p>
-                  </div>
-                  <div className="space-y-0.5">
-                    {mo.lines.map(l => (
-                      <p key={l.bucket} className="text-[11px] text-slate-500 leading-relaxed">
-                        <span className="text-slate-600 font-medium">{bucketTitle(l.bucket)}</span>
-                        {l.percent != null && (
-                          <> · {fmtPct(l.percent)}% of {formatCurrency(mo.stableIncome + mo.bonus, currency, true)} = {formatCurrency(l.recommended, currency)}</>
-                        )}
-                        {' '}− paid {formatCurrency(l.paid, currency)} ={' '}
-                        <span className={l.net > 0 ? 'text-rose-500 font-medium' : l.net < 0 ? 'text-emerald-600 font-medium' : 'text-slate-400'}>
-                          {l.net > 0
-                            ? `${formatCurrency(l.net, currency)} behind`
-                            : l.net < 0
-                              ? `${formatCurrency(-l.net, currency)} ahead`
-                              : 'on target'}
-                        </span>
-                      </p>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-    </section>
-  )
 }
 
 // ────────────────────────────────────────────────────────────────────────────────
@@ -338,12 +241,13 @@ const LEVEL_STYLES: Record<number, { bg: string; ring: string; text: string; lab
 
 const SUB_STYLES: Record<string, { bg: string; text: string; label: string }> = {
   '1.1': { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'No debt — clean slate' },
-  '1.2': { bg: 'bg-amber-100',   text: 'text-amber-700',   label: 'Manageable debt (< 70% of income)' },
-  '1.3': { bg: 'bg-rose-100',    text: 'text-rose-700',    label: 'High debt (≥ 70% of income)' },
+  '1.2': { bg: 'bg-amber-100',   text: 'text-amber-700',   label: 'Manageable debt (≤ 70% of income)' },
+  '1.3': { bg: 'bg-rose-100',    text: 'text-rose-700',    label: 'High debt (> 70% of income)' },
 }
 
-function TierDashboard({ currency, month }: { currency: Currency; month: string }) {
-  const tier = useApi(() => overviewApi.getTier(month, currency), [month, currency])
+function TierDashboard({ currency, month, tier }: {
+  currency: Currency; month: string; tier: ReturnType<typeof useApi<OverviewTierResponse>>
+}) {
   const t = tier.data
 
   // Pay flow + history state — both bucket-scoped, optional.
@@ -354,6 +258,9 @@ function TierDashboard({ currency, month }: { currency: Currency; month: string 
   const [payPersonalOpen, setPayPersonalOpen] = useState(false)
   // Levels 2–6 allocation-rules editor
   const [rulesOpen, setRulesOpen] = useState(false)
+  // Subscription pay modal (mandatory subscriptions are the first gate)
+  const subs = useApi(() => financeApi.getMonthlyPayments(), [])
+  const [paySub, setPaySub] = useState<MonthlyPaymentResponse | null>(null)
 
   if (tier.loading && !t) {
     return <section className="h-48 flex items-center justify-center bg-white rounded-2xl border border-slate-100 shadow-sm"><Spinner /></section>
@@ -363,8 +270,32 @@ function TierDashboard({ currency, month }: { currency: Currency; month: string 
     return <section className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 text-sm text-slate-500">Tier data unavailable.</section>
   }
 
+  const dormant = t.beforeTrackingStart
+  const startLabel = t.trackingStartMonth ? formatMonthLabel(t.trackingStartMonth) : null
+  // Until mandatory subscriptions are paid, withhold the level / sub-level / action items / allocation.
+  const subsPending = t.subscriptionsPending
+  const openPaySub = (id: number) => {
+    const full = subs.data?.find(s => s.id === id)
+    if (full) setPaySub(full)
+  }
+
   return (
     <div className="space-y-5">
+      {/* Tracking-not-started banner — guidance is paused until the configured start month */}
+      {dormant && (
+        <div className="flex items-start gap-3 p-4 rounded-2xl bg-slate-100 border border-slate-300">
+          <Calendar className="w-5 h-5 text-slate-500 shrink-0 mt-0.5" />
+          <div className="text-sm text-slate-600">
+            <p className="font-semibold text-slate-700">Allocation tracking hasn't started yet</p>
+            <p className="mt-0.5">
+              Your action items and allocation guidance begin in{' '}
+              <span className="font-semibold">{startLabel}</span>. Until then nothing is due —
+              the dashboard below is shown for reference only.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Missing-income banner — highest priority */}
       {t.missingStableIncome && (
         <div className="flex items-start gap-3 p-4 rounded-2xl bg-amber-50 border border-amber-200">
@@ -394,70 +325,60 @@ function TierDashboard({ currency, month }: { currency: Currency; month: string 
         </div>
       )}
 
-      {/* Level + sub-level badge */}
-      <LevelBadge tier={t} />
+      {/* When tracking hasn't started, everything below is greyed + inert. */}
+      <div className={dormant ? 'space-y-5 opacity-50 grayscale pointer-events-none select-none' : 'space-y-5'}>
+        {/* Step 1 — pay mandatory subscriptions. While any is unpaid this month, the level,
+            sub-level, action items and allocation stay hidden until they're covered. */}
+        {subsPending && (
+          <SubscriptionsToPaySection
+            subscriptions={t.pendingSubscriptions}
+            month={month}
+            onPay={openPaySub} />
+        )}
 
-      {/* Breakdown cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <BreakdownCard
-          icon={TrendingUp} color="emerald"
-          label="Stable Income"
-          value={formatCurrency(t.income, currency, true)}
-          hint="From Settings" />
-        <BreakdownCard
-          icon={ListChecks} color="violet"
-          label="Mandatory (Subscriptions)"
-          value={formatCurrency(t.mandatorySubscriptions, currency, true)}
-          hint="Active monthly subscriptions" />
-        <BreakdownCard
-          icon={Wallet} color="indigo"
-          label="Left Money"
-          value={formatCurrency(t.leftMoney, currency, true)}
-          hint="Income − mandatory · drives level" />
-        <BreakdownCard
-          icon={Scale}
-          color={t.debtRatio != null && t.debtRatio >= 0.7 ? 'rose' : 'amber'}
-          label="Debt Payments"
-          value={formatCurrency(t.debtPayments, currency, true)}
-          hint={t.debtRatio != null
-            ? `${(t.debtRatio * 100).toFixed(1)}% of income · drives sub-level`
-            : 'Debt math — drives sub-level'} />
+        {/* Action items — debts to pay first. Shown ABOVE the dashboard. Their recommended
+            amounts gate the allocation section: until they're met, recording is locked.
+            Hidden until mandatory subscriptions are paid. */}
+        {!subsPending && (
+          <ActionItemsSection tier={t}
+            onPayBank={() => setPayBankOpen(true)}
+            onPayPersonal={() => setPayPersonalOpen(true)} />
+        )}
+
+        {/* Allocation — the per-bucket guidance cards and the cross-month "due" ledger, unified
+            into one card. Shown AFTER the action items so debts come first; recording is locked
+            until each action item reaches its recommended amount. */}
+        {!subsPending && (
+          <AllocationSection tier={t} currency={currency} month={month}
+            locked={t.allocation?.allocationLocked ?? false}
+            onPay={(bucket, suggested) => setPayTarget({ bucket, suggested })}
+            onHistory={(bucket) => setHistoryBucket(bucket)}
+            onConfigure={() => setRulesOpen(true)} />
+        )}
+
+
+        {/* Debt breakdown */}
+        <section className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <Landmark className="w-4 h-4 text-slate-500" />
+            <h4 className="text-sm font-semibold text-slate-700">Debt Payments Breakdown</h4>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <DebtRow label="Bank Loans" hint="Monthly installment" value={formatCurrency(t.debtBreakdown.bankLoans, currency, true)} />
+            <DebtRow label="Borrowed (34%)" hint="34% of original (capped)" value={formatCurrency(t.debtBreakdown.loansTaken, currency, true)} />
+            <DebtRow label="Debts (34%)" hint="34% of original (capped)" value={formatCurrency(t.debtBreakdown.debts, currency, true)} />
+          </div>
+        </section>
+
+        {/* Bucket payment history panel — shown inline below */}
+        {historyBucket && (
+          <BucketHistoryPanel
+            bucket={historyBucket}
+            month={month}
+            currency={currency}
+            onClose={() => setHistoryBucket(null)} />
+        )}
       </div>
-
-      {/* Debt breakdown */}
-      <section className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 space-y-3">
-        <div className="flex items-center gap-2">
-          <Landmark className="w-4 h-4 text-slate-500" />
-          <h4 className="text-sm font-semibold text-slate-700">Debt Payments Breakdown</h4>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <DebtRow label="Bank Loans" hint="From BankLoan.monthlyPayment" value={formatCurrency(t.debtBreakdown.bankLoans, currency, true)} />
-          <DebtRow label="Loans Taken" hint="Remaining ÷ months-until-due" value={formatCurrency(t.debtBreakdown.loansTaken, currency, true)} />
-          <DebtRow label="Debts" hint="Remaining ÷ months-until-due" value={formatCurrency(t.debtBreakdown.debts, currency, true)} />
-        </div>
-      </section>
-
-      {/* Action items — debts to pay first. Their recommended amounts gate the allocation
-          section below: until they're met, recording into the buckets is locked. */}
-      <ActionItemsSection tier={t}
-        onPayBank={() => setPayBankOpen(true)}
-        onPayPersonal={() => setPayPersonalOpen(true)} />
-
-      {/* Per-level guidance — locked until the action items above reach their recommended amounts */}
-      <LevelGuidance tier={t}
-        locked={t.allocation?.allocationLocked ?? false}
-        onPay={(bucket, suggested) => setPayTarget({ bucket, suggested })}
-        onHistory={(bucket) => setHistoryBucket(bucket)}
-        onConfigure={() => setRulesOpen(true)} />
-
-      {/* Bucket payment history panel — shown inline below */}
-      {historyBucket && (
-        <BucketHistoryPanel
-          bucket={historyBucket}
-          month={month}
-          currency={currency}
-          onClose={() => setHistoryBucket(null)} />
-      )}
 
       {/* Pay-bucket modal */}
       <PayBucketModal
@@ -486,7 +407,55 @@ function TierDashboard({ currency, month }: { currency: Currency; month: string 
         open={rulesOpen}
         onClose={() => setRulesOpen(false)}
         onSaved={() => { tier.refetch(); setRulesOpen(false) }} />
+
+      {/* Subscription pay modal — records a real transaction; refetch unlocks the tier once covered */}
+      <PaySubscriptionModal
+        open={!!paySub}
+        subscription={paySub}
+        onClose={() => setPaySub(null)}
+        onSaved={() => { tier.refetch(); subs.refetch(); setPaySub(null) }} />
     </div>
+  )
+}
+
+// Step-1 gate: the mandatory subscriptions still owed this month, each with a Pay button.
+function SubscriptionsToPaySection({ subscriptions, month, onPay }: {
+  subscriptions: PendingSubscription[]
+  month: string
+  onPay: (id: number) => void
+}) {
+  return (
+    <section className="bg-white rounded-2xl border border-violet-200 shadow-sm p-5 space-y-3">
+      <div className="flex items-center gap-2">
+        <ListChecks className="w-4 h-4 text-violet-600" />
+        <h4 className="text-sm font-semibold text-slate-700">Pay your subscriptions first</h4>
+      </div>
+      <p className="text-xs text-slate-500 -mt-1">
+        Your level and allocation for {formatMonthLabel(month)} unlock once every mandatory
+        subscription is paid — {subscriptions.length} left.
+      </p>
+      <div className="space-y-2">
+        {subscriptions.map(s => {
+          const remaining = Math.max(0, s.amount - s.paid)
+          return (
+            <div key={s.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 p-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-slate-800 truncate">{s.name}</p>
+                <p className="text-xs text-slate-500">
+                  {s.paid > 0
+                    ? <>Paid {formatCurrency(s.paid, s.currency)} of {formatCurrency(s.amount, s.currency)} · {formatCurrency(remaining, s.currency)} left</>
+                    : <>{formatCurrency(s.amount, s.currency)} due</>}
+                </p>
+              </div>
+              <button type="button" onClick={() => onPay(s.id)}
+                className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold transition-colors">
+                <Wallet className="w-3.5 h-3.5" /> Pay
+              </button>
+            </div>
+          )
+        })}
+      </div>
+    </section>
   )
 }
 
@@ -632,13 +601,23 @@ function ActionItemsSection({ tier, onPayBank, onPayPersonal }: {
   )
 }
 
-function LevelGuidance({ tier, locked, onPay, onHistory, onConfigure }: {
+// ────────────────────────────────────────────────────────────────────────────────
+// Allocation section — unified card: a cross-month "due" summary, the per-bucket
+// guidance cards, and the running ledger (formerly two separate cards).
+// ────────────────────────────────────────────────────────────────────────────────
+
+function AllocationSection({ tier, currency, month, locked, onPay, onHistory, onConfigure }: {
   tier: OverviewTierResponse
+  currency: Currency
+  month: string
   locked: boolean
   onPay: (bucket: Bucket, suggested?: number) => void
   onHistory: (bucket: Bucket) => void
   onConfigure: () => void
 }) {
+  const ledger = useApi(() => overviewApi.getAllocationLedger(month, currency), [month, currency])
+  const [showBreakdown, setShowBreakdown] = useState(false)
+
   const allocation = tier.allocation
   // The rules editor shows every income tier for comparison; you can edit only your current
   // level. Level 1's percentages are built-in (its minimum-leftover is still editable);
@@ -646,13 +625,26 @@ function LevelGuidance({ tier, locked, onPay, onHistory, onConfigure }: {
   const hasTier = tier.level != null
   const sublevelConfigurable = tier.level != null && tier.level >= 2 && tier.level <= 6
   const empty = !allocation || allocation.lines.length === 0
+
+  // Ledger data — only meaningful once income is set and tracking has started. The parent
+  // (TierDashboard) already shows the missing-income / not-started banners, so here we just
+  // suppress the due-summary + ledger detail in those states to avoid duplicate messaging.
+  const d = ledger.data
+  const ledgerReady = !!d && !d.missingStableIncome && !d.beforeTrackingStart
+  const totalDue = d?.totalDueNow ?? 0
+  const carried = d?.carriedFromPrevious ?? 0
+  const dueThis = d?.dueThisMonth ?? 0
+  const allClear = totalDue <= 0
+  const hasBuckets = !!d && d.buckets.length > 0
+
   return (
     <section className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 space-y-4">
+      {/* Header */}
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2">
           <Gauge className="w-4 h-4 text-indigo-500" />
           <div>
-            <h4 className="text-sm font-semibold text-slate-700">Allocation guidance</h4>
+            <h4 className="text-sm font-semibold text-slate-700">Allocation</h4>
             {allocation?.scenarioLabel && (
               <p className="text-xs text-slate-400 mt-0.5">{allocation.scenarioLabel}</p>
             )}
@@ -666,7 +658,35 @@ function LevelGuidance({ tier, locked, onPay, onHistory, onConfigure }: {
         )}
       </div>
 
-      {/* No allocation — tier undefined, above ceiling, or a Level 2–6 sub-level not set up yet */}
+      {/* Due summary strip — the headline number, carried backlog, and recommended-this-month */}
+      {ledger.loading && !d ? (
+        <div className="h-16 flex items-center justify-center rounded-xl bg-slate-50 border border-slate-100">
+          <Spinner />
+        </div>
+      ) : ledgerReady && (
+        <div className="flex items-center gap-3 rounded-xl border border-violet-100 bg-gradient-to-br from-violet-50 to-indigo-50/40 p-4">
+          <div className="w-11 h-11 rounded-xl bg-violet-100 flex items-center justify-center shrink-0">
+            <PiggyBank className="w-5 h-5 text-violet-600" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs text-slate-400 font-medium uppercase tracking-wider">Allocation due</p>
+            <p className={`text-2xl font-bold ${allClear ? 'text-emerald-600' : 'text-slate-800'}`}>
+              {allClear ? 'All caught up' : formatCurrency(totalDue, currency, true)}
+            </p>
+            <p className="text-xs text-slate-400 mt-0.5">
+              {carried > 0 && d?.carriedStartMonth && (
+                <>
+                  <span className="text-amber-600 font-medium">{formatCurrency(carried, currency, true)}</span>
+                  {' '}carried from {rangeLabel(d.carriedStartMonth, d.carriedEndMonth ?? null)} ·{' '}
+                </>
+              )}
+              {formatCurrency(dueThis, currency, true)} recommended this month
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Per-bucket guidance — the actionable cards */}
       {empty ? (
         <div className="rounded-xl bg-slate-50 border border-slate-100 p-4 text-sm text-slate-500 space-y-3">
           <p>Guidance not available for this tier yet.</p>
@@ -692,6 +712,13 @@ function LevelGuidance({ tier, locked, onPay, onHistory, onConfigure }: {
             </div>
           )}
 
+          <p className="text-[11px] text-slate-400">
+            Percentages apply to your <span className="font-medium text-slate-500">left balance</span>
+            {' '}({formatCurrency(tier.allocationBase, tier.currency, true)}) — your stable income minus
+            mandatory subscriptions and monthly debt payments.
+            {tier.level === 1 && ' The 5M UZS cutoff (on stable income) sets tight vs. comfortable.'}
+          </p>
+
           {/* Bucket allocation lines */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {allocation.lines.map(l => (
@@ -702,6 +729,107 @@ function LevelGuidance({ tier, locked, onPay, onHistory, onConfigure }: {
             ))}
           </div>
         </>
+      )}
+
+      {/* Cross-month ledger — outstanding-per-bucket table + a collapsible per-month breakdown */}
+      {ledgerReady && hasBuckets && (
+        <div className="pt-4 border-t border-slate-100 space-y-3">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-2">
+              <PiggyBank className="w-3.5 h-3.5 text-violet-500" />
+              <h5 className="text-xs font-semibold uppercase tracking-wider text-slate-500">Outstanding across months</h5>
+            </div>
+            {d!.months.length > 0 && (
+              <button type="button" onClick={() => setShowBreakdown(v => !v)}
+                className="flex items-center gap-1.5 text-xs font-medium text-indigo-600 hover:text-indigo-700">
+                {showBreakdown ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                How this is calculated
+              </button>
+            )}
+          </div>
+
+          <div className={`grid grid-cols-1 gap-5 items-start ${showBreakdown && d!.months.length > 0 ? 'lg:grid-cols-2' : ''}`}>
+            {/* Per-bucket ledger table */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-[11px] uppercase tracking-wider text-slate-400 text-left">
+                    <th className="py-1.5 pr-3 font-medium">Bucket</th>
+                    <th className="py-1.5 px-3 font-medium text-right">Due</th>
+                    <th className="py-1.5 px-3 font-medium text-right">Carried</th>
+                    <th className="py-1.5 pl-3 font-medium text-right">Outstanding</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {d!.buckets.map(b => (
+                    <tr key={b.bucket} className="border-t border-slate-50">
+                      <td className="py-2 pr-2">
+                        <span className="font-medium text-slate-700">{b.label}</span>
+                        {b.percent != null
+                          ? <span className="ml-2 text-[11px] text-slate-400">{fmtPct(b.percent)}%</span>
+                          : <span className="ml-2 text-[11px] text-slate-300">not recommended</span>}
+                        {b.overAllocated && b.effectivePercent != null && (
+                          <span className="ml-2 text-[11px] text-emerald-600 font-medium">
+                            gave {fmtPct(b.effectivePercent)}%
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2 text-right text-slate-600 whitespace-nowrap">{formatCurrency(b.recommended, currency)}</td>
+                      <td className={`py-2 text-right whitespace-nowrap ${b.carried > 0 ? 'text-amber-600' : b.carried < 0 ? 'text-emerald-600' : 'text-slate-300'}`}>
+                        {b.carried === 0
+                          ? '—'
+                          : b.carried > 0
+                            ? formatCurrency(b.carried, currency)
+                            : `+${formatCurrency(-b.carried, currency)}`}
+                      </td>
+                      <td className={`py-2 text-right font-semibold whitespace-nowrap ${b.outstanding > 0 ? 'text-rose-600' : 'text-emerald-500'}`}>
+                        {b.outstanding > 0 ? formatCurrency(b.outstanding, currency) : '✓'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Transparent per-month breakdown — to the right of the table when expanded */}
+            {showBreakdown && d!.months.length > 0 && (
+              <div className="lg:border-l lg:border-slate-100 lg:pl-5 space-y-2.5">
+                {d!.months.map(mo => (
+                  <div key={mo.month}
+                    className={`rounded-xl border p-3 ${mo.selected ? 'border-indigo-200 bg-indigo-50/40' : 'border-slate-100 bg-slate-50/50'}`}>
+                    <div className="flex items-center justify-between gap-2 flex-wrap mb-1.5">
+                      <p className="text-xs font-semibold text-slate-700">
+                        {formatMonthLabel(mo.month)}
+                        {mo.selected && <span className="ml-2 text-[10px] text-indigo-500 uppercase tracking-wider">this month</span>}
+                      </p>
+                      <p className="text-[11px] text-slate-400">
+                        Level {mo.subLevel ?? mo.level ?? '—'} · base {formatCurrency(mo.allocationBase, currency, true)}
+                      </p>
+                    </div>
+                    <div className="space-y-0.5">
+                      {mo.lines.map(l => (
+                        <p key={l.bucket} className="text-[11px] text-slate-500 leading-relaxed">
+                          <span className="text-slate-600 font-medium">{bucketTitle(l.bucket)}</span>
+                          {l.percent != null && (
+                            <> · {fmtPct(l.percent)}% of {formatCurrency(mo.allocationBase, currency, true)} = {formatCurrency(l.recommended, currency)}</>
+                          )}
+                          {' '}− paid {formatCurrency(l.paid, currency)} ={' '}
+                          <span className={l.net > 0 ? 'text-rose-500 font-medium' : l.net < 0 ? 'text-emerald-600 font-medium' : 'text-slate-400'}>
+                            {l.net > 0
+                              ? `${formatCurrency(l.net, currency)} behind`
+                              : l.net < 0
+                                ? `${formatCurrency(-l.net, currency)} ahead`
+                                : 'on target'}
+                          </span>
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </section>
   )
@@ -807,7 +935,7 @@ function AllocationCard({ line, currency, disabled, onPay, onHistory }: {
               </span>
             </p>
           ) : (
-            <p className="text-xs text-slate-400 mt-0.5 font-medium">Skip at this tier</p>
+            <p className="text-xs text-slate-400 mt-0.5 font-medium">Not needed this month</p>
           )}
         </div>
         <button onClick={onHistory} title="Payment history this month"

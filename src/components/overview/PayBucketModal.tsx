@@ -3,11 +3,13 @@ import { Modal } from '../ui/Modal'
 import { Spinner } from '../ui/Spinner'
 import { AmountInput } from '../ui/AmountInput'
 import { cardsApi } from '../../api/cards'
+import { categoriesApi } from '../../api/categories'
 import { financeApi } from '../../api/finance'
 import { emergenciesApi } from '../../api/emergencies'
+import { transactionsApi } from '../../api/transactions'
 import { extractErrorMessage } from '../../api/client'
 import { formatCurrency } from '../../utils/format'
-import type { Bucket, CardResponse, Currency, InvestmentType } from '../../types'
+import type { Bucket, CardResponse, Category, Currency, InvestmentType, TransactionSubType } from '../../types'
 
 const INPUT = 'w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300'
 
@@ -35,7 +37,15 @@ const BUCKET_TITLES: Record<Bucket, string> = {
   STOCKS:      'Record a stock purchase',
 }
 
-const INVESTMENT_TYPES: InvestmentType[] = ['STOCKS', 'CRYPTO', 'REAL_ESTATE', 'BONDS', 'MUTUAL_FUND', 'GOLD', 'OTHER']
+const INVESTMENT_TYPES: InvestmentType[] = ['REAL_ESTATE', 'BONDS', 'MUTUAL_FUND', 'GOLD', 'OTHER']
+
+// The transaction sub-type each bucket books against — drives the category filter + auto-pick.
+const BUCKET_SUBTYPE: Record<Bucket, TransactionSubType> = {
+  DONATION:    'DONATION',
+  EMERGENCY:   'EMERGENCY_CONTRIBUTION',
+  INVESTMENTS: 'INVESTMENT',
+  STOCKS:      'STOCK_PURCHASE',
+}
 
 export function PayBucketModal({ open, onClose, onSaved, bucket, currency, suggestedAmount, defaultMonth }: Props) {
   const [amount, setAmount] = useState(0)
@@ -55,11 +65,15 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
   const [cardId, setCardId] = useState<number | undefined>()
   const [cards, setCards] = useState<CardResponse[]>([])
 
+  // Category — auto-picked to the bucket's matching category, overridable by the user.
+  const [categories, setCategories] = useState<Category[]>([])
+  const [categoryId, setCategoryId] = useState<number | undefined>()
+
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!open) return
+    if (!open || !bucket) return
     setAmount(suggestedAmount ?? 0)
     // Default date: today if it falls in the displayed month, otherwise the 1st.
     const cur = today()
@@ -68,11 +82,17 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
     setRecipientName('')
     setAnonymous(false)
     setName('')
-    setInvType(bucket === 'STOCKS' ? 'STOCKS' : 'OTHER')
+    setInvType('OTHER')
     setBroker('')
     setCardId(undefined)
     setError(null)
     cardsApi.getAll().then(r => setCards(r.data)).catch(() => {})
+    // Load categories matching this bucket's sub-type; default to the first (the seeded one).
+    setCategories([]); setCategoryId(undefined)
+    categoriesApi.getAll('EXPENSE', BUCKET_SUBTYPE[bucket]).then(r => {
+      setCategories(r.data)
+      if (r.data.length > 0) setCategoryId(r.data[0].id)
+    }).catch(() => {})
   }, [open, bucket, suggestedAmount, defaultMonth])
 
   const matchingCards = cards.filter(c => c.currency === currency)
@@ -93,29 +113,52 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
           recipientName: anonymous ? 'Anonymous' : recipientName.trim(),
           amount, currency, donationDate: date,
           description: description || undefined,
-          anonymous, cardId,
+          anonymous, cardId, categoryId,
         })
       } else if (bucket === 'EMERGENCY') {
         await emergenciesApi.create({
           amount, currency, date,
           description: description || undefined,
-          cardId,
+          cardId, categoryId,
         })
-      } else if (bucket === 'INVESTMENTS' || bucket === 'STOCKS') {
+      } else if (bucket === 'INVESTMENTS') {
         if (!name.trim()) {
           setError('Investment name is required.')
           setSaving(false); return
         }
         await financeApi.createInvestment({
           name: name.trim(),
-          type: bucket === 'STOCKS' ? 'STOCKS' : invType,
+          type: invType,
           investedAmount: amount, currency,
           purchaseDate: date,
           broker: broker || undefined,
           description: description || undefined,
+          cardId, categoryId,
+        })
+      } else if (bucket === 'STOCKS') {
+        // Stocks are tracked elsewhere — record a plain expense in the Stocks category.
+        await transactionsApi.create({
+          type: 'EXPENSE',
+          subType: 'STOCK_PURCHASE',
+          amount, currency,
+          categoryId,
+          description: description.trim() || 'Stocks',
+          transactionDate: date,
           cardId,
+          cashAmount: cardId ? 0 : amount,
         })
       }
+      onSaved(); onClose()
+    } catch (err) {
+      setError(extractErrorMessage(err))
+    } finally { setSaving(false) }
+  }
+
+  const markAlreadyPaid = async () => {
+    if (amount <= 0) { setError('Amount must be greater than 0.'); return }
+    setSaving(true); setError(null)
+    try {
+      await financeApi.markPaid({ kind: 'BUCKET', bucket, amount, currency, month: date.slice(0, 7) })
       onSaved(); onClose()
     } catch (err) {
       setError(extractErrorMessage(err))
@@ -160,6 +203,18 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
           </select>
         </Field>
 
+        {/* Category — auto-picked for this bucket; change it if you'd rather file it elsewhere.
+            This is what was missing: Overview pays now land in the transactions list categorised. */}
+        {categories.length > 0 && (
+          <Field label="Category">
+            <select value={categoryId ?? ''}
+              onChange={e => setCategoryId(e.target.value ? Number(e.target.value) : undefined)}
+              className={`${INPUT} bg-white`}>
+              {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </Field>
+        )}
+
         {/* Bucket-specific fields */}
         {bucket === 'DONATION' && (
           <>
@@ -187,11 +242,10 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
             <Field label="Type *">
               <select value={invType} onChange={e => setInvType(e.target.value as InvestmentType)}
                 className={`${INPUT} bg-white`}>
-                {INVESTMENT_TYPES.filter(t => t !== 'STOCKS').map(t =>
+                {INVESTMENT_TYPES.map(t =>
                   <option key={t} value={t}>{t.replace('_', ' ')}</option>
                 )}
               </select>
-              <p className="text-[11px] text-slate-400 mt-1">Stock-type purchases go under the Stocks bucket.</p>
             </Field>
             <Field label="Broker / Platform">
               <input value={broker} onChange={e => setBroker(e.target.value)} className={INPUT} />
@@ -200,15 +254,10 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
         )}
 
         {bucket === 'STOCKS' && (
-          <>
-            <Field label="Stock name *">
-              <input required value={name} onChange={e => setName(e.target.value)}
-                className={INPUT} placeholder="e.g. NVDA, AAPL" />
-            </Field>
-            <Field label="Broker / Platform">
-              <input value={broker} onChange={e => setBroker(e.target.value)} className={INPUT} />
-            </Field>
-          </>
+          <p className="text-[11px] text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
+            Recorded as a <span className="font-medium">Stocks</span>-category expense — you buy/hold
+            stocks in a separate app. Put the ticker in the description if you like.
+          </p>
         )}
 
         <Field label="Description">
@@ -225,6 +274,11 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
           <button type="button" onClick={onClose}
             className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50">
             Cancel
+          </button>
+          <button type="button" onClick={markAlreadyPaid} disabled={saving}
+            title="Count this toward the bucket without recording a transaction"
+            className="flex-1 py-2.5 rounded-xl border border-emerald-200 text-emerald-700 text-sm font-semibold hover:bg-emerald-50 disabled:opacity-60">
+            Already paid
           </button>
           <button type="submit" disabled={saving}
             className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-60 flex items-center justify-center gap-2">

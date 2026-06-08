@@ -44,9 +44,11 @@ function groupThousands(intStr: string): string {
 export function formatNumber(n: number, decimals = 0): string {
   if (!Number.isFinite(n)) return ''
   const snapped = snap(n)
-  const sign = snapped < 0 ? '-' : ''
   const abs = Math.abs(snapped)
   const fixed = abs.toFixed(decimals)
+  // Derive the sign from the already-rounded magnitude so a tiny negative that rounds
+  // to zero at display precision renders as "0"/"0,00", not "-0"/"-0,00".
+  const sign = parseFloat(fixed) > 0 && snapped < 0 ? '-' : ''
   const [intPart, decPart] = fixed.split('.')
   const grouped = groupThousands(intPart)
   return decimals > 0 && decPart

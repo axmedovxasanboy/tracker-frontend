@@ -109,6 +109,11 @@ export function AllocationRulesModal({ open, onClose, onSaved }: Props) {
           current level{view?.currentLevel ? ` (Level ${view.currentLevel})` : ''}; lock it with an
           expiration month to commit until then.
         </p>
+        <p className="text-[11px] text-slate-400">
+          Level 1 follows the owner spec: the 1.2 row shows the comfortable (≥ 5M after debt) reference
+          (7 / 3 / 10 / 0). Actual percentages vary by loan-only vs. debt-only vs. both, and by the 5M
+          tight (5 / 2 / 8 / 0) split — see the allocation card for your exact numbers.
+        </p>
 
         {loading ? (
           <div className="h-40 flex items-center justify-center"><Spinner /></div>

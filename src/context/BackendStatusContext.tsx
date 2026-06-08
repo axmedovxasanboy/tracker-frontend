@@ -49,7 +49,10 @@ export function BackendStatusProvider({ children }: { children: React.ReactNode 
     if (status.isOnline) return
     const interval = setInterval(async () => {
       try {
-        await fetch(HEALTH_URL, { signal: AbortSignal.timeout(3000) })
+        // fetch only rejects on network failure, not on HTTP error status — so a 503 DOWN
+        // from /actuator/health or a proxy 502/504 must be treated as still-offline.
+        const res = await fetch(HEALTH_URL, { signal: AbortSignal.timeout(3000) })
+        if (!res.ok) throw new Error('backend unhealthy')
         setStatus((prev) => {
           const now = new Date().toISOString()
           return { ...prev, isOnline: true, lastOnline: now, lastChecked: now }
@@ -63,7 +66,8 @@ export function BackendStatusProvider({ children }: { children: React.ReactNode 
 
   const forceCheck = async () => {
     try {
-      await fetch(HEALTH_URL, { signal: AbortSignal.timeout(3000) })
+      const res = await fetch(HEALTH_URL, { signal: AbortSignal.timeout(3000) })
+      if (!res.ok) throw new Error('backend unhealthy')
       const now = new Date().toISOString()
       setStatus({ isOnline: true, lastOnline: now, lastChecked: now })
     } catch {

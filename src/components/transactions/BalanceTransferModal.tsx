@@ -63,6 +63,7 @@ export function BalanceTransferModal({ open, onClose, onSaved, preselectedFromCa
     e.preventDefault()
     if (!form.fromCardId || !form.toCardId) { setError('Select both cards'); return }
     if (form.fromCardId === form.toCardId) { setError('Source and destination cards must be different'); return }
+    if (currencyMismatch) { setError('Transfers must be between same-currency cards — use Exchange for cross-currency moves'); return }
     if (!form.amount || form.amount <= 0) { setError('Enter a valid amount'); return }
     setSaving(true); setError(null)
     try {
@@ -157,7 +158,7 @@ export function BalanceTransferModal({ open, onClose, onSaved, preselectedFromCa
           <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
             <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
             <p className="text-xs text-amber-700">
-              These cards have different currencies ({fromCard!.currency} → {toCard!.currency}). The same amount will be credited to the destination card without conversion.
+              These cards have different currencies ({fromCard!.currency} → {toCard!.currency}). Cross-currency transfers aren't supported — use the Exchange feature instead.
             </p>
           </div>
         )}
@@ -232,7 +233,7 @@ export function BalanceTransferModal({ open, onClose, onSaved, preselectedFromCa
           </button>
           <button
             type="submit"
-            disabled={saving || !!sameCard}
+            disabled={saving || !!sameCard || !!currencyMismatch}
             className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
           >
             {saving && <Spinner className="w-4 h-4" />}

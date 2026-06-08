@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowRight, Wallet, CreditCard } from 'lucide-react'
+import { ArrowRight, Wallet, CreditCard, ArrowLeftRight } from 'lucide-react'
 import { Modal } from '../ui/Modal'
 import { Spinner } from '../ui/Spinner'
 import { AmountInput } from '../ui/AmountInput'
@@ -21,6 +21,10 @@ interface Props {
 type WalletKind = 'CASH' | 'CARD'
 
 const CURRENCIES: Currency[] = ['UZS', 'USD', 'EUR']
+
+// Relative unit value, only used to pick a friendly default rate direction so the user
+// types a number ≥ 1 (the stronger currency becomes the "1 X = …" unit).
+const CURRENCY_STRENGTH: Record<Currency, number> = { UZS: 0, USD: 2, EUR: 2 }
 
 const todayIso = () => new Date().toISOString().split('T')[0]
 
@@ -45,9 +49,11 @@ export function ExchangeModal({ open, onClose, onSaved, defaultCurrency }: Props
   const [toCurrency, setToCurrency] = useState<Currency>(defaultCurrency)
   const [toAmount, setToAmount] = useState(0)
 
-  // Rate field: "1 fromCurrency = X toCurrency" — derived from the two amounts, but
-  // the user can override it (in which case toAmount is recomputed from fromAmount).
+  // Cross-currency rate. `rateInverted` controls which way it reads so the user always
+  // types an easy ≥1 number: false → "1 fromCurrency = rate toCurrency";
+  // true → "1 toCurrency = rate fromCurrency" (e.g. "1 USD = 12 500 UZS" for a UZS→USD move).
   const [rateText, setRateText] = useState('')
+  const [rateInverted, setRateInverted] = useState(false)
 
   const [transactionDate, setTransactionDate] = useState(todayIso())
   const [description, setDescription] = useState('')
@@ -73,6 +79,7 @@ export function ExchangeModal({ open, onClose, onSaved, defaultCurrency }: Props
     setDescription('')
     setError(null)
     setRateText('')
+    setRateInverted(false)
     setFullyExchanged(true)
   }, [open, defaultCurrency])
 
@@ -92,40 +99,33 @@ export function ExchangeModal({ open, onClose, onSaved, defaultCurrency }: Props
     [cashBalances, toCurrency],
   )
 
-  // Derived rate from current amounts — used only when fullyExchanged is OFF (user
-  // is typing both amounts independently).
-  const derivedRate = useMemo(() => {
-    if (fromAmount <= 0 || toAmount <= 0) return null
-    return snap(toAmount / fromAmount)
-  }, [fromAmount, toAmount])
+  const crossCurrency = fromCurrency !== toCurrency
 
-  // When "Fully exchanged" is ON, auto-derive the To-amount:
-  //   same currency  → toAmount = fromAmount
-  //   different curr → toAmount = fromAmount × rate (rate from rateText)
-  // When OFF, only sync the rate text from the user-entered amounts.
+  // toCurrency received per 1 fromCurrency sent, from the typed rate + its direction.
+  const effectiveToPerFrom = useMemo(() => {
+    const r = Number(rateText.replace(',', '.'))
+    if (!Number.isFinite(r) || r <= 0) return null
+    return rateInverted ? 1 / r : r
+  }, [rateText, rateInverted])
+
+  // Default the rate direction to the stronger currency whenever the pair changes, so the
+  // user types a ≥1 number rather than a tiny fraction.
   useEffect(() => {
-    if (fullyExchanged) {
-      if (fromCurrency === toCurrency) {
-        setToAmount(fromAmount)
-      } else {
-        const rate = Number(rateText.replace(',', '.'))
-        if (Number.isFinite(rate) && rate > 0) {
-          setToAmount(snap(fromAmount * rate))
-        }
-      }
-    } else if (derivedRate != null) {
-      setRateText(String(derivedRate))
+    if (crossCurrency) {
+      setRateInverted(CURRENCY_STRENGTH[toCurrency] > CURRENCY_STRENGTH[fromCurrency])
     }
-  }, [fullyExchanged, fromCurrency, toCurrency, fromAmount, rateText, derivedRate])
+  }, [fromCurrency, toCurrency, crossCurrency])
 
-  const applyRate = (raw: string) => {
-    setRateText(raw)
-    const n = Number(raw.replace(',', '.'))
-    // When the user types a rate, recompute the to-amount from it (regardless of mode).
-    if (Number.isFinite(n) && n > 0 && fromAmount > 0) {
-      setToAmount(snap(fromAmount * n))
+  // Derive the received amount:
+  //   same currency  → received = sent (when "fully exchanged" is on)
+  //   cross currency → received = sent × rate (the rate always drives it)
+  useEffect(() => {
+    if (!crossCurrency) {
+      if (fullyExchanged) setToAmount(fromAmount)
+      return
     }
-  }
+    if (effectiveToPerFrom != null) setToAmount(snap(fromAmount * effectiveToPerFrom))
+  }, [crossCurrency, fullyExchanged, fromAmount, effectiveToPerFrom])
 
   const sameSide = fromKind === 'CARD' && toKind === 'CARD' && fromCardId && fromCardId === toCardId
   const samePureCashSameCurrency =
@@ -200,50 +200,59 @@ export function ExchangeModal({ open, onClose, onSaved, defaultCurrency }: Props
             onAmount={setToAmount}
             cashBalance={toCashBalance}
             color="emerald"
-            hideAmount={fullyExchanged}
+            hideAmount={crossCurrency ? true : fullyExchanged}
           />
         </div>
 
-        {/* Fully-exchanged toggle — when ON, the To-amount is derived (no second
-            amount field to fill). For cross-currency the user only needs to type the
-            FX rate. */}
-        <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={fullyExchanged}
-            onChange={e => setFullyExchanged(e.target.checked)}
-            className="w-4 h-4 rounded text-indigo-600"
-          />
-          <span>
-            Fully exchanged
-            <span className="ml-1 text-xs text-slate-400">
-              ({fromCurrency === toCurrency
-                ? `received = sent`
-                : `received = sent × rate`})
+        {/* Fully-exchanged toggle — same-currency only (received = sent, no second field).
+            Cross-currency always derives the received amount from the rate below. */}
+        {!crossCurrency && (
+          <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={fullyExchanged}
+              onChange={e => setFullyExchanged(e.target.checked)}
+              className="w-4 h-4 rounded text-indigo-600"
+            />
+            <span>
+              Fully exchanged
+              <span className="ml-1 text-xs text-slate-400">(received = sent)</span>
             </span>
-          </span>
-        </label>
+          </label>
+        )}
 
-        {/* Rate row — only meaningful when currencies differ. */}
-        {fromCurrency !== toCurrency && (
-          <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3 items-end px-3 py-2.5 bg-amber-50 border border-amber-100 rounded-xl">
-            <div>
-              <label className="block text-[11px] font-medium text-amber-700 mb-1">
-                Exchange rate (1 {fromCurrency} → ? {toCurrency})
-              </label>
+        {/* Rate row — cross-currency only. Entered in the stronger-currency direction so
+            it's always an easy ≥1 number; the Flip button swaps the direction. */}
+        {crossCurrency && (
+          <div className="px-3 py-2.5 bg-amber-50 border border-amber-100 rounded-xl space-y-2">
+            <div className="flex items-center">
+              <label className="text-[11px] font-medium text-amber-700 uppercase tracking-wide">Exchange rate</label>
+              <button type="button" onClick={() => setRateInverted(v => !v)}
+                className="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 hover:text-amber-900">
+                <ArrowLeftRight className="w-3 h-3" /> Flip
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-amber-800 whitespace-nowrap">
+                1 {rateInverted ? toCurrency : fromCurrency} =
+              </span>
               <input
                 type="text" inputMode="decimal"
                 value={rateText}
-                onChange={e => applyRate(e.target.value)}
-                placeholder="e.g. 0.000083"
-                className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-300"
+                onChange={e => setRateText(e.target.value)}
+                placeholder="e.g. 12 500"
+                className="flex-1 min-w-0 border border-amber-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-300"
               />
+              <span className="text-sm text-amber-800 whitespace-nowrap">
+                {rateInverted ? fromCurrency : toCurrency}
+              </span>
             </div>
-            <div className="text-xs text-amber-700 sm:pb-2">
-              {fromAmount > 0 && toAmount > 0
-                ? <>1 {toCurrency} ≈ {formatCurrency(snap(fromAmount / toAmount), fromCurrency)}</>
-                : <>Adjust either amount or the rate.</>}
-            </div>
+            <p className="text-xs text-amber-700">
+              {effectiveToPerFrom != null && fromAmount > 0
+                ? <>Send {formatCurrency(fromAmount, fromCurrency)} → receive{' '}
+                    <span className="font-semibold">{formatCurrency(snap(fromAmount * effectiveToPerFrom), toCurrency)}</span></>
+                : <>Type the rate as an easy number — tap <span className="font-medium">Flip</span> if it should read the other way.</>}
+            </p>
           </div>
         )}
 

@@ -100,6 +100,21 @@ export function PaySubscriptionModal({ open, onClose, onSaved, subscription }: P
     } finally { setSaving(false) }
   }
 
+  const markAlreadyPaid = async () => {
+    if (!subscription) return
+    if (amount <= 0) { setError('Amount must be greater than 0'); return }
+    setSaving(true); setError(null)
+    try {
+      await financeApi.markPaid({
+        kind: 'SUBSCRIPTION', refId: subscription.id,
+        amount, currency, month: paymentDate.slice(0, 7),
+      })
+      onSaved(); onClose()
+    } catch (err: unknown) {
+      setError(extractErrorMessage(err))
+    } finally { setSaving(false) }
+  }
+
   if (!subscription) return null
 
   return (
@@ -241,6 +256,11 @@ export function PaySubscriptionModal({ open, onClose, onSaved, subscription }: P
           <button type="button" onClick={onClose}
             className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50">
             Cancel
+          </button>
+          <button type="button" onClick={markAlreadyPaid} disabled={saving}
+            title="Mark this month covered without recording a transaction"
+            className="flex-1 py-2.5 rounded-xl border border-emerald-200 text-emerald-700 text-sm font-semibold hover:bg-emerald-50 disabled:opacity-60">
+            Already paid
           </button>
           <button type="submit" disabled={saving}
             className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-60 flex items-center justify-center gap-2">

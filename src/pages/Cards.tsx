@@ -1,10 +1,10 @@
 import { useState } from 'react'
-import { Plus, Pencil, Trash2, Eye, EyeOff, CreditCard, Wallet, ListPlus, ArrowUpRight, ArrowDownRight, X, ArrowLeftRight } from 'lucide-react'
+import { Plus, Pencil, Trash2, Eye, EyeOff, CreditCard, Wallet, ArrowUpRight, ArrowDownRight, X, ArrowLeftRight, Repeat } from 'lucide-react'
 import { format } from 'date-fns'
 import { Modal } from '../components/ui/Modal'
 import { Spinner } from '../components/ui/Spinner'
 import { BalanceTransferModal } from '../components/transactions/BalanceTransferModal'
-import { BulkTransactionModal } from '../components/transactions/BulkTransactionModal'
+import { ExchangeModal } from '../components/transactions/ExchangeModal'
 import { TransactionDetailModal } from '../components/transactions/TransactionDetailModal'
 import { TransactionModal } from '../components/transactions/TransactionModal'
 import { useApi } from '../hooks/useApi'
@@ -99,7 +99,8 @@ export function Cards() {
   const [revealedNumber, setRevealedNumber] = useState<string | null>(null)
   const [revealing, setRevealing] = useState(false)
   const [revealError, setRevealError] = useState<string | null>(null)
-  const [bulkCard, setBulkCard] = useState<CardResponse | null>(null)
+  const [addCard, setAddCard] = useState<CardResponse | null>(null)
+  const [exchangeOpen, setExchangeOpen] = useState(false)
   const [transferOpen, setTransferOpen] = useState(false)
   const [transferFromCard, setTransferFromCard] = useState<CardResponse | null>(null)
   const [txCard, setTxCard] = useState<CardResponse | null>(null) // card whose transactions are shown
@@ -225,6 +226,9 @@ export function Cards() {
           <button onClick={() => { setTransferFromCard(null); setTransferOpen(true) }} className="flex items-center gap-2 border border-indigo-200 text-indigo-600 hover:bg-indigo-50 px-4 py-2 rounded-xl text-sm font-semibold transition-colors">
             <ArrowLeftRight className="w-4 h-4" /> Transfer
           </button>
+          <button onClick={() => setExchangeOpen(true)} className="flex items-center gap-2 border border-amber-200 text-amber-700 hover:bg-amber-50 px-4 py-2 rounded-xl text-sm font-semibold transition-colors">
+            <Repeat className="w-4 h-4" /> Exchange
+          </button>
           <button onClick={openNew} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors shadow-sm">
             <Plus className="w-4 h-4" /> Add Card
           </button>
@@ -293,9 +297,9 @@ export function Cards() {
                   className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-white text-xs font-medium transition-colors">
                   <CreditCard className="w-3.5 h-3.5" /> View Transactions
                 </button>
-                <button onClick={() => setBulkCard(card)}
+                <button onClick={() => setAddCard(card)}
                   className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium transition-colors">
-                  <ListPlus className="w-3.5 h-3.5" /> Add
+                  <Plus className="w-3.5 h-3.5" /> Add
                 </button>
                 <button onClick={() => { setTransferFromCard(card); setTransferOpen(true) }}
                   className="w-9 h-9 flex items-center justify-center rounded-xl bg-slate-100 hover:bg-indigo-100 text-slate-600 hover:text-indigo-600 transition-colors" title="Transfer balance">
@@ -439,10 +443,15 @@ export function Cards() {
         preselectedFromCardId={transferFromCard?.id}
       />
 
-      {/* Bulk Transaction Modal */}
-      <BulkTransactionModal open={!!bulkCard} onClose={() => setBulkCard(null)}
-        onSaved={() => { cards.refetch(); setBulkCard(null); if (txCard?.id === bulkCard?.id) cardTxs.refetch() }}
-        preselectedCardId={bulkCard?.id} defaultCurrency={bulkCard?.currency ?? 'UZS'} />
+      {/* Quick add a single transaction for a card — preselects that card */}
+      <TransactionModal open={!!addCard} onClose={() => setAddCard(null)}
+        onSaved={() => { cards.refetch(); setAddCard(null); if (txCard) cardTxs.refetch() }}
+        transaction={null} defaultCurrency={addCard?.currency ?? 'UZS'} preselectCardId={addCard?.id} />
+
+      {/* Exchange between wallets (cash ↔ card, any currencies) */}
+      <ExchangeModal open={exchangeOpen} onClose={() => setExchangeOpen(false)}
+        onSaved={() => { cards.refetch(); cashBalances.refetch(); setExchangeOpen(false); if (txCard) cardTxs.refetch(); if (txCash) cashTxs.refetch() }}
+        defaultCurrency={cards.data?.[0]?.currency ?? 'UZS'} />
 
       {/* Card Transactions Panel — shows only the CARD PORTION per row so split
           payments contribute the amount that actually moved on this card. */}

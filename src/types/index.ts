@@ -2,7 +2,7 @@ export type TransactionType = 'INCOME' | 'EXPENSE'
 export type TransactionSubType =
   | 'REGULAR_INCOME' | 'LOAN_RECEIVED' | 'LOAN_RETURNED_TO_ME'
   | 'REGULAR_EXPENSE' | 'LOAN_GIVEN' | 'LOAN_REPAYMENT'
-  | 'BANK_LOAN_PAYMENT' | 'INVESTMENT' | 'DONATION'
+  | 'BANK_LOAN_PAYMENT' | 'INVESTMENT' | 'STOCK_PURCHASE' | 'DONATION'
   | 'EMERGENCY_CONTRIBUTION'
   | 'TRANSFER_OUT' | 'TRANSFER_IN'
   | 'EXCHANGE_OUT' | 'EXCHANGE_IN'
@@ -12,7 +12,7 @@ export type CategoryKind = 'GENERIC' | 'FOOD' | 'TRANSPORT'
 export type CardType = 'UZCARD' | 'HUMO' | 'VISA' | 'CASH'
 export type RecordStatus = 'PENDING' | 'PARTIALLY_PAID' | 'PAID' | 'OVERDUE'
 export type BankLoanStatus = 'ACTIVE' | 'PAID_OFF' | 'DEFAULTED'
-export type InvestmentType = 'STOCKS' | 'CRYPTO' | 'REAL_ESTATE' | 'BONDS' | 'MUTUAL_FUND' | 'GOLD' | 'OTHER'
+export type InvestmentType = 'REAL_ESTATE' | 'BONDS' | 'MUTUAL_FUND' | 'GOLD' | 'OTHER'
 
 export interface Category {
   id: number
@@ -108,6 +108,10 @@ export interface DashboardSummary {
   netBalance: number
   transactionCount: number
   availableBalance: number
+  /** Wallet money you can spend right now (= availableBalance). */
+  spendableBalance: number
+  /** spendable (all currencies) + every investment/savings current value, in this currency. */
+  netWorth: number
 }
 
 export interface MonthlyData {
@@ -248,6 +252,7 @@ export interface LoanTakenResponse {
   status: RecordStatus
   description: string | null
   createdAt: string
+  monthlyPayment: number | null
 }
 
 export interface LoanTakenRequest {
@@ -343,6 +348,7 @@ export interface DonationRequest {
   description?: string
   anonymous?: boolean
   cardId?: number
+  categoryId?: number
 }
 
 export interface InvestmentResponse {
@@ -354,6 +360,14 @@ export interface InvestmentResponse {
   purchaseDate: string
   broker: string | null
   description: string | null
+  emergencyFund: boolean
+  /** True when this investment is a savings goal (tracked apart from the 4 mandatory buckets). */
+  savingsGoal: boolean
+  targetAmount: number | null
+  /** Current/market value — falls back to investedAmount when not explicitly set. */
+  currentValue: number | null
+  /** currentValue / targetAmount as a percentage; null when there is no target. */
+  progressPercent: number | null
   createdAt: string
 }
 
@@ -365,7 +379,25 @@ export interface InvestmentRequest {
   purchaseDate: string
   broker?: string
   description?: string
+  emergencyFund?: boolean
+  savingsGoal?: boolean
+  targetAmount?: number | null
+  currentValue?: number | null
   cardId?: number
+  categoryId?: number
+}
+
+export interface InvestmentContributeRequest {
+  amount: number
+  currency: Currency
+  date: string
+  cardId?: number
+  categoryId?: number
+  description?: string
+}
+
+export interface InvestmentValueRequest {
+  currentValue: number
 }
 
 export interface RepaymentRequest {
@@ -373,6 +405,29 @@ export interface RepaymentRequest {
   paymentDate: string
   cardId?: number
   categoryId?: number
+}
+
+// "Already paid" — mark an obligation satisfied for a month with NO transaction / money move.
+export type MarkPaidKind = 'SUBSCRIPTION' | 'BANK' | 'PERSONAL_LOAN' | 'DEBT' | 'BUCKET'
+
+export interface MarkPaidRequest {
+  kind: MarkPaidKind
+  refId?: number          // subscription / bank-loan / loan-taken / debt id (omit for BUCKET)
+  bucket?: Bucket         // only when kind === 'BUCKET'
+  month?: string          // YYYY-MM; defaults to current month server-side
+  amount: number
+  currency: Currency
+  note?: string
+}
+
+export interface MarkPaidResponse {
+  id: number
+  kind: MarkPaidKind
+  refId: number | null
+  bucket: Bucket | null
+  month: string
+  amount: number
+  currency: Currency
 }
 
 export interface OverviewIncomeResponse {
@@ -422,6 +477,7 @@ export interface EmergencyRequest {
   date: string
   description?: string
   cardId?: number
+  categoryId?: number
 }
 
 export interface ActionItem {
@@ -449,6 +505,9 @@ export interface OverviewTierResponse {
   income: number
   mandatorySubscriptions: number
   leftMoney: number
+  // "Left balance" = leftMoney − debtPayments (stable income − mandatory subscriptions − monthly
+  // debt charge). The bucket allocation percentages apply to THIS. The tier level uses leftMoney.
+  allocationBase: number
   debtPayments: number
   debtBreakdown: {
     bankLoans: number
@@ -461,7 +520,23 @@ export interface OverviewTierResponse {
   levelLabel: string
   fxRatesUsingDefaults: boolean
   missingStableIncome: boolean
+  // True when the viewed month is before the configured allocation tracking start month —
+  // guidance is paused (no payment asks) and the dashboard is greyed out.
+  beforeTrackingStart: boolean
+  trackingStartMonth: string | null
+  // True while any active mandatory subscription is unpaid this month — level / sub-level /
+  // action items / allocation are withheld until they're paid.
+  subscriptionsPending: boolean
+  pendingSubscriptions: PendingSubscription[]
   allocation: TierAllocation | null
+}
+
+export interface PendingSubscription {
+  id: number
+  name: string
+  currency: Currency
+  amount: number
+  paid: number
 }
 
 export interface SettingsResponse {
@@ -501,6 +576,7 @@ export interface AllocationLedgerMonth {
   subLevel: string | null
   stableIncome: number
   bonus: number
+  allocationBase: number
   selected: boolean
   lines: AllocationLedgerLine[]
 }
@@ -567,8 +643,11 @@ export interface AllocationLedgerResponse {
   startMonth: string
   selectedMonth: string
   missingStableIncome: boolean
+  beforeTrackingStart?: boolean
+  trackingStartMonth?: string | null
   stableIncome: number | null
   bonusThisMonth: number | null
+  allocationBase: number | null
   level: number | null
   subLevel: string | null
   dueThisMonth: number | null
@@ -611,4 +690,96 @@ export interface ExchangeRequest {
   toAmount: number
   transactionDate: string
   description?: string
+}
+
+// ── Monthly-envelope: month close + summary ───────────────────────────────
+export type WalletType = 'CARD' | 'CASH'
+
+/** The "earned / tagged / spent / left" envelope view for one month. */
+export interface MonthSummaryResponse {
+  month: string
+  currency: Currency
+  closed: boolean
+  startBalance: number
+  income: number
+  donation: number
+  emergency: number
+  investments: number
+  stocks: number
+  savings: number
+  taggedTotal: number
+  /** null until the month is closed. */
+  everydaySpend: number | null
+  totalSpent: number | null
+  leftover: number | null
+  fxRatesUsingDefaults: boolean
+}
+
+export interface MonthPreviewWallet {
+  walletType: WalletType
+  cardId: number | null
+  label: string
+  currency: Currency
+  /** Computed balance in this wallet's own currency. */
+  computedBalance: number
+}
+
+export interface MonthClosePreviewResponse {
+  month: string
+  currency: Currency
+  alreadyClosed: boolean
+  closeable: boolean
+  blockedReason: string | null
+  wallets: MonthPreviewWallet[]
+  startBalance: number
+  income: number
+  donation: number
+  emergency: number
+  investments: number
+  stocks: number
+  savings: number
+  taggedTotal: number
+  spendableNow: number
+  fxRatesUsingDefaults: boolean
+}
+
+export interface MonthCloseWalletEntry {
+  walletType: WalletType
+  cardId?: number | null
+  currency: Currency
+  enteredBalance: number
+}
+
+export interface MonthCloseRequest {
+  month: string
+  wallets: MonthCloseWalletEntry[]
+}
+
+export interface MonthCloseWalletResult {
+  walletType: WalletType
+  cardId: number | null
+  currency: Currency
+  computedBalance: number
+  enteredBalance: number
+  everydaySpend: number
+  adjustmentTxId: number | null
+}
+
+/** A committed, permanent month close. All money figures are the UZS snapshot (currency = UZS). */
+export interface MonthCloseResponse {
+  id: number
+  month: string
+  closedAt: string
+  currency: Currency
+  startBalance: number
+  income: number
+  donation: number
+  emergency: number
+  investments: number
+  stocks: number
+  savings: number
+  everydaySpend: number
+  totalSpent: number
+  leftover: number
+  wallets: MonthCloseWalletResult[]
 }

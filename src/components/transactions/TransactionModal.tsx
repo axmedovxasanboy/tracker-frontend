@@ -27,6 +27,8 @@ interface Props {
   onSaved: () => void
   transaction?: Transaction | null
   defaultCurrency: Currency
+  /** Pre-select this card for a NEW transaction (e.g. the per-card quick-add on the Cards page). */
+  preselectCardId?: number
 }
 
 const INCOME_SUB_TYPES: { value: TransactionSubType; label: string; hint: string }[] = [
@@ -67,7 +69,7 @@ function nextMonthStr() {
 }
 
 
-export function TransactionModal({ open, onClose, onSaved, transaction, defaultCurrency }: Props) {
+export function TransactionModal({ open, onClose, onSaved, transaction, defaultCurrency, preselectCardId }: Props) {
   const { showSuccess } = useToast()
   const [form, setForm] = useState<TransactionRequest>(defaultForm(defaultCurrency))
   const [rootCategories, setRootCategories] = useState<Category[]>([])
@@ -188,7 +190,7 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
       // is TRANSPORT-kind. Format: "From >>> To\n<user note>"
       const parsed = parseRoute(
         transaction.description,
-        transaction.category?.kind === 'TRANSPORT' || transaction.category?.parentId != null,
+        transaction.category?.kind === 'TRANSPORT',
       )
       const f: TransactionRequest = {
         type: transaction.type, amount: transaction.amount,
@@ -210,7 +212,8 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
       loadRoots(transaction.type === 'INCOME' ? 'INCOME' : 'EXPENSE', f.subType)
       if (rootId) loadSubs(rootId)
     } else {
-      setForm(defaultForm(defaultCurrency))
+      // New transaction — optionally pre-target a card (per-card quick-add on the Cards page).
+      setForm({ ...defaultForm(defaultCurrency), cardId: preselectCardId })
       setSelectedRootId(undefined); setSubCategories([])
       loadRoots('EXPENSE', 'REGULAR_EXPENSE')
     }
@@ -241,7 +244,7 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
     }
     setBankOptions([]); setShowBankPopover(false)
     return () => { if (suggestTimer.current) clearTimeout(suggestTimer.current) }
-  }, [open, transaction, defaultCurrency, loadRoots, loadSubs])
+  }, [open, transaction, defaultCurrency, preselectCardId, loadRoots, loadSubs])
 
   // Load bank suggestions for BANK_LOAN_PAYMENT sub-type.
   useEffect(() => {
@@ -849,7 +852,7 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
                 <label className="block text-xs font-medium text-slate-500 mb-1">Investment Type</label>
                 <select value={form.investmentType ?? 'OTHER'} onChange={e => set('investmentType', e.target.value as InvestmentType)}
                   className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300">
-                  {(['STOCKS','CRYPTO','REAL_ESTATE','BONDS','MUTUAL_FUND','GOLD','OTHER'] as InvestmentType[]).map(t => (
+                  {(['REAL_ESTATE','BONDS','MUTUAL_FUND','GOLD','OTHER'] as InvestmentType[]).map(t => (
                     <option key={t} value={t}>{t.replace('_',' ')}</option>
                   ))}
                 </select>

@@ -7,7 +7,9 @@ import type {
   MonthlyPaymentRequest, MonthlyPaymentResponse, MonthlyPaymentPayRequest,
   DonationRequest, DonationResponse,
   InvestmentRequest, InvestmentResponse,
+  InvestmentContributeRequest, InvestmentValueRequest,
   RepaymentRequest,
+  MarkPaidRequest, MarkPaidResponse,
   Transaction,
 } from '../types'
 
@@ -61,6 +63,13 @@ export const financeApi = {
   createInvestment: (d: InvestmentRequest) => apiClient.post<InvestmentResponse>(`${base}/investments`, d),
   updateInvestment: (id: number, d: InvestmentRequest) => apiClient.put<InvestmentResponse>(`${base}/investments/${id}`, d),
   deleteInvestment: (id: number) => apiClient.delete(`${base}/investments/${id}`),
+  // Savings-goal / investment contribute + growth + history.
+  contributeInvestment: (id: number, d: InvestmentContributeRequest) =>
+    apiClient.post<InvestmentResponse>(`${base}/investments/${id}/contribute`, d),
+  setInvestmentValue: (id: number, d: InvestmentValueRequest) =>
+    apiClient.post<InvestmentResponse>(`${base}/investments/${id}/value`, d),
+  getInvestmentContributions: (id: number) =>
+    apiClient.get<Transaction[]>(`${base}/investments/${id}/contributions`),
 
   // Repayments
   repayLoanTaken: (id: number, d: RepaymentRequest) =>
@@ -69,6 +78,10 @@ export const financeApi = {
     apiClient.post<DebtResponse>(`${base}/debts/${id}/repay`, d),
   markLoanGivenReturned: (id: number, d: RepaymentRequest) =>
     apiClient.post<LoanGivenResponse>(`${base}/loans-given/${id}/mark-returned`, d),
+
+  // "Already paid" — mark satisfied for the month with no transaction / money movement.
+  markPaid: (d: MarkPaidRequest) =>
+    apiClient.post<MarkPaidResponse>(`${base}/mark-paid`, d),
 
   // Payment history per loan/debt — newest first by transactionDate.
   getLoanTakenRepayments: (id: number) =>

@@ -62,6 +62,7 @@ export function Categories() {
   const openEdit = (c: Category) => {
     setForm({
       name: c.name, type: c.type, color: c.color, icon: c.icon,
+      kind: c.kind,
       applicableSubType: c.applicableSubType ?? undefined,
       parentId: c.parentId ?? undefined,
       descriptionLabel: c.descriptionLabel ?? undefined,

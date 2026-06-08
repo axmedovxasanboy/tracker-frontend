@@ -80,6 +80,21 @@ export function PayBankInstallmentModal({ open, onClose, onSaved, defaultMonth }
     } finally { setSaving(false) }
   }
 
+  const markAlreadyPaid = async () => {
+    if (!selected) { setError('Pick a bank loan to pay.'); return }
+    if (amount <= 0) { setError('Amount must be greater than 0.'); return }
+    setSaving(true); setError(null)
+    try {
+      await financeApi.markPaid({
+        kind: 'BANK', refId: selected.id,
+        amount, currency: selected.currency, month: date.slice(0, 7),
+      })
+      onSaved(); onClose()
+    } catch (err) {
+      setError(extractErrorMessage(err))
+    } finally { setSaving(false) }
+  }
+
   return (
     <Modal open={open} onClose={onClose} title="Pay bank installment" maxWidth="max-w-lg">
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -153,6 +168,11 @@ export function PayBankInstallmentModal({ open, onClose, onSaved, defaultMonth }
               <button type="button" onClick={onClose}
                 className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50">
                 Cancel
+              </button>
+              <button type="button" onClick={markAlreadyPaid} disabled={saving || !selected}
+                title="Count this installment as met without recording a transaction"
+                className="flex-1 py-2.5 rounded-xl border border-emerald-200 text-emerald-700 text-sm font-semibold hover:bg-emerald-50 disabled:opacity-60">
+                Already paid
               </button>
               <button type="submit" disabled={saving || !selected}
                 className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-60 flex items-center justify-center gap-2">

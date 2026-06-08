@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, ArrowLeftRight, Tag, Wifi, WifiOff,
-  CreditCard, BarChart3, Settings as SettingsIcon, Gauge, LogOut, Terminal,
+  CreditCard, BarChart3, Settings as SettingsIcon, Gauge, LogOut, Terminal, CalendarCheck,
 } from 'lucide-react'
 import { useBackendStatus } from '../../context/BackendStatusContext'
 import { useAuth } from '../../context/AuthContext'
@@ -9,6 +9,7 @@ import { useAuth } from '../../context/AuthContext'
 const mainNav = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/overview', label: 'Overview', icon: Gauge },
+  { to: '/months', label: 'Months', icon: CalendarCheck },
   { to: '/transactions', label: 'Transactions', icon: ArrowLeftRight },
   { to: '/cards', label: 'Cards', icon: CreditCard },
 ]

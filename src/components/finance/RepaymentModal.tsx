@@ -89,6 +89,26 @@ export function RepaymentModal({ open, onClose, onSaved, target }: Props) {
     } finally { setSaving(false) }
   }
 
+  // "Already paid" — only for money you owe (borrowed loans + debts), not a loan returned TO you.
+  const canMarkPaid = target?.kind === 'loan-taken' || target?.kind === 'debt'
+  const markAlreadyPaid = async () => {
+    if (!target || !canMarkPaid) return
+    if (amount <= 0) { setError('Amount must be greater than 0'); return }
+    if (amount > info.maxAmount) { setError(`Cannot exceed remaining: ${formatCurrency(info.maxAmount, info.currency)}`); return }
+    setSaving(true); setError(null)
+    try {
+      await financeApi.markPaid({
+        kind: target.kind === 'loan-taken' ? 'PERSONAL_LOAN' : 'DEBT',
+        refId: target.record.id,
+        amount, currency: info.currency as Currency,
+        month: paymentDate.slice(0, 7),
+      })
+      onSaved(); onClose()
+    } catch (err: unknown) {
+      setError(extractErrorMessage(err))
+    } finally { setSaving(false) }
+  }
+
   const icon = target?.kind === 'loan-given'
     ? <ArrowUpCircle className="w-5 h-5 text-emerald-500" />
     : <ArrowDownCircle className="w-5 h-5 text-rose-500" />
@@ -186,6 +206,13 @@ export function RepaymentModal({ open, onClose, onSaved, target }: Props) {
             className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50">
             Cancel
           </button>
+          {canMarkPaid && (
+            <button type="button" onClick={markAlreadyPaid} disabled={saving}
+              title="Reduce the balance without recording a transaction"
+              className="flex-1 py-2.5 rounded-xl border border-emerald-200 text-emerald-700 text-sm font-semibold hover:bg-emerald-50 disabled:opacity-60">
+              Already paid
+            </button>
+          )}
           <button type="submit" disabled={saving}
             className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-60 flex items-center justify-center gap-2">
             {saving && <Spinner className="w-4 h-4" />}

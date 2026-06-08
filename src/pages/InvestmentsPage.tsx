@@ -1,12 +1,14 @@
 import { useState } from 'react'
 import {
   Plus, Pencil, Trash2, AlertCircle, X, ArrowDownRight,
-  Building2,
+  Building2, PiggyBank, Target, TrendingUp, History,
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { Modal } from '../components/ui/Modal'
 import { Spinner } from '../components/ui/Spinner'
 import { AmountInput } from '../components/ui/AmountInput'
+import { ContributeInvestmentModal } from '../components/finance/ContributeInvestmentModal'
+import { UpdateValueModal } from '../components/finance/UpdateValueModal'
 import { useApi } from '../hooks/useApi'
 import { useToast } from '../context/ToastContext'
 import { useConfirm } from '../context/ConfirmContext'
@@ -15,12 +17,12 @@ import { transactionsApi } from '../api/transactions'
 import { formatCurrency, snap } from '../utils/format'
 import { extractErrorMessage } from '../api/client'
 import type {
-  Currency, InvestmentRequest, InvestmentType, TransactionFilters, Transaction,
+  Currency, InvestmentRequest, InvestmentResponse, InvestmentType, TransactionFilters, Transaction,
 } from '../types'
 
 const INPUT = 'w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300'
 
-const INVESTMENT_TYPES: InvestmentType[] = ['STOCKS', 'CRYPTO', 'REAL_ESTATE', 'BONDS', 'MUTUAL_FUND', 'GOLD', 'OTHER']
+const INVESTMENT_TYPES: InvestmentType[] = ['REAL_ESTATE', 'BONDS', 'MUTUAL_FUND', 'GOLD', 'OTHER']
 
 function today() {
   return new Date().toISOString().split('T')[0]
@@ -37,8 +39,13 @@ export function InvestmentsPage() {
   const [deleting, setDeleting] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState<InvestmentRequest>({
-    name: '', type: 'STOCKS', investedAmount: 0, currency: 'USD', purchaseDate: today(),
+    name: '', type: 'OTHER', investedAmount: 0, currency: 'USD', purchaseDate: today(),
+    emergencyFund: false, savingsGoal: false, targetAmount: null, currentValue: null,
   })
+
+  // Savings-goal action modals
+  const [contributeFor, setContributeFor] = useState<InvestmentResponse | null>(null)
+  const [valueFor, setValueFor] = useState<InvestmentResponse | null>(null)
 
   // Transaction history for a selected investment
   const [selectedId, setSelectedId] = useState<number | null>(null)
@@ -54,9 +61,12 @@ export function InvestmentsPage() {
     [selectedId, txPage],
   )
 
-  const openAdd = () => {
+  const openAdd = (asGoal = false) => {
     setEditId(null)
-    setForm({ name: '', type: 'STOCKS', investedAmount: 0, currency: 'USD', purchaseDate: today() })
+    setForm({
+      name: '', type: 'OTHER', investedAmount: 0, currency: 'USD', purchaseDate: today(),
+      emergencyFund: false, savingsGoal: asGoal, targetAmount: null, currentValue: null,
+    })
     setModalOpen(true)
   }
 
@@ -68,6 +78,8 @@ export function InvestmentsPage() {
       name: i.name, type: i.type, investedAmount: i.investedAmount,
       currency: i.currency, purchaseDate: i.purchaseDate,
       broker: i.broker ?? undefined, description: i.description ?? undefined,
+      emergencyFund: i.emergencyFund, savingsGoal: i.savingsGoal,
+      targetAmount: i.targetAmount, currentValue: i.currentValue,
     })
     setModalOpen(true)
   }
@@ -77,9 +89,14 @@ export function InvestmentsPage() {
   const save = async (e: React.FormEvent) => {
     e.preventDefault()
     setSaving(true)
+    // Target/current-value are goal-only — never persist stale values for a plain investment
+    // (e.g. typed as a goal, then unchecked, or a goal demoted on edit).
+    const payload: InvestmentRequest = form.savingsGoal
+      ? form
+      : { ...form, targetAmount: null, currentValue: null }
     try {
-      if (editId) await financeApi.updateInvestment(editId, form)
-      else await financeApi.createInvestment(form)
+      if (editId) await financeApi.updateInvestment(editId, payload)
+      else await financeApi.createInvestment(payload)
       closeModal()
       investments.refetch()
       showSuccess(editId ? 'Investment updated' : 'Investment created')
@@ -101,11 +118,15 @@ export function InvestmentsPage() {
     } finally { setDeleting(null) }
   }
 
-  const list = investments.data ?? []
+  const all = investments.data ?? []
+  const goals = all.filter(i => i.savingsGoal)
+  const list = all.filter(i => !i.savingsGoal)
   const totalsByCurrency = list.reduce<Record<string, number>>((acc, i) => {
     acc[i.currency] = (acc[i.currency] ?? 0) + i.investedAmount
     return acc
   }, {})
+
+  const onGoalSaved = () => { investments.refetch(); txs.refetch(); showSuccess('Saved') }
 
   return (
     <div className="space-y-5">
@@ -123,11 +144,82 @@ export function InvestmentsPage() {
             </p>
           </div>
         </div>
-        <button onClick={openAdd}
-          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-sm">
-          <Plus className="w-4 h-4" /> Add Investment
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => openAdd(true)}
+            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-sm">
+            <Target className="w-4 h-4" /> New Goal
+          </button>
+          <button onClick={() => openAdd(false)}
+            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-sm">
+            <Plus className="w-4 h-4" /> Add Investment
+          </button>
+        </div>
       </div>
+
+      {/* Savings goals */}
+      {goals.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <PiggyBank className="w-4 h-4 text-emerald-600" />
+            <h4 className="text-sm font-semibold text-slate-700">Savings Goals</h4>
+            <span className="text-xs text-slate-400">· optional, tracked apart from the 4 buckets</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+            {goals.map(g => {
+              const value = g.currentValue ?? g.investedAmount
+              const pct = g.progressPercent != null ? Math.min(100, g.progressPercent) : null
+              const complete = pct != null && pct >= 100
+              return (
+                <div key={g.id} className="rounded-xl border border-slate-100 bg-white shadow-sm p-4 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-slate-800 truncate">{g.name}</p>
+                      <p className="text-[11px] text-slate-400">
+                        {formatCurrency(value, g.currency)}
+                        {g.targetAmount != null && <> / {formatCurrency(g.targetAmount, g.currency)}</>}
+                      </p>
+                    </div>
+                    <div className="flex gap-1 shrink-0">
+                      <button title="History"
+                        onClick={() => { setSelectedId(selectedId === g.id ? null : g.id); setTxPage(0) }}
+                        className={`w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-100 ${selectedId === g.id ? 'text-indigo-600 bg-indigo-50' : 'text-slate-400 hover:text-slate-600'}`}>
+                        <History className="w-3.5 h-3.5" />
+                      </button>
+                      <button title="Edit" onClick={() => openEdit(g.id)}
+                        className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-indigo-50 text-slate-400 hover:text-indigo-600">
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button title="Delete" onClick={() => del(g.id)} disabled={deleting === g.id}
+                        className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-rose-50 text-slate-400 hover:text-rose-600 disabled:opacity-50">
+                        {deleting === g.id ? <Spinner className="w-3.5 h-3.5" /> : <Trash2 className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+                  {pct != null && (
+                    <div>
+                      <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full transition-all ${complete ? 'bg-emerald-500' : 'bg-emerald-400'}`}
+                          style={{ width: `${pct}%` }} />
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-1">{pct.toFixed(0)}% of goal</p>
+                    </div>
+                  )}
+                  <div className="flex gap-2 pt-1">
+                    <button onClick={() => setContributeFor(g)}
+                      className="flex-1 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-medium hover:bg-emerald-100 flex items-center justify-center gap-1">
+                      <Plus className="w-3 h-3" /> Contribute
+                    </button>
+                    <button onClick={() => setValueFor(g)}
+                      className="flex-1 py-1.5 rounded-lg bg-slate-50 text-slate-600 text-xs font-medium hover:bg-slate-100 flex items-center justify-center gap-1">
+                      <TrendingUp className="w-3 h-3" /> Update value
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Table */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
@@ -154,6 +246,11 @@ export function InvestmentsPage() {
                     <span className="bg-cyan-100 text-cyan-700 px-2 py-0.5 rounded-lg text-xs font-medium">
                       {i.type.replace('_', ' ')}
                     </span>
+                    {i.emergencyFund && (
+                      <span className="ml-1 bg-rose-100 text-rose-700 px-2 py-0.5 rounded-lg text-xs font-medium">
+                        Emergency
+                      </span>
+                    )}
                   </td>
                   <td className="px-5 py-3.5 font-semibold text-slate-700">{formatCurrency(i.investedAmount, i.currency)}</td>
                   <td className="px-5 py-3.5 text-slate-500 text-xs">{format(new Date(i.purchaseDate), 'dd-MMM-yyyy')}</td>
@@ -300,6 +397,38 @@ export function InvestmentsPage() {
               onChange={e => setForm(p => ({ ...p, description: e.target.value }))}
               className={`${INPUT} resize-none`} />
           </Field>
+          <label className="flex items-start gap-2 cursor-pointer p-3 rounded-xl bg-rose-50 border border-rose-100">
+            <input type="checkbox" checked={form.emergencyFund ?? false}
+              onChange={e => setForm(p => ({ ...p, emergencyFund: e.target.checked, savingsGoal: e.target.checked ? false : p.savingsGoal }))}
+              className="w-4 h-4 mt-0.5 rounded text-rose-600" />
+            <span className="text-xs text-rose-900 leading-relaxed">
+              This is my <span className="font-semibold">emergency fund</span>. It counts toward the
+              Overview <span className="font-semibold">Emergency</span> allocation bucket instead of Investments.
+            </span>
+          </label>
+          <label className="flex items-start gap-2 cursor-pointer p-3 rounded-xl bg-emerald-50 border border-emerald-100">
+            <input type="checkbox" checked={form.savingsGoal ?? false}
+              onChange={e => setForm(p => ({ ...p, savingsGoal: e.target.checked, emergencyFund: e.target.checked ? false : p.emergencyFund }))}
+              className="w-4 h-4 mt-0.5 rounded text-emerald-600" />
+            <span className="text-xs text-emerald-900 leading-relaxed">
+              This is a <span className="font-semibold">savings goal</span> (home, iPhone, gold, prize…). It's
+              optional and tracked apart from the 4 mandatory buckets.
+            </span>
+          </label>
+          {form.savingsGoal && (
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Target amount">
+                <AmountInput value={form.targetAmount ?? 0} currency={form.currency}
+                  onChange={v => setForm(p => ({ ...p, targetAmount: v > 0 ? v : null }))}
+                  className={INPUT} suffix={form.currency} />
+              </Field>
+              <Field label="Current value">
+                <AmountInput value={form.currentValue ?? 0} currency={form.currency}
+                  onChange={v => setForm(p => ({ ...p, currentValue: v > 0 ? v : null }))}
+                  className={INPUT} suffix={form.currency} />
+              </Field>
+            </div>
+          )}
           <div className="flex gap-3 pt-1">
             <button type="button" onClick={closeModal}
               className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50">
@@ -313,6 +442,11 @@ export function InvestmentsPage() {
           </div>
         </form>
       </Modal>
+
+      <ContributeInvestmentModal open={!!contributeFor} onClose={() => setContributeFor(null)}
+        onSaved={onGoalSaved} investment={contributeFor} />
+      <UpdateValueModal open={!!valueFor} onClose={() => setValueFor(null)}
+        onSaved={onGoalSaved} investment={valueFor} />
     </div>
   )
 }

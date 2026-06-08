@@ -10,11 +10,6 @@ import type {
   TransactionType,
 } from '../types'
 
-export interface BulkTransactionRequest {
-  cardId?: number
-  transactions: TransactionRequest[]
-}
-
 export const transactionsApi = {
   getAll: (filters: TransactionFilters) => {
     const params: Record<string, unknown> = {
@@ -35,9 +30,6 @@ export const transactionsApi = {
     if (filters.excludeTransfers) params.excludeTransfers = true
     return apiClient.get<PageResponse<Transaction>>('/transactions', { params })
   },
-
-  createBulk: (data: BulkTransactionRequest) =>
-    apiClient.post<Transaction[]>('/transactions/bulk', data),
 
   getById: (id: number) =>
     apiClient.get<Transaction>(`/transactions/${id}`),

@@ -25,6 +25,7 @@ type Pickable = {
   person: string
   total: number
   remaining: number
+  monthly: number | null
   currency: Currency
 }
 
@@ -33,6 +34,17 @@ function today() {
 }
 
 const PAYDOWN_RATE = 0.34
+
+// Both money borrowed from a person (loan-taken) and debts are "debt" → paid at 34% of the
+// ORIGINAL total, capped at the residual (final month). Only bank loans have a monthly installment
+// (paid via PayBankInstallmentModal, not this one).
+function suggestedFor(p: Pickable): number {
+  return snap(Math.min(p.total * PAYDOWN_RATE, p.remaining))
+}
+
+function suggestLabel(_p: Pickable): string {
+  return '34% of total'
+}
 
 export function PayPersonalLoanModal({ open, onClose, onSaved, defaultMonth }: Props) {
   const loansTaken = useApi(() => financeApi.getLoansTaken(), [])
@@ -65,6 +77,7 @@ export function PayPersonalLoanModal({ open, onClose, onSaved, defaultMonth }: P
         person: l.lenderName,
         total: l.totalAmount,
         remaining: l.remainingAmount,
+        monthly: l.monthlyPayment,
         currency: l.currency,
       }))
       .filter(p => p.remaining > 0),
@@ -75,6 +88,7 @@ export function PayPersonalLoanModal({ open, onClose, onSaved, defaultMonth }: P
         person: d.creditorName,
         total: d.totalAmount,
         remaining: d.remainingAmount,
+        monthly: null,
         currency: d.currency,
       }))
       .filter(p => p.remaining > 0),
@@ -84,7 +98,7 @@ export function PayPersonalLoanModal({ open, onClose, onSaved, defaultMonth }: P
 
   const pick = (p: Pickable) => {
     setSelected(p)
-    setAmount(snap(p.remaining * PAYDOWN_RATE))
+    setAmount(suggestedFor(p))
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -109,11 +123,30 @@ export function PayPersonalLoanModal({ open, onClose, onSaved, defaultMonth }: P
     } finally { setSaving(false) }
   }
 
+  const markAlreadyPaid = async () => {
+    if (!selected) { setError('Pick a loan to pay.'); return }
+    if (amount <= 0) { setError('Amount must be greater than 0.'); return }
+    if (amount > selected.remaining) {
+      setError(`Amount cannot exceed remaining (${formatCurrency(selected.remaining, selected.currency)}).`)
+      return
+    }
+    setSaving(true); setError(null)
+    try {
+      await financeApi.markPaid({
+        kind: selected.kind === 'loan-taken' ? 'PERSONAL_LOAN' : 'DEBT',
+        refId: selected.id, amount, currency: selected.currency, month: date.slice(0, 7),
+      })
+      onSaved(); onClose()
+    } catch (err) {
+      setError(extractErrorMessage(err))
+    } finally { setSaving(false) }
+  }
+
   const loading = loansTaken.loading || debts.loading
   const hasData = (loansTaken.data ?? []).length + (debts.data ?? []).length > 0
 
   return (
-    <Modal open={open} onClose={onClose} title="Pay personal loans (34% recommended)" maxWidth="max-w-lg">
+    <Modal open={open} onClose={onClose} title="Pay your debts (34% of total)" maxWidth="max-w-lg">
       <form onSubmit={handleSubmit} className="space-y-4">
         {loading && !hasData ? (
           <div className="h-32 flex items-center justify-center"><Spinner /></div>
@@ -125,12 +158,12 @@ export function PayPersonalLoanModal({ open, onClose, onSaved, defaultMonth }: P
           <>
             <div className="space-y-2">
               <label className="text-xs font-medium text-slate-500">
-                Pick a loan — amount pre-fills with 34% of remaining
+                Pick a debt — the amount pre-fills with 34% of its total (capped at remaining)
               </label>
               <div className="space-y-1.5 max-h-64 overflow-y-auto">
                 {list.map(p => {
                   const isSel = selected?.kind === p.kind && selected.id === p.id
-                  const suggested = snap(p.remaining * PAYDOWN_RATE)
+                  const suggested = suggestedFor(p)
                   return (
                     <button key={`${p.kind}-${p.id}`} type="button" onClick={() => pick(p)}
                       className={`w-full flex items-center gap-3 p-3 rounded-xl border text-left transition-colors ${
@@ -151,7 +184,7 @@ export function PayPersonalLoanModal({ open, onClose, onSaved, defaultMonth }: P
                         </p>
                       </div>
                       <div className="text-right whitespace-nowrap">
-                        <p className="text-[11px] text-slate-400">Suggested 34%</p>
+                        <p className="text-[11px] text-slate-400">{suggestLabel(p)}</p>
                         <p className="text-sm font-bold text-indigo-700">{formatCurrency(suggested, p.currency)}</p>
                       </div>
                     </button>
@@ -167,7 +200,7 @@ export function PayPersonalLoanModal({ open, onClose, onSaved, defaultMonth }: P
                     onChange={v => setAmount(v)}
                     className={INPUT} suffix={selected.currency} />
                   <p className="text-[11px] text-slate-400 mt-1">
-                    Suggested 34%: {formatCurrency(snap(selected.remaining * PAYDOWN_RATE), selected.currency)} ·
+                    Suggested {suggestLabel(selected).toLowerCase()}: {formatCurrency(suggestedFor(selected), selected.currency)} ·
                     Cap (remaining): {formatCurrency(selected.remaining, selected.currency)}
                   </p>
                 </Field>
@@ -197,6 +230,11 @@ export function PayPersonalLoanModal({ open, onClose, onSaved, defaultMonth }: P
               <button type="button" onClick={onClose}
                 className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50">
                 Cancel
+              </button>
+              <button type="button" onClick={markAlreadyPaid} disabled={saving || !selected}
+                title="Reduce the balance without recording a transaction"
+                className="flex-1 py-2.5 rounded-xl border border-emerald-200 text-emerald-700 text-sm font-semibold hover:bg-emerald-50 disabled:opacity-60">
+                Already paid
               </button>
               <button type="submit" disabled={saving || !selected}
                 className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-60 flex items-center justify-center gap-2">

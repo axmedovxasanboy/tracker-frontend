@@ -1,11 +1,10 @@
 import { useState, useCallback } from 'react'
-import { Plus, Pencil, Trash2, ArrowUpRight, ArrowDownRight, ChevronLeft, ChevronRight, ListPlus, ArrowLeftRight, Repeat } from 'lucide-react'
+import { Plus, Pencil, Trash2, ArrowUpRight, ArrowDownRight, ChevronLeft, ChevronRight, ArrowLeftRight, Repeat } from 'lucide-react'
 import { format } from 'date-fns'
 import { useSearchParams } from 'react-router-dom'
 import { BalanceTransferModal } from '../components/transactions/BalanceTransferModal'
 import { ExchangeModal } from '../components/transactions/ExchangeModal'
 import { TransactionModal } from '../components/transactions/TransactionModal'
-import { BulkTransactionModal } from '../components/transactions/BulkTransactionModal'
 import { TransactionDetailModal } from '../components/transactions/TransactionDetailModal'
 import { TransactionFilters } from '../components/transactions/TransactionFilters'
 import { Spinner } from '../components/ui/Spinner'
@@ -50,7 +49,6 @@ export function Transactions({ currency }: Props) {
     }
   })
   const [modalOpen, setModalOpen] = useState(false)
-  const [bulkOpen, setBulkOpen] = useState(false)
   const [transferOpen, setTransferOpen] = useState(false)
   const [exchangeOpen, setExchangeOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<Transaction | null>(null)
@@ -118,13 +116,6 @@ export function Transactions({ currency }: Props) {
           >
             <Repeat className="w-4 h-4" />
             Exchange
-          </button>
-          <button
-            onClick={() => setBulkOpen(true)}
-            className="flex items-center gap-2 border border-indigo-200 text-indigo-600 hover:bg-indigo-50 px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
-          >
-            <ListPlus className="w-4 h-4" />
-            Bulk Add
           </button>
           <button
             onClick={() => { setEditTarget(null); setModalOpen(true) }}
@@ -293,11 +284,6 @@ export function Transactions({ currency }: Props) {
         onSaved={() => transactions.refetch()}
         transaction={editTarget}
         defaultCurrency={currency}
-      />
-
-      <BulkTransactionModal
-        open={bulkOpen} onClose={() => setBulkOpen(false)}
-        onSaved={() => transactions.refetch()} defaultCurrency={currency}
       />
 
       <BalanceTransferModal
