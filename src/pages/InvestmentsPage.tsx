@@ -66,6 +66,7 @@ export function InvestmentsPage() {
     setForm({
       name: '', type: 'OTHER', investedAmount: 0, currency: 'USD', purchaseDate: today(),
       emergencyFund: false, savingsGoal: asGoal, targetAmount: null, currentValue: null,
+      openingBalance: false,
     })
     setModalOpen(true)
   }
@@ -80,6 +81,7 @@ export function InvestmentsPage() {
       broker: i.broker ?? undefined, description: i.description ?? undefined,
       emergencyFund: i.emergencyFund, savingsGoal: i.savingsGoal,
       targetAmount: i.targetAmount, currentValue: i.currentValue,
+      openingBalance: i.openingBalance,
     })
     setModalOpen(true)
   }
@@ -251,6 +253,12 @@ export function InvestmentsPage() {
                         Emergency
                       </span>
                     )}
+                    {i.openingBalance && (
+                      <span className="ml-1 bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-lg text-xs font-medium"
+                        title="Already owned — recorded for net worth only; no transaction">
+                        Opening
+                      </span>
+                    )}
                   </td>
                   <td className="px-5 py-3.5 font-semibold text-slate-700">{formatCurrency(i.investedAmount, i.currency)}</td>
                   <td className="px-5 py-3.5 text-slate-500 text-xs">{format(new Date(i.purchaseDate), 'dd-MMM-yyyy')}</td>
@@ -397,6 +405,18 @@ export function InvestmentsPage() {
               onChange={e => setForm(p => ({ ...p, description: e.target.value }))}
               className={`${INPUT} resize-none`} />
           </Field>
+          {!editId && (
+            <label className="flex items-start gap-2 cursor-pointer p-3 rounded-xl bg-indigo-50 border border-indigo-100">
+              <input type="checkbox" checked={form.openingBalance ?? false}
+                onChange={e => setForm(p => ({ ...p, openingBalance: e.target.checked }))}
+                className="w-4 h-4 mt-0.5 rounded text-indigo-600" />
+              <span className="text-xs text-indigo-900 leading-relaxed">
+                I <span className="font-semibold">already own this</span> (opening balance). Track it for net
+                worth only — <span className="font-semibold">no money leaves your wallet</span>, no transaction is
+                recorded, and it won't count toward this month's allocation.
+              </span>
+            </label>
+          )}
           <label className="flex items-start gap-2 cursor-pointer p-3 rounded-xl bg-rose-50 border border-rose-100">
             <input type="checkbox" checked={form.emergencyFund ?? false}
               onChange={e => setForm(p => ({ ...p, emergencyFund: e.target.checked, savingsGoal: e.target.checked ? false : p.savingsGoal }))}

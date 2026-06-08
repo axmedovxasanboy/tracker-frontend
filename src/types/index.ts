@@ -368,6 +368,9 @@ export interface InvestmentResponse {
   currentValue: number | null
   /** currentValue / targetAmount as a percentage; null when there is no target. */
   progressPercent: number | null
+  /** True when recorded as an opening balance (already-owned holding; no transaction; excluded
+      from the monthly allocation buckets). */
+  openingBalance: boolean
   createdAt: string
 }
 
@@ -383,6 +386,9 @@ export interface InvestmentRequest {
   savingsGoal?: boolean
   targetAmount?: number | null
   currentValue?: number | null
+  /** Record an already-owned holding: no wallet debit, no transaction, excluded from the
+      monthly allocation buckets. */
+  openingBalance?: boolean
   cardId?: number
   categoryId?: number
 }
