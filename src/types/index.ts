@@ -398,6 +398,8 @@ export interface InvestmentContributeRequest {
   currency: Currency
   date: string
   cardId?: number
+  /** Record the contribution without moving money: no transaction, no wallet debited. */
+  noWallet?: boolean
   categoryId?: number
   description?: string
 }

@@ -26,14 +26,15 @@ export function ContributeInvestmentModal({ open, onClose, onSaved, investment }
   const [amount, setAmount] = useState(0)
   const [date, setDate] = useState(today())
   const [description, setDescription] = useState('')
-  const [cardId, setCardId] = useState<number | undefined>()
+  // Source: 'cash' | 'none' (record only, no wallet) | a card id as a string.
+  const [source, setSource] = useState<string>('cash')
   const [cards, setCards] = useState<CardResponse[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!open) return
-    setAmount(0); setDate(today()); setDescription(''); setCardId(undefined); setError(null)
+    setAmount(0); setDate(today()); setDescription(''); setSource('cash'); setError(null)
     cardsApi.getAll().then(r => setCards(r.data)).catch(() => {})
   }, [open])
 
@@ -48,7 +49,8 @@ export function ContributeInvestmentModal({ open, onClose, onSaved, investment }
     try {
       await financeApi.contributeInvestment(investment.id, {
         amount, currency, date,
-        cardId,
+        cardId: /^\d+$/.test(source) ? Number(source) : undefined,
+        noWallet: source === 'none',
         description: description.trim() || undefined,
       })
       onSaved(); onClose()
@@ -69,17 +71,23 @@ export function ContributeInvestmentModal({ open, onClose, onSaved, investment }
           <input required type="date" value={date} onChange={e => setDate(e.target.value)} className={INPUT} />
         </Field>
 
-        <Field label={`Source ${matchingCards.length === 0 ? '(cash — no matching cards)' : ''}`}>
-          <select value={cardId ?? ''}
-            onChange={e => setCardId(e.target.value ? Number(e.target.value) : undefined)}
+        <Field label="Source">
+          <select value={source}
+            onChange={e => setSource(e.target.value)}
             className={`${INPUT} bg-white`}>
-            <option value="">— Cash —</option>
+            <option value="none">— None (just record, don't move money) —</option>
+            <option value="cash">Cash</option>
             {matchingCards.map(c => (
-              <option key={c.id} value={c.id}>
+              <option key={c.id} value={String(c.id)}>
                 {c.name} •••• {c.lastFourDigits} · {formatCurrency(c.currentBalance, c.currency)}
               </option>
             ))}
           </select>
+          {source === 'none' && (
+            <p className="text-[11px] text-slate-400 mt-1">
+              No wallet will be debited — only the invested total goes up.
+            </p>
+          )}
         </Field>
 
         <Field label="Description">

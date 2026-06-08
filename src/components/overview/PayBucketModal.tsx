@@ -5,11 +5,10 @@ import { AmountInput } from '../ui/AmountInput'
 import { cardsApi } from '../../api/cards'
 import { categoriesApi } from '../../api/categories'
 import { financeApi } from '../../api/finance'
-import { emergenciesApi } from '../../api/emergencies'
 import { transactionsApi } from '../../api/transactions'
 import { extractErrorMessage } from '../../api/client'
 import { formatCurrency } from '../../utils/format'
-import type { Bucket, CardResponse, Category, Currency, InvestmentType, TransactionSubType } from '../../types'
+import type { Bucket, CardResponse, Category, Currency, InvestmentResponse, InvestmentType, TransactionSubType } from '../../types'
 
 const INPUT = 'w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300'
 
@@ -32,7 +31,7 @@ function today() {
 
 const BUCKET_TITLES: Record<Bucket, string> = {
   DONATION:    'Record a donation',
-  EMERGENCY:   'Contribute to emergency fund',
+  EMERGENCY:   'Top up your emergency fund',
   INVESTMENTS: 'Record an investment',
   STOCKS:      'Record a stock purchase',
 }
@@ -56,13 +55,19 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
   const [recipientName, setRecipientName] = useState('')
   const [anonymous, setAnonymous] = useState(false)
 
-  // Investment-specific (also used for STOCKS bucket — type is forced to STOCKS there)
+  // Investment-specific (also the "new emergency fund" name; type is forced for STOCKS)
   const [name, setName] = useState('')
   const [invType, setInvType] = useState<InvestmentType>('OTHER')
   const [broker, setBroker] = useState('')
 
-  // Card selection — defaults to cash (cardId = undefined). Loaded once when modal opens.
-  const [cardId, setCardId] = useState<number | undefined>()
+  // Emergency-as-investment: pick an existing emergency-tagged investment to top up, or create one.
+  const [emInvestments, setEmInvestments] = useState<InvestmentResponse[]>([])
+  const [emTarget, setEmTarget] = useState<string>('new') // 'new' | investment id (string)
+
+  // Funding source: 'cash' | 'none' (record only, no wallet) | card id string. "None" is offered
+  // only for the investment / emergency-fund buckets (they record an entity that can exist without
+  // a wallet movement); donation / stocks always move money from a wallet.
+  const [source, setSource] = useState<string>('cash')
   const [cards, setCards] = useState<CardResponse[]>([])
 
   // Category — auto-picked to the bucket's matching category, overridable by the user.
@@ -84,7 +89,7 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
     setName('')
     setInvType('OTHER')
     setBroker('')
-    setCardId(undefined)
+    setSource('cash')
     setError(null)
     cardsApi.getAll().then(r => setCards(r.data)).catch(() => {})
     // Load categories matching this bucket's sub-type; default to the first (the seeded one).
@@ -93,9 +98,22 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
       setCategories(r.data)
       if (r.data.length > 0) setCategoryId(r.data[0].id)
     }).catch(() => {})
-  }, [open, bucket, suggestedAmount, defaultMonth])
+    // Emergency bucket: load the user's emergency-tagged investments (matching currency) to top up.
+    if (bucket === 'EMERGENCY') {
+      setEmInvestments([]); setEmTarget('new')
+      financeApi.getInvestments().then(r => {
+        const em = r.data.filter(i => i.emergencyFund && i.currency === currency)
+        setEmInvestments(em)
+        if (em.length > 0) setEmTarget(String(em[0].id))
+      }).catch(() => {})
+    }
+  }, [open, bucket, suggestedAmount, defaultMonth, currency])
 
   const matchingCards = cards.filter(c => c.currency === currency)
+  const allowNone = bucket === 'INVESTMENTS' || bucket === 'EMERGENCY'
+  const sourceCardId = /^\d+$/.test(source) ? Number(source) : undefined
+  const sourceNone = source === 'none'
+  const emCreatingNew = bucket === 'EMERGENCY' && emTarget === 'new'
 
   if (!bucket) return null
 
@@ -113,14 +131,25 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
           recipientName: anonymous ? 'Anonymous' : recipientName.trim(),
           amount, currency, donationDate: date,
           description: description || undefined,
-          anonymous, cardId, categoryId,
+          anonymous, cardId: sourceCardId, categoryId,
         })
       } else if (bucket === 'EMERGENCY') {
-        await emergenciesApi.create({
-          amount, currency, date,
-          description: description || undefined,
-          cardId, categoryId,
-        })
+        if (emCreatingNew) {
+          if (!name.trim()) { setError('Name your emergency fund.'); setSaving(false); return }
+          await financeApi.createInvestment({
+            name: name.trim(), type: 'OTHER',
+            investedAmount: amount, currency, purchaseDate: date,
+            emergencyFund: true,
+            description: description || undefined,
+            cardId: sourceCardId, openingBalance: sourceNone, categoryId,
+          })
+        } else {
+          await financeApi.contributeInvestment(Number(emTarget), {
+            amount, currency, date,
+            cardId: sourceCardId, noWallet: sourceNone, categoryId,
+            description: description || undefined,
+          })
+        }
       } else if (bucket === 'INVESTMENTS') {
         if (!name.trim()) {
           setError('Investment name is required.')
@@ -133,7 +162,7 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
           purchaseDate: date,
           broker: broker || undefined,
           description: description || undefined,
-          cardId, categoryId,
+          cardId: sourceCardId, openingBalance: sourceNone, categoryId,
         })
       } else if (bucket === 'STOCKS') {
         // Stocks are tracked elsewhere — record a plain expense in the Stocks category.
@@ -144,8 +173,8 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
           categoryId,
           description: description.trim() || 'Stocks',
           transactionDate: date,
-          cardId,
-          cashAmount: cardId ? 0 : amount,
+          cardId: sourceCardId,
+          cashAmount: sourceCardId ? 0 : amount,
         })
       }
       onSaved(); onClose()
@@ -168,6 +197,23 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
   return (
     <Modal open={open} onClose={onClose} title={BUCKET_TITLES[bucket]} maxWidth="max-w-lg">
       <form onSubmit={handleSubmit} className="space-y-3">
+        {/* Emergency = an investment for emergencies. Pick which one to top up, or create one. */}
+        {bucket === 'EMERGENCY' && (
+          <Field label="Emergency fund">
+            <select value={emTarget} onChange={e => setEmTarget(e.target.value)} className={`${INPUT} bg-white`}>
+              {emInvestments.map(i => (
+                <option key={i.id} value={String(i.id)}>
+                  {i.name} · {formatCurrency(i.investedAmount, i.currency)}
+                </option>
+              ))}
+              <option value="new">➕ New emergency fund…</option>
+            </select>
+            <p className="text-[11px] text-slate-400 mt-1">
+              Your emergency fund is an investment tagged “emergency”. Top up an existing one or create a new one.
+            </p>
+          </Field>
+        )}
+
         {/* Amount */}
         <Field label={`Amount * (${currency})`}>
           <AmountInput required value={amount} currency={currency}
@@ -189,23 +235,28 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
           <input required type="date" value={date} onChange={e => setDate(e.target.value)} className={INPUT} />
         </Field>
 
-        {/* Payment source — default cash. Card option only when one is available in this currency. */}
-        <Field label={`Source ${matchingCards.length === 0 ? '(cash — no matching cards)' : ''}`}>
-          <select value={cardId ?? ''}
-            onChange={e => setCardId(e.target.value ? Number(e.target.value) : undefined)}
+        {/* Payment source. "None" (record only) offered for investment / emergency buckets. */}
+        <Field label="Source">
+          <select value={source}
+            onChange={e => setSource(e.target.value)}
             className={`${INPUT} bg-white`}>
-            <option value="">— Cash —</option>
+            {allowNone && <option value="none">— None (just record, don't move money) —</option>}
+            <option value="cash">Cash</option>
             {matchingCards.map(c => (
-              <option key={c.id} value={c.id}>
+              <option key={c.id} value={String(c.id)}>
                 {c.name} •••• {c.lastFourDigits} · {formatCurrency(c.currentBalance, c.currency)}
               </option>
             ))}
           </select>
+          {sourceNone && (
+            <p className="text-[11px] text-slate-400 mt-1">
+              No wallet will be debited and no transaction is recorded — only the {bucket === 'EMERGENCY' ? 'fund' : 'invested'} total goes up.
+            </p>
+          )}
         </Field>
 
-        {/* Category — auto-picked for this bucket; change it if you'd rather file it elsewhere.
-            This is what was missing: Overview pays now land in the transactions list categorised. */}
-        {categories.length > 0 && (
+        {/* Category — auto-picked for this bucket; change it if you'd rather file it elsewhere. */}
+        {categories.length > 0 && !sourceNone && (
           <Field label="Category">
             <select value={categoryId ?? ''}
               onChange={e => setCategoryId(e.target.value ? Number(e.target.value) : undefined)}
@@ -231,6 +282,14 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
               <span className="text-sm text-slate-600">Anonymous</span>
             </label>
           </>
+        )}
+
+        {/* New emergency fund needs a name. */}
+        {emCreatingNew && (
+          <Field label="Fund name *">
+            <input required value={name} onChange={e => setName(e.target.value)}
+              className={INPUT} placeholder="Emergency fund, Rainy-day, etc." />
+          </Field>
         )}
 
         {bucket === 'INVESTMENTS' && (
@@ -283,7 +342,7 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
           <button type="submit" disabled={saving}
             className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-60 flex items-center justify-center gap-2">
             {saving && <Spinner className="w-4 h-4" />}
-            {saving ? 'Saving…' : 'Record payment'}
+            {saving ? 'Saving…' : bucket === 'EMERGENCY' && !emCreatingNew ? 'Top up' : 'Record'}
           </button>
         </div>
       </form>

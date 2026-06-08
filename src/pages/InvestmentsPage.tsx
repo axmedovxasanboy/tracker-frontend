@@ -14,6 +14,7 @@ import { useToast } from '../context/ToastContext'
 import { useConfirm } from '../context/ConfirmContext'
 import { financeApi } from '../api/finance'
 import { transactionsApi } from '../api/transactions'
+import { cardsApi } from '../api/cards'
 import { formatCurrency, snap } from '../utils/format'
 import { extractErrorMessage } from '../api/client'
 import type {
@@ -33,6 +34,7 @@ export function InvestmentsPage() {
   const { showSuccess, showError } = useToast()
 
   const investments = useApi(() => financeApi.getInvestments(), [])
+  const cards = useApi(() => cardsApi.getAll(), [])
 
   const [modalOpen, setModalOpen] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
@@ -42,6 +44,8 @@ export function InvestmentsPage() {
     name: '', type: 'OTHER', investedAmount: 0, currency: 'USD', purchaseDate: today(),
     emergencyFund: false, savingsGoal: false, targetAmount: null, currentValue: null,
   })
+  // Funding source for a NEW investment: 'cash' | 'none' (already-owned / no wallet) | card id string.
+  const [source, setSource] = useState<string>('cash')
 
   // Savings-goal action modals
   const [contributeFor, setContributeFor] = useState<InvestmentResponse | null>(null)
@@ -68,6 +72,7 @@ export function InvestmentsPage() {
       emergencyFund: false, savingsGoal: asGoal, targetAmount: null, currentValue: null,
       openingBalance: false,
     })
+    setSource('cash')
     setModalOpen(true)
   }
 
@@ -93,9 +98,16 @@ export function InvestmentsPage() {
     setSaving(true)
     // Target/current-value are goal-only — never persist stale values for a plain investment
     // (e.g. typed as a goal, then unchecked, or a goal demoted on edit).
-    const payload: InvestmentRequest = form.savingsGoal
+    const base: InvestmentRequest = form.savingsGoal
       ? form
       : { ...form, targetAmount: null, currentValue: null }
+    // Funding source (create only): 'none' = already-owned opening balance (no wallet debit, no
+    // transaction); 'cash' = cash wallet; a number = that card. Edits never re-book a transaction.
+    const payload: InvestmentRequest = editId ? base : {
+      ...base,
+      cardId: /^\d+$/.test(source) ? Number(source) : undefined,
+      openingBalance: source === 'none',
+    }
     try {
       if (editId) await financeApi.updateInvestment(editId, payload)
       else await financeApi.createInvestment(payload)
@@ -406,16 +418,22 @@ export function InvestmentsPage() {
               className={`${INPUT} resize-none`} />
           </Field>
           {!editId && (
-            <label className="flex items-start gap-2 cursor-pointer p-3 rounded-xl bg-indigo-50 border border-indigo-100">
-              <input type="checkbox" checked={form.openingBalance ?? false}
-                onChange={e => setForm(p => ({ ...p, openingBalance: e.target.checked }))}
-                className="w-4 h-4 mt-0.5 rounded text-indigo-600" />
-              <span className="text-xs text-indigo-900 leading-relaxed">
-                I <span className="font-semibold">already own this</span> (opening balance). Track it for net
-                worth only — <span className="font-semibold">no money leaves your wallet</span>, no transaction is
-                recorded, and it won't count toward this month's allocation.
-              </span>
-            </label>
+            <Field label="Funding source *">
+              <select value={source} onChange={e => setSource(e.target.value)} className={`${INPUT} bg-white`}>
+                <option value="none">— I already own it (opening balance — don't move money) —</option>
+                <option value="cash">Cash</option>
+                {(cards.data ?? []).filter(c => c.currency === form.currency).map(c => (
+                  <option key={c.id} value={String(c.id)}>
+                    {c.name} •••• {c.lastFourDigits} · {formatCurrency(c.currentBalance, c.currency)}
+                  </option>
+                ))}
+              </select>
+              <p className="text-[11px] text-slate-400 mt-1">
+                {source === 'none'
+                  ? 'Recorded for net worth only — no wallet is debited, no transaction, and it won’t count toward this month’s allocation.'
+                  : 'The invested amount is taken from this wallet and recorded as a transaction.'}
+              </p>
+            </Field>
           )}
           <label className="flex items-start gap-2 cursor-pointer p-3 rounded-xl bg-rose-50 border border-rose-100">
             <input type="checkbox" checked={form.emergencyFund ?? false}
