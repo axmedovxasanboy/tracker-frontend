@@ -55,6 +55,8 @@ export function Transactions({ currency }: Props) {
   const [modalOpen, setModalOpen] = useState(false)
   const [transferOpen, setTransferOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<Transaction | null>(null)
+  // Which type a NEW transaction opens as. undefined = the generic button (defaults to Expense).
+  const [presetType, setPresetType] = useState<TransactionType | undefined>()
   const [detailTx, setDetailTx] = useState<Transaction | null>(null)
   const [deleting, setDeleting] = useState<number | null>(null)
 
@@ -80,7 +82,8 @@ export function Transactions({ currency }: Props) {
     }
   }
 
-  const openEdit = (t: Transaction) => { setEditTarget(t); setModalOpen(true) }
+  const openEdit = (t: Transaction) => { setEditTarget(t); setPresetType(undefined); setModalOpen(true) }
+  const openAdd = (type?: TransactionType) => { setEditTarget(null); setPresetType(type); setModalOpen(true) }
   const openDetail = (t: Transaction) => setDetailTx(t)
 
   const data = transactions.data
@@ -115,14 +118,34 @@ export function Transactions({ currency }: Props) {
             <ArrowLeftRight className="w-4 h-4" />
             {t('action.transfer')}
           </button>
+          {/* Income / Expense are shortcuts that open the modal already set to that type;
+              the third opens it unset (defaults to Expense) for anything else. */}
           <button
-            onClick={() => { setEditTarget(null); setModalOpen(true) }}
+            onClick={() => openAdd('INCOME')}
+            disabled={!hasStableIncome}
+            title={!hasStableIncome ? t('income.requiredTooltip') : undefined}
+            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <Plus className="w-4 h-4" />
+            {t('tx.addIncome')}
+          </button>
+          <button
+            onClick={() => openAdd('EXPENSE')}
+            disabled={!hasStableIncome}
+            title={!hasStableIncome ? t('income.requiredTooltip') : undefined}
+            className="flex items-center gap-2 bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <Plus className="w-4 h-4" />
+            {t('tx.addExpense')}
+          </button>
+          <button
+            onClick={() => openAdd()}
             disabled={!hasStableIncome}
             title={!hasStableIncome ? t('income.requiredTooltip') : undefined}
             className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Plus className="w-4 h-4" />
-            {t('action.add')}
+            {t('tx.addOther')}
           </button>
         </div>
       </div>
@@ -286,6 +309,7 @@ export function Transactions({ currency }: Props) {
         onSaved={() => transactions.refetch()}
         transaction={editTarget}
         defaultCurrency={currency}
+        presetType={presetType}
       />
 
       <BalanceTransferModal

@@ -32,6 +32,8 @@ interface Props {
   defaultCurrency: Currency
   /** Pre-select this card for a NEW transaction (e.g. the per-card quick-add on the Cards page). */
   preselectCardId?: number
+  /** Open a NEW transaction already set to Income or Expense (the +Income / +Expense shortcuts). */
+  presetType?: TransactionType
 }
 
 const NEEDS_COUNTERPARTY = new Set<TransactionSubType>([
@@ -54,7 +56,7 @@ function nextMonthStr() {
 }
 
 
-export function TransactionModal({ open, onClose, onSaved, transaction, defaultCurrency, preselectCardId }: Props) {
+export function TransactionModal({ open, onClose, onSaved, transaction, defaultCurrency, preselectCardId, presetType }: Props) {
   // Aliased to `translate` — this file uses `t` as a local loop variable in a couple of
   // .map() callbacks (income/expense toggle, investment-type select), so binding the hook
   // itself to `t` would shadow those and silently break translation calls made inside them.
@@ -231,9 +233,11 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
       if (rootId) loadSubs(rootId)
     } else {
       // New transaction — optionally pre-target a card (per-card quick-add on the Cards page).
-      setForm({ ...defaultForm(defaultCurrency), cardId: preselectCardId })
+      const type = presetType ?? 'EXPENSE'
+      const subType = type === 'INCOME' ? 'REGULAR_INCOME' : 'REGULAR_EXPENSE'
+      setForm({ ...defaultForm(defaultCurrency), type, subType, cardId: preselectCardId })
       setSelectedRootId(undefined); setSubCategories([])
-      loadRoots('EXPENSE', 'REGULAR_EXPENSE')
+      loadRoots(type, subType)
     }
     setError(null); setIsBalanceError(false); setValidationError(null)
     setShowNewCat(false); setShowNewSubCat(false); setSuggestions([])
@@ -262,7 +266,7 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
     }
     setBankOptions([]); setShowBankPopover(false)
     return () => { if (suggestTimer.current) clearTimeout(suggestTimer.current) }
-  }, [open, transaction, defaultCurrency, preselectCardId, loadRoots, loadSubs])
+  }, [open, transaction, defaultCurrency, preselectCardId, presetType, loadRoots, loadSubs])
 
   // Load bank suggestions for BANK_LOAN_PAYMENT sub-type.
   useEffect(() => {

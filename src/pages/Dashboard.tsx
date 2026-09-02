@@ -15,7 +15,7 @@ import { useLang } from '../i18n/LanguageContext'
 import { dashboardApi } from '../api/dashboard'
 import { transactionsApi } from '../api/transactions'
 import { formatCurrency, formatNumber } from '../utils/format'
-import type { Currency, Transaction } from '../types'
+import type { TransactionType, Currency, Transaction } from '../types'
 
 interface Props { currency: Currency }
 
@@ -25,6 +25,8 @@ export function Dashboard({ currency }: Props) {
   const navigate = useNavigate()
   const confirm = useConfirm()
   const [modalOpen, setModalOpen] = useState(false)
+  // Which type a NEW transaction opens as; undefined = generic (defaults to Expense).
+  const [presetType, setPresetType] = useState<TransactionType | undefined>()
   const [detailTx, setDetailTx] = useState<Transaction | null>(null)
   const [editTx, setEditTx] = useState<Transaction | null>(null)
   const [deleting, setDeleting] = useState(false)
@@ -64,14 +66,23 @@ export function Dashboard({ currency }: Props) {
           <h2 className="text-xl font-bold text-slate-800">{t('nav.overview')}</h2>
           <p className="text-sm text-slate-400 mt-0.5">{year} · {currency}</p>
         </div>
-        <button
-          onClick={() => setModalOpen(true)}
-          disabled={!hasStableIncome}
-          title={!hasStableIncome ? t('income.requiredTooltip') : undefined}
-          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <Plus className="w-4 h-4" /> {t('tx.addTransaction')}
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          {([
+            ['INCOME',  'tx.addIncome',  'bg-emerald-600 hover:bg-emerald-700'],
+            ['EXPENSE', 'tx.addExpense', 'bg-rose-600 hover:bg-rose-700'],
+            [undefined, 'tx.addOther',   'bg-indigo-600 hover:bg-indigo-700'],
+          ] as const).map(([type, key, colour]) => (
+            <button
+              key={key}
+              onClick={() => { setPresetType(type); setModalOpen(true) }}
+              disabled={!hasStableIncome}
+              title={!hasStableIncome ? t('income.requiredTooltip') : undefined}
+              className={`flex items-center gap-2 ${colour} text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed`}
+            >
+              <Plus className="w-4 h-4" /> {t(key)}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Summary cards — clickable. Values rendered with K/M/B abbreviations. */}
@@ -132,6 +143,7 @@ export function Dashboard({ currency }: Props) {
       <TransactionModal
         open={modalOpen} onClose={() => setModalOpen(false)}
         onSaved={refetchAll} defaultCurrency={currency}
+        presetType={presetType}
       />
 
       {/* Edit modal (opened from detail) */}

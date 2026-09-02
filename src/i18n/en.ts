@@ -57,6 +57,9 @@ export const en = {
 
   // ── Transactions ────────────────────────────────────────────────────────
   'tx.addTransaction': 'Add Transaction',
+  'tx.addIncome': 'Income',
+  'tx.addExpense': 'Expense',
+  'tx.addOther': 'Transaction',
   'tx.editTransaction': 'Edit Transaction',
   'tx.newTransaction': 'New Transaction',
   'tx.none': 'No transactions found',
