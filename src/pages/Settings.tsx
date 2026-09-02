@@ -7,6 +7,7 @@ import { useApi } from '../hooks/useApi'
 import { useToast } from '../context/ToastContext'
 import { useConfirm } from '../context/ConfirmContext'
 import { useAuth } from '../context/AuthContext'
+import { useSettings } from '../context/SettingsContext'
 import { useLang } from '../i18n/LanguageContext'
 import { settingsApi } from '../api/settings'
 import { extractErrorMessage } from '../api/client'
@@ -20,6 +21,9 @@ export function Settings() {
   const { showSuccess } = useToast()
   const confirm = useConfirm()
   const { logout } = useAuth()
+  // The shared settings context gates every Add button; saving here must refresh it,
+  // otherwise the gate stays closed until a full page reload.
+  const { refetch: refetchGate } = useSettings()
 
   const [income, setIncome] = useState(0)
   const [trackStart, setTrackStart] = useState('')
@@ -78,6 +82,7 @@ export function Settings() {
       }
       await settingsApi.update(req)
       settings.refetch()
+      refetchGate()
       showSuccess(t('page.settings.savedToast'))
     } catch (err: unknown) {
       setError(extractErrorMessage(err))
