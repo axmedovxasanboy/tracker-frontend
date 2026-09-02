@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Sector } from 'recharts'
 import { Spinner } from '../ui/Spinner'
 import { CacheBadge } from '../ui/CacheBadge'
+import { useLang } from '../../i18n/LanguageContext'
 import type { CategoryBreakdown, Currency } from '../../types'
 import { formatCurrency } from '../../utils/format'
 
@@ -38,14 +39,15 @@ function ActiveShape(props: Parameters<typeof Sector>[0] & { currency: Currency;
 }
 
 export function CategoryBreakdownChart({ data, loading, currency, isCached, cachedAt }: Props) {
+  const { t } = useLang()
   const [activeIndex, setActiveIndex] = useState<number | undefined>()
 
   return (
     <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h3 className="font-semibold text-slate-800">Expense Breakdown</h3>
-          <p className="text-xs text-slate-400 mt-0.5">Click a segment to inspect</p>
+          <h3 className="font-semibold text-slate-800">{t('cmp.dashboard.expenseBreakdown')}</h3>
+          <p className="text-xs text-slate-400 mt-0.5">{t('cmp.dashboard.clickSegment')}</p>
         </div>
         <CacheBadge isCached={!!isCached} cachedAt={cachedAt ?? null} />
       </div>
@@ -53,7 +55,7 @@ export function CategoryBreakdownChart({ data, loading, currency, isCached, cach
       {loading ? (
         <div className="h-56 flex items-center justify-center"><Spinner /></div>
       ) : data.length === 0 ? (
-        <div className="h-56 flex items-center justify-center text-slate-400 text-sm">No expense data yet</div>
+        <div className="h-56 flex items-center justify-center text-slate-400 text-sm">{t('cmp.dashboard.noExpenseData')}</div>
       ) : (
         <>
           <ResponsiveContainer width="100%" height={240}>

@@ -1,9 +1,11 @@
 import { WifiOff, RefreshCw } from 'lucide-react'
 import { format } from 'date-fns'
 import { useBackendStatus } from '../../context/BackendStatusContext'
+import { useLang } from '../../i18n/LanguageContext'
 
 export function OfflineBanner() {
   const { isOnline, lastOnline, forceCheck } = useBackendStatus()
+  const { t } = useLang()
 
   if (isOnline) return null
 
@@ -11,14 +13,14 @@ export function OfflineBanner() {
     <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5 flex items-center justify-between text-sm">
       <div className="flex items-center gap-2 text-amber-800">
         <WifiOff className="w-4 h-4 shrink-0" />
-        <span className="font-medium">Backend is offline</span>
+        <span className="font-medium">{t('cmp.offline.backendOffline')}</span>
         {lastOnline && (
           <span className="text-amber-600">
-            — showing data from {format(new Date(lastOnline), 'dd-MMM HH:mm')}
+            {t('cmp.offline.showingDataFrom', { time: format(new Date(lastOnline), 'dd-MMM HH:mm') })}
           </span>
         )}
         {!lastOnline && (
-          <span className="text-amber-600">— no cached data available yet</span>
+          <span className="text-amber-600">{t('cmp.offline.noCachedData')}</span>
         )}
       </div>
       <button
@@ -26,7 +28,7 @@ export function OfflineBanner() {
         className="flex items-center gap-1.5 text-amber-700 hover:text-amber-900 font-medium transition-colors"
       >
         <RefreshCw className="w-3.5 h-3.5" />
-        Retry
+        {t('cmp.offline.retry')}
       </button>
     </div>
   )

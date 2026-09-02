@@ -4,9 +4,11 @@ import { BackendStatusProvider } from './context/BackendStatusContext'
 import { ToastProvider } from './context/ToastContext'
 import { ConfirmProvider } from './context/ConfirmContext'
 import { AuthProvider, useAuth } from './context/AuthContext'
+import { SettingsProvider } from './context/SettingsContext'
+import { LanguageProvider } from './i18n/LanguageContext'
 import { ToastContainer } from './components/ui/Toast'
+import { Menu } from 'lucide-react'
 import { Sidebar } from './components/layout/Sidebar'
-import { Header } from './components/layout/Header'
 import { OfflineBanner } from './components/ui/OfflineBanner'
 import { Spinner } from './components/ui/Spinner'
 import { Dashboard } from './pages/Dashboard'
@@ -22,9 +24,12 @@ import { Login } from './pages/Login'
 import { Signup } from './pages/Signup'
 import type { Currency } from './types'
 
+// Multi-currency support was removed — the app is UZS-only. Kept as a constant (rather than
+// inlining 'UZS' at every call site) so prop names below stay simple and unchanged.
+const currency: Currency = 'UZS'
+
 function AppRoutes() {
   const { status, needsSignup } = useAuth()
-  const [currency, setCurrency] = useState<Currency>('USD')
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   if (status === 'loading') {
@@ -54,8 +59,19 @@ function AppRoutes() {
       )}
       <div className="flex-1 flex flex-col ml-0 md:ml-60 min-w-0 overflow-hidden">
         <OfflineBanner />
-        <Header currency={currency} onCurrencyChange={setCurrency} onMenuClick={() => setSidebarOpen(true)} />
-        <main className="flex-1 overflow-y-auto">
+        {/* The header bar is gone; on phones the sidebar is a drawer, so this floating
+            button is the only way to open it. Hidden from md up, where the sidebar is fixed. */}
+        <button
+          onClick={() => setSidebarOpen(true)}
+          aria-label="Open menu"
+          className="md:hidden fixed top-3 left-3 z-30 w-10 h-10 flex items-center justify-center
+                     rounded-xl bg-white/90 backdrop-blur border border-slate-200 shadow-sm
+                     text-slate-600 hover:bg-white"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+        {/* pt on mobile keeps page content clear of the floating menu button above. */}
+        <main className="flex-1 overflow-y-auto pt-14 md:pt-0">
           <Routes>
             <Route path="/" element={<Dashboard currency={currency} />} />
             <Route path="/transactions" element={<Transactions currency={currency} />} />
@@ -84,16 +100,20 @@ function AppRoutes() {
 export default function App() {
   return (
     <BrowserRouter>
+      <LanguageProvider>
       <ToastProvider>
         <BackendStatusProvider>
           <ConfirmProvider>
             <AuthProvider>
-              <AppRoutes />
+              <SettingsProvider>
+                <AppRoutes />
+              </SettingsProvider>
             </AuthProvider>
             <ToastContainer />
           </ConfirmProvider>
         </BackendStatusProvider>
       </ToastProvider>
+      </LanguageProvider>
     </BrowserRouter>
   )
 }

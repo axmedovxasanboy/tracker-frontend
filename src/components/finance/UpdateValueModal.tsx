@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Modal } from '../ui/Modal'
 import { Spinner } from '../ui/Spinner'
 import { AmountInput } from '../ui/AmountInput'
+import { useLang } from '../../i18n/LanguageContext'
 import { financeApi } from '../../api/finance'
 import { extractErrorMessage } from '../../api/client'
 import { formatCurrency } from '../../utils/format'
@@ -18,6 +19,7 @@ interface Props {
 
 /** Update an investment / savings goal's current (market) value to reflect platform growth. */
 export function UpdateValueModal({ open, onClose, onSaved, investment }: Props) {
+  const { t } = useLang()
   const [value, setValue] = useState(0)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -33,7 +35,7 @@ export function UpdateValueModal({ open, onClose, onSaved, investment }: Props) 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (value < 0) { setError('Value cannot be negative.'); return }
+    if (value < 0) { setError(t('cmp.err.valueNegative')); return }
     setSaving(true); setError(null)
     try {
       await financeApi.setInvestmentValue(investment.id, { currentValue: value })
@@ -44,13 +46,13 @@ export function UpdateValueModal({ open, onClose, onSaved, investment }: Props) 
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={`Update value — ${investment.name}`} maxWidth="max-w-md">
+    <Modal open={open} onClose={onClose} title={t('cmp.updateValue.title', { name: investment.name })} maxWidth="max-w-md">
       <form onSubmit={handleSubmit} className="space-y-3">
         <p className="text-xs text-slate-500">
-          Contributed so far: <span className="font-medium text-slate-700">{formatCurrency(investment.investedAmount, currency)}</span>.
-          Set the current market value (incl. any growth/returns).
+          {t('cmp.updateValue.contributedSoFar')} <span className="font-medium text-slate-700">{formatCurrency(investment.investedAmount, currency)}</span>.
+          {' '}{t('cmp.updateValue.setCurrentValueHint')}
         </p>
-        <Field label={`Current value (${currency})`}>
+        <Field label={t('cmp.updateValue.currentValueLabel', { currency })}>
           <AmountInput required value={value} currency={currency}
             onChange={v => setValue(v)} className={INPUT} suffix={currency} />
         </Field>
@@ -62,12 +64,12 @@ export function UpdateValueModal({ open, onClose, onSaved, investment }: Props) 
         <div className="flex gap-3 pt-1">
           <button type="button" onClick={onClose}
             className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50">
-            Cancel
+            {t('action.cancel')}
           </button>
           <button type="submit" disabled={saving}
             className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-60 flex items-center justify-center gap-2">
             {saving && <Spinner className="w-4 h-4" />}
-            {saving ? 'Saving…' : 'Update value'}
+            {saving ? t('action.saving') : t('cmp.updateValue.submit')}
           </button>
         </div>
       </form>

@@ -8,7 +8,10 @@ import { RecentTransactions } from '../components/dashboard/RecentTransactions'
 import { TransactionModal } from '../components/transactions/TransactionModal'
 import { TransactionDetailModal } from '../components/transactions/TransactionDetailModal'
 import { useApi } from '../hooks/useApi'
+import { IncomeRequiredNotice } from '../components/ui/IncomeRequiredNotice'
+import { useSettings } from '../context/SettingsContext'
 import { useConfirm } from '../context/ConfirmContext'
+import { useLang } from '../i18n/LanguageContext'
 import { dashboardApi } from '../api/dashboard'
 import { transactionsApi } from '../api/transactions'
 import { formatCurrency, formatNumber } from '../utils/format'
@@ -17,6 +20,8 @@ import type { Currency, Transaction } from '../types'
 interface Props { currency: Currency }
 
 export function Dashboard({ currency }: Props) {
+  const { t } = useLang()
+  const { hasStableIncome } = useSettings()
   const navigate = useNavigate()
   const confirm = useConfirm()
   const [modalOpen, setModalOpen] = useState(false)
@@ -37,7 +42,7 @@ export function Dashboard({ currency }: Props) {
   const netWorth = s?.netWorth ?? (s?.netBalance ?? availableBalance)
 
   const handleDeleteFromDetail = async (id: number) => {
-    if (!await confirm({ message: 'Delete this transaction?', destructive: true })) return
+    if (!await confirm({ message: t('tx.confirmDelete'), destructive: true })) return
     setDeleting(true)
     try {
       await transactionsApi.delete(id)
@@ -52,52 +57,55 @@ export function Dashboard({ currency }: Props) {
 
   return (
     <div className="p-6 space-y-6">
+      <IncomeRequiredNotice />
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold text-slate-800">Overview</h2>
+          <h2 className="text-xl font-bold text-slate-800">{t('nav.overview')}</h2>
           <p className="text-sm text-slate-400 mt-0.5">{year} · {currency}</p>
         </div>
         <button
           onClick={() => setModalOpen(true)}
-          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors shadow-sm"
+          disabled={!hasStableIncome}
+          title={!hasStableIncome ? t('income.requiredTooltip') : undefined}
+          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          <Plus className="w-4 h-4" /> Add Transaction
+          <Plus className="w-4 h-4" /> {t('tx.addTransaction')}
         </button>
       </div>
 
       {/* Summary cards — clickable. Values rendered with K/M/B abbreviations. */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         <SummaryCard
-          title="Spendable" icon={Wallet} color="indigo"
+          title={t('page.dashboard.spendable')} icon={Wallet} color="indigo"
           value={s ? formatCurrency(spendable, currency, true) : '—'}
-          subtitle="Cards + cash to spend"
+          subtitle={t('page.dashboard.spendableHint')}
           isCached={summary.isCached} cachedAt={summary.cachedAt}
           onClick={() => navigate('/cards')}
         />
         <SummaryCard
-          title="Total Income" icon={TrendingUp} color="emerald"
+          title={t('page.dashboard.totalIncome')} icon={TrendingUp} color="emerald"
           value={s ? formatCurrency(s.totalIncome, currency, true) : '—'}
           isCached={summary.isCached} cachedAt={summary.cachedAt}
           onClick={() => navigate('/transactions?type=INCOME')}
         />
         <SummaryCard
-          title="Total Expenses" icon={TrendingDown} color="rose"
+          title={t('page.dashboard.totalExpenses')} icon={TrendingDown} color="rose"
           value={s ? formatCurrency(s.totalExpense, currency, true) : '—'}
           isCached={summary.isCached} cachedAt={summary.cachedAt}
           onClick={() => navigate('/transactions?type=EXPENSE')}
         />
         <SummaryCard
-          title="Net Worth" icon={Landmark} color="emerald"
+          title={t('page.dashboard.netWorth')} icon={Landmark} color="emerald"
           value={s ? formatCurrency(netWorth, currency, true) : '—'}
-          subtitle="Incl. investments & savings"
+          subtitle={t('page.dashboard.netWorthHint')}
           isCached={summary.isCached} cachedAt={summary.cachedAt}
           onClick={() => navigate('/months')}
         />
         <SummaryCard
-          title="Transactions" icon={Hash} color="amber"
+          title={t('nav.transactions')} icon={Hash} color="amber"
           value={s ? formatNumber(s.transactionCount) : '—'}
-          subtitle={`in ${currency}`}
+          subtitle={t('page.dashboard.inCurrency', { currency })}
           isCached={summary.isCached} cachedAt={summary.cachedAt}
           onClick={() => navigate(`/transactions?currency=${currency}`)}
         />

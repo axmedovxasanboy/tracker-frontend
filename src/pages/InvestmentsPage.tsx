@@ -12,6 +12,8 @@ import { UpdateValueModal } from '../components/finance/UpdateValueModal'
 import { useApi } from '../hooks/useApi'
 import { useToast } from '../context/ToastContext'
 import { useConfirm } from '../context/ConfirmContext'
+import { useLang } from '../i18n/LanguageContext'
+import type { TKey } from '../i18n/LanguageContext'
 import { financeApi } from '../api/finance'
 import { transactionsApi } from '../api/transactions'
 import { cardsApi } from '../api/cards'
@@ -25,11 +27,20 @@ const INPUT = 'w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm foc
 
 const INVESTMENT_TYPES: InvestmentType[] = ['REAL_ESTATE', 'BONDS', 'MUTUAL_FUND', 'GOLD', 'OTHER']
 
+const INVESTMENT_TYPE_LABEL_KEYS: Record<InvestmentType, TKey> = {
+  REAL_ESTATE:  'page.investments.typeRealEstate',
+  BONDS:        'page.investments.typeBonds',
+  MUTUAL_FUND:  'page.investments.typeMutualFund',
+  GOLD:         'page.investments.typeGold',
+  OTHER:        'page.investments.typeOther',
+}
+
 function today() {
   return new Date().toISOString().split('T')[0]
 }
 
 export function InvestmentsPage() {
+  const { t } = useLang()
   const confirm = useConfirm()
   const { showSuccess, showError } = useToast()
 
@@ -41,7 +52,7 @@ export function InvestmentsPage() {
   const [deleting, setDeleting] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState<InvestmentRequest>({
-    name: '', type: 'OTHER', investedAmount: 0, currency: 'USD', purchaseDate: today(),
+    name: '', type: 'OTHER', investedAmount: 0, currency: 'UZS', purchaseDate: today(),
     emergencyFund: false, savingsGoal: false, targetAmount: null, currentValue: null,
   })
   // Funding source for a NEW investment: 'cash' | 'none' (already-owned / no wallet) | card id string.
@@ -68,7 +79,7 @@ export function InvestmentsPage() {
   const openAdd = (asGoal = false) => {
     setEditId(null)
     setForm({
-      name: '', type: 'OTHER', investedAmount: 0, currency: 'USD', purchaseDate: today(),
+      name: '', type: 'OTHER', investedAmount: 0, currency: 'UZS', purchaseDate: today(),
       emergencyFund: false, savingsGoal: asGoal, targetAmount: null, currentValue: null,
       openingBalance: false,
     })
@@ -113,20 +124,23 @@ export function InvestmentsPage() {
       else await financeApi.createInvestment(payload)
       closeModal()
       investments.refetch()
-      showSuccess(editId ? 'Investment updated' : 'Investment created')
+      showSuccess(editId ? t('page.investments.updatedToast') : t('page.investments.createdToast'))
     } catch (err) {
       showError(extractErrorMessage(err))
     } finally { setSaving(false) }
   }
 
   const del = async (id: number) => {
-    if (!await confirm({ message: 'Delete this investment?', destructive: true })) return
+    if (!await confirm({
+      message: t('page.investments.confirmDelete'),
+      destructive: true,
+    })) return
     setDeleting(id)
     try {
       await financeApi.deleteInvestment(id)
       investments.refetch()
       if (selectedId === id) setSelectedId(null)
-      showSuccess('Investment deleted')
+      showSuccess(t('page.investments.deletedToast'))
     } catch (err) {
       showError(extractErrorMessage(err))
     } finally { setDeleting(null) }
@@ -140,7 +154,7 @@ export function InvestmentsPage() {
     return acc
   }, {})
 
-  const onGoalSaved = () => { investments.refetch(); txs.refetch(); showSuccess('Saved') }
+  const onGoalSaved = () => { investments.refetch(); txs.refetch(); showSuccess(t('page.investments.savedToast')) }
 
   return (
     <div className="space-y-5">
@@ -151,9 +165,9 @@ export function InvestmentsPage() {
             <Building2 className="w-5 h-5 text-cyan-600" />
           </div>
           <div>
-            <h3 className="text-lg font-bold text-slate-800">Investments</h3>
+            <h3 className="text-lg font-bold text-slate-800">{t('page.investments')}</h3>
             <p className="text-xs text-slate-400">
-              {list.length} investment{list.length === 1 ? '' : 's'} ·{' '}
+              {list.length === 1 ? t('page.investments.investment', { count: list.length }) : t('page.investments.investmentsCount', { count: list.length })} ·{' '}
               {Object.entries(totalsByCurrency).map(([ccy, sum]) => formatCurrency(snap(sum), ccy as Currency)).join(' + ') || '—'}
             </p>
           </div>
@@ -161,11 +175,11 @@ export function InvestmentsPage() {
         <div className="flex items-center gap-2">
           <button onClick={() => openAdd(true)}
             className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-sm">
-            <Target className="w-4 h-4" /> New Goal
+            <Target className="w-4 h-4" /> {t('page.investments.newGoal')}
           </button>
           <button onClick={() => openAdd(false)}
             className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-sm">
-            <Plus className="w-4 h-4" /> Add Investment
+            <Plus className="w-4 h-4" /> {t('page.investments.addInvestment')}
           </button>
         </div>
       </div>
@@ -175,8 +189,8 @@ export function InvestmentsPage() {
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <PiggyBank className="w-4 h-4 text-emerald-600" />
-            <h4 className="text-sm font-semibold text-slate-700">Savings Goals</h4>
-            <span className="text-xs text-slate-400">· optional, tracked apart from the 4 buckets</span>
+            <h4 className="text-sm font-semibold text-slate-700">{t('page.investments.savingsGoalsHeading')}</h4>
+            <span className="text-xs text-slate-400">{t('page.investments.savingsGoalsHint')}</span>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
             {goals.map(g => {
@@ -194,16 +208,16 @@ export function InvestmentsPage() {
                       </p>
                     </div>
                     <div className="flex gap-1 shrink-0">
-                      <button title="History"
+                      <button title={t('action.history')}
                         onClick={() => { setSelectedId(selectedId === g.id ? null : g.id); setTxPage(0) }}
                         className={`w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-100 ${selectedId === g.id ? 'text-indigo-600 bg-indigo-50' : 'text-slate-400 hover:text-slate-600'}`}>
                         <History className="w-3.5 h-3.5" />
                       </button>
-                      <button title="Edit" onClick={() => openEdit(g.id)}
+                      <button title={t('action.edit')} onClick={() => openEdit(g.id)}
                         className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-indigo-50 text-slate-400 hover:text-indigo-600">
                         <Pencil className="w-3.5 h-3.5" />
                       </button>
-                      <button title="Delete" onClick={() => del(g.id)} disabled={deleting === g.id}
+                      <button title={t('action.delete')} onClick={() => del(g.id)} disabled={deleting === g.id}
                         className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-rose-50 text-slate-400 hover:text-rose-600 disabled:opacity-50">
                         {deleting === g.id ? <Spinner className="w-3.5 h-3.5" /> : <Trash2 className="w-3.5 h-3.5" />}
                       </button>
@@ -215,17 +229,17 @@ export function InvestmentsPage() {
                         <div className={`h-full rounded-full transition-all ${complete ? 'bg-emerald-500' : 'bg-emerald-400'}`}
                           style={{ width: `${pct}%` }} />
                       </div>
-                      <p className="text-[11px] text-slate-400 mt-1">{pct.toFixed(0)}% of goal</p>
+                      <p className="text-[11px] text-slate-400 mt-1">{t('page.investments.pctOfGoal', { pct: pct.toFixed(0) })}</p>
                     </div>
                   )}
                   <div className="flex gap-2 pt-1">
                     <button onClick={() => setContributeFor(g)}
                       className="flex-1 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-medium hover:bg-emerald-100 flex items-center justify-center gap-1">
-                      <Plus className="w-3 h-3" /> Contribute
+                      <Plus className="w-3 h-3" /> {t('page.investments.contribute')}
                     </button>
                     <button onClick={() => setValueFor(g)}
                       className="flex-1 py-1.5 rounded-lg bg-slate-50 text-slate-600 text-xs font-medium hover:bg-slate-100 flex items-center justify-center gap-1">
-                      <TrendingUp className="w-3 h-3" /> Update value
+                      <TrendingUp className="w-3 h-3" /> {t('page.investments.updateValue')}
                     </button>
                   </div>
                 </div>
@@ -245,7 +259,7 @@ export function InvestmentsPage() {
           <div className="overflow-x-auto"><table className="w-full text-sm min-w-[640px]">
             <thead>
               <tr className="border-b border-slate-100">
-                {['Name', 'Type', 'Invested', 'Date', 'Broker', ''].map(h => (
+                {[t('page.investments.nameCol'), t('tx.type'), t('page.investments.investedCol'), t('tx.date'), t('page.investments.brokerCol'), ''].map(h => (
                   <th key={h} className="text-left text-xs font-medium text-slate-400 px-5 py-3">{h}</th>
                 ))}
               </tr>
@@ -258,17 +272,17 @@ export function InvestmentsPage() {
                   <td className="px-5 py-3.5 font-medium text-slate-700">{i.name}</td>
                   <td className="px-5 py-3.5">
                     <span className="bg-cyan-100 text-cyan-700 px-2 py-0.5 rounded-lg text-xs font-medium">
-                      {i.type.replace('_', ' ')}
+                      {t(INVESTMENT_TYPE_LABEL_KEYS[i.type])}
                     </span>
                     {i.emergencyFund && (
                       <span className="ml-1 bg-rose-100 text-rose-700 px-2 py-0.5 rounded-lg text-xs font-medium">
-                        Emergency
+                        {t('page.investments.emergencyBadge')}
                       </span>
                     )}
                     {i.openingBalance && (
                       <span className="ml-1 bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-lg text-xs font-medium"
-                        title="Already owned — recorded for net worth only; no transaction">
-                        Opening
+                        title={t('page.investments.openingBadgeTitle')}>
+                        {t('page.investments.openingBadge')}
                       </span>
                     )}
                   </td>
@@ -302,9 +316,9 @@ export function InvestmentsPage() {
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
               <div>
-                <h3 className="font-semibold text-slate-800">{inv.name} — Transactions</h3>
+                <h3 className="font-semibold text-slate-800">{t('page.shared.txPanelTitle', { name: inv.name })}</h3>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  {inv.type.replace('_', ' ')} · Total invested: {formatCurrency(inv.investedAmount, inv.currency)}
+                  {t('page.investments.txPanelSubtitle', { type: t(INVESTMENT_TYPE_LABEL_KEYS[inv.type]), amount: formatCurrency(inv.investedAmount, inv.currency) })}
                 </p>
               </div>
               <button onClick={() => setSelectedId(null)}
@@ -316,14 +330,14 @@ export function InvestmentsPage() {
               <div className="h-32 flex items-center justify-center"><Spinner /></div>
             ) : (txs.data?.content.length ?? 0) === 0 ? (
               <div className="h-32 flex items-center justify-center text-sm text-slate-400">
-                No transactions recorded for this investment yet
+                {t('page.investments.noTxYet')}
               </div>
             ) : (
               <div>
                 <div className="overflow-x-auto"><table className="w-full text-sm min-w-[640px]">
                   <thead>
                     <tr className="border-b border-slate-100">
-                      {['Date', 'Description', 'Amount', 'Card'].map(h => (
+                      {[t('tx.date'), t('tx.description'), t('tx.amount'), t('tx.card')].map(h => (
                         <th key={h} className="text-left text-xs font-medium text-slate-400 px-5 py-3">{h}</th>
                       ))}
                     </tr>
@@ -353,13 +367,13 @@ export function InvestmentsPage() {
                 {(txs.data?.totalPages ?? 0) > 1 && (
                   <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100">
                     <p className="text-xs text-slate-400">
-                      Page {(txs.data?.page ?? 0) + 1} of {txs.data?.totalPages} · {txs.data?.totalElements} total
+                      {t('page.pagination.pageOfWithTotal', { page: (txs.data?.page ?? 0) + 1, totalPages: txs.data?.totalPages ?? 0, total: txs.data?.totalElements ?? 0 })}
                     </p>
                     <div className="flex gap-1">
                       <button disabled={txPage === 0} onClick={() => setTxPage(p => p - 1)}
-                        className="px-3 py-1 text-xs border border-slate-200 rounded-lg disabled:opacity-40 hover:bg-slate-50">Prev</button>
+                        className="px-3 py-1 text-xs border border-slate-200 rounded-lg disabled:opacity-40 hover:bg-slate-50">{t('page.pagination.prev')}</button>
                       <button disabled={txs.data?.last ?? true} onClick={() => setTxPage(p => p + 1)}
-                        className="px-3 py-1 text-xs border border-slate-200 rounded-lg disabled:opacity-40 hover:bg-slate-50">Next</button>
+                        className="px-3 py-1 text-xs border border-slate-200 rounded-lg disabled:opacity-40 hover:bg-slate-50">{t('page.pagination.next')}</button>
                     </div>
                   </div>
                 )}
@@ -370,58 +384,49 @@ export function InvestmentsPage() {
       })()}
 
       {/* Modal */}
-      <Modal open={modalOpen} onClose={closeModal} title={editId ? 'Edit Investment' : 'New Investment'}>
+      <Modal open={modalOpen} onClose={closeModal} title={editId ? t('page.investments.editTitle') : t('page.investments.newTitle')}>
         <form onSubmit={save} className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Name *">
+            <Field label={t('page.shared.nameLabel')}>
               <input required value={form.name}
                 onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
-                className={INPUT} placeholder="Apple Inc., BTC, etc." />
+                className={INPUT} placeholder={t('page.investments.namePlaceholder')} />
             </Field>
-            <Field label="Type *">
+            <Field label={`${t('tx.type')} *`}>
               <select value={form.type}
                 onChange={e => setForm(p => ({ ...p, type: e.target.value as InvestmentType }))}
                 className={`${INPUT} bg-white`}>
-                {INVESTMENT_TYPES.map(t => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
+                {INVESTMENT_TYPES.map(invType => <option key={invType} value={invType}>{t(INVESTMENT_TYPE_LABEL_KEYS[invType])}</option>)}
               </select>
             </Field>
           </div>
+          <Field label={t('page.investments.investedAmountLabel')}>
+            <AmountInput required value={form.investedAmount || 0} currency={form.currency}
+              onChange={v => setForm(p => ({ ...p, investedAmount: v }))}
+              className={INPUT} suffix={form.currency} />
+          </Field>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Invested Amount *">
-              <AmountInput required value={form.investedAmount || 0} currency={form.currency}
-                onChange={v => setForm(p => ({ ...p, investedAmount: v }))}
-                className={INPUT} suffix={form.currency} />
-            </Field>
-            <Field label="Currency *">
-              <select value={form.currency}
-                onChange={e => setForm(p => ({ ...p, currency: e.target.value as Currency }))}
-                className={`${INPUT} bg-white`}>
-                <option>USD</option><option>EUR</option><option>UZS</option>
-              </select>
-            </Field>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Purchase Date *">
+            <Field label={t('page.investments.purchaseDateLabel')}>
               <input required type="date" value={form.purchaseDate}
                 onChange={e => setForm(p => ({ ...p, purchaseDate: e.target.value }))}
                 className={INPUT} />
             </Field>
-            <Field label="Broker / Platform">
+            <Field label={t('page.investments.brokerLabel')}>
               <input value={form.broker ?? ''}
                 onChange={e => setForm(p => ({ ...p, broker: e.target.value }))}
                 className={INPUT} />
             </Field>
           </div>
-          <Field label="Description">
+          <Field label={t('tx.description')}>
             <textarea rows={2} value={form.description ?? ''}
               onChange={e => setForm(p => ({ ...p, description: e.target.value }))}
               className={`${INPUT} resize-none`} />
           </Field>
           {!editId && (
-            <Field label="Funding source *">
+            <Field label={t('page.investments.fundingSourceLabel')}>
               <select value={source} onChange={e => setSource(e.target.value)} className={`${INPUT} bg-white`}>
-                <option value="none">— I already own it (opening balance — don't move money) —</option>
-                <option value="cash">Cash</option>
+                <option value="none">{t('page.investments.fundingSourceNone')}</option>
+                <option value="cash">{t('tx.cash')}</option>
                 {(cards.data ?? []).filter(c => c.currency === form.currency).map(c => (
                   <option key={c.id} value={String(c.id)}>
                     {c.name} •••• {c.lastFourDigits} · {formatCurrency(c.currentBalance, c.currency)}
@@ -430,8 +435,8 @@ export function InvestmentsPage() {
               </select>
               <p className="text-[11px] text-slate-400 mt-1">
                 {source === 'none'
-                  ? 'Recorded for net worth only — no wallet is debited, no transaction, and it won’t count toward this month’s allocation.'
-                  : 'The invested amount is taken from this wallet and recorded as a transaction.'}
+                  ? t('page.investments.fundingNoneHint')
+                  : t('page.investments.fundingWalletHint')}
               </p>
             </Field>
           )}
@@ -440,8 +445,8 @@ export function InvestmentsPage() {
               onChange={e => setForm(p => ({ ...p, emergencyFund: e.target.checked, savingsGoal: e.target.checked ? false : p.savingsGoal }))}
               className="w-4 h-4 mt-0.5 rounded text-rose-600" />
             <span className="text-xs text-rose-900 leading-relaxed">
-              This is my <span className="font-semibold">emergency fund</span>. It counts toward the
-              Overview <span className="font-semibold">Emergency</span> allocation bucket instead of Investments.
+              {t('page.investments.emergencyCheckboxPre')} <span className="font-semibold">{t('page.investments.emergencyFundBold')}</span>{t('page.investments.emergencyCheckboxMid')}
+              {' '}<span className="font-semibold">{t('page.investments.emergencyBadge')}</span> {t('page.investments.emergencyCheckboxEnd')}
             </span>
           </label>
           <label className="flex items-start gap-2 cursor-pointer p-3 rounded-xl bg-emerald-50 border border-emerald-100">
@@ -449,18 +454,18 @@ export function InvestmentsPage() {
               onChange={e => setForm(p => ({ ...p, savingsGoal: e.target.checked, emergencyFund: e.target.checked ? false : p.emergencyFund }))}
               className="w-4 h-4 mt-0.5 rounded text-emerald-600" />
             <span className="text-xs text-emerald-900 leading-relaxed">
-              This is a <span className="font-semibold">savings goal</span> (home, iPhone, gold, prize…). It's
-              optional and tracked apart from the 4 mandatory buckets.
+              {t('page.investments.savingsGoalCheckboxPre')} <span className="font-semibold">{t('page.investments.savingsGoalBold')}</span>{' '}
+              {t('page.investments.savingsGoalCheckboxEnd')}
             </span>
           </label>
           {form.savingsGoal && (
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Target amount">
+              <Field label={t('page.investments.targetAmountLabel')}>
                 <AmountInput value={form.targetAmount ?? 0} currency={form.currency}
                   onChange={v => setForm(p => ({ ...p, targetAmount: v > 0 ? v : null }))}
                   className={INPUT} suffix={form.currency} />
               </Field>
-              <Field label="Current value">
+              <Field label={t('page.investments.currentValueLabel')}>
                 <AmountInput value={form.currentValue ?? 0} currency={form.currency}
                   onChange={v => setForm(p => ({ ...p, currentValue: v > 0 ? v : null }))}
                   className={INPUT} suffix={form.currency} />
@@ -470,12 +475,12 @@ export function InvestmentsPage() {
           <div className="flex gap-3 pt-1">
             <button type="button" onClick={closeModal}
               className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50">
-              Cancel
+              {t('action.cancel')}
             </button>
             <button type="submit" disabled={saving}
               className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-60 flex items-center justify-center gap-2">
               {saving && <Spinner className="w-4 h-4" />}
-              {saving ? 'Saving…' : editId ? 'Update' : 'Create'}
+              {saving ? t('action.saving') : editId ? t('action.update') : t('action.create')}
             </button>
           </div>
         </form>
@@ -499,10 +504,11 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 function EmptyState() {
+  const { t } = useLang()
   return (
     <div className="flex flex-col items-center justify-center py-20 text-slate-300 gap-2">
       <AlertCircle className="w-10 h-10" />
-      <p className="text-sm text-slate-400">No investments yet</p>
+      <p className="text-sm text-slate-400">{t('page.investments.empty')}</p>
     </div>
   )
 }

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react'
 import { X } from 'lucide-react'
+import { useLang } from '../../i18n/LanguageContext'
 
 interface Props {
   open: boolean
@@ -13,6 +14,7 @@ const FOCUSABLE =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
 export function Modal({ open, onClose, title, children, maxWidth = 'max-w-xl' }: Props) {
+  const { t } = useLang()
   const dialogRef = useRef<HTMLDivElement | null>(null)
   const restoreFocusRef = useRef<HTMLElement | null>(null)
 
@@ -56,7 +58,7 @@ export function Modal({ open, onClose, title, children, maxWidth = 'max-w-xl' }:
           <h2 className="text-lg font-semibold text-slate-800">{title}</h2>
           <button
             onClick={onClose}
-            aria-label="Close"
+            aria-label={t('action.close')}
             className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 transition-colors text-slate-400 hover:text-slate-600"
           >
             <X className="w-4 h-4" />

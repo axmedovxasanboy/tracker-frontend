@@ -3,6 +3,7 @@ import { Landmark } from 'lucide-react'
 import { Modal } from '../ui/Modal'
 import { Spinner } from '../ui/Spinner'
 import { AmountInput } from '../ui/AmountInput'
+import { useLang } from '../../i18n/LanguageContext'
 import { useApi } from '../../hooks/useApi'
 import { cardsApi } from '../../api/cards'
 import { financeApi } from '../../api/finance'
@@ -25,6 +26,7 @@ function today() {
 }
 
 export function PayBankInstallmentModal({ open, onClose, onSaved, defaultMonth }: Props) {
+  const { t } = useLang()
   const bankLoans = useApi(() => financeApi.getBankLoans(), [])
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [amount, setAmount] = useState(0)
@@ -58,8 +60,8 @@ export function PayBankInstallmentModal({ open, onClose, onSaved, defaultMonth }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!selected) { setError('Pick a bank loan to pay.'); return }
-    if (amount <= 0) { setError('Amount must be greater than 0.'); return }
+    if (!selected) { setError(t('cmp.err.pickBankLoanToPay')); return }
+    if (amount <= 0) { setError(t('cmp.err.amountPositive')); return }
     setSaving(true); setError(null)
     try {
       // Record as a BANK_LOAN_PAYMENT Transaction. (Bank loans don't have a /repay
@@ -81,8 +83,8 @@ export function PayBankInstallmentModal({ open, onClose, onSaved, defaultMonth }
   }
 
   const markAlreadyPaid = async () => {
-    if (!selected) { setError('Pick a bank loan to pay.'); return }
-    if (amount <= 0) { setError('Amount must be greater than 0.'); return }
+    if (!selected) { setError(t('cmp.err.pickBankLoanToPay')); return }
+    if (amount <= 0) { setError(t('cmp.err.amountPositive')); return }
     setSaving(true); setError(null)
     try {
       await financeApi.markPaid({
@@ -96,20 +98,19 @@ export function PayBankInstallmentModal({ open, onClose, onSaved, defaultMonth }
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Pay bank installment" maxWidth="max-w-lg">
+    <Modal open={open} onClose={onClose} title={t('cmp.payBankInstallment.title')} maxWidth="max-w-lg">
       <form onSubmit={handleSubmit} className="space-y-4">
         {bankLoans.loading && !bankLoans.data ? (
           <div className="h-32 flex items-center justify-center"><Spinner /></div>
         ) : list.length === 0 ? (
           <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 text-sm text-slate-500">
-            No bank loans with a monthly payment set. Edit a bank loan in Finance → Bank Loans
-            to give it a monthly amount, then return here.
+            {t('cmp.payBankInstallment.noLoans')}
           </div>
         ) : (
           <>
             {/* Loan picker */}
             <div className="space-y-2">
-              <label className="text-xs font-medium text-slate-500">Pick a bank loan</label>
+              <label className="text-xs font-medium text-slate-500">{t('cmp.payBankInstallment.pickLoan')}</label>
               <div className="space-y-1.5">
                 {list.map(b => (
                   <button key={b.id} type="button"
@@ -122,10 +123,10 @@ export function PayBankInstallmentModal({ open, onClose, onSaved, defaultMonth }
                     <Landmark className="w-4 h-4 text-indigo-500 shrink-0" />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-slate-700">{b.bankName} — {b.loanName}</p>
-                      <p className="text-xs text-slate-400">Total: {formatCurrency(b.totalAmount, b.currency)}</p>
+                      <p className="text-xs text-slate-400">{t('cmp.payBankInstallment.total')} {formatCurrency(b.totalAmount, b.currency)}</p>
                     </div>
                     <p className="text-sm font-bold text-indigo-700 whitespace-nowrap">
-                      {formatCurrency(b.monthlyPayment ?? 0, b.currency)} / mo
+                      {t('cmp.payBankInstallment.perMonth', { amount: formatCurrency(b.monthlyPayment ?? 0, b.currency) })}
                     </p>
                   </button>
                 ))}
@@ -134,22 +135,22 @@ export function PayBankInstallmentModal({ open, onClose, onSaved, defaultMonth }
 
             {selected && (
               <>
-                <Field label="Amount *">
+                <Field label={t('cmp.field.amountRequired')}>
                   <AmountInput required value={amount} currency={selected.currency}
                     onChange={v => setAmount(v)}
                     className={INPUT} suffix={selected.currency} />
                   <p className="text-[11px] text-slate-400 mt-1">
-                    Default = saved monthly ({formatCurrency(selected.monthlyPayment ?? 0, selected.currency)}). Lower it if you can't pay in full this month.
+                    {t('cmp.payBankInstallment.defaultHint', { amount: formatCurrency(selected.monthlyPayment ?? 0, selected.currency) })}
                   </p>
                 </Field>
-                <Field label="Date *">
+                <Field label={t('cmp.field.dateRequired')}>
                   <input required type="date" value={date} onChange={e => setDate(e.target.value)} className={INPUT} />
                 </Field>
-                <Field label={`Source ${matchingCards.length === 0 ? '(cash — no matching cards)' : ''}`}>
+                <Field label={`${t('cmp.field.source')} ${matchingCards.length === 0 ? t('cmp.source.cashNoMatchingCards') : ''}`}>
                   <select value={cardId ?? ''}
                     onChange={e => setCardId(e.target.value ? Number(e.target.value) : undefined)}
                     className={`${INPUT} bg-white`}>
-                    <option value="">— Cash —</option>
+                    <option value="">{t('cmp.source.cashOnly')}</option>
                     {matchingCards.map(c => (
                       <option key={c.id} value={c.id}>
                         {c.name} •••• {c.lastFourDigits} · {formatCurrency(c.currentBalance, c.currency)}
@@ -167,17 +168,17 @@ export function PayBankInstallmentModal({ open, onClose, onSaved, defaultMonth }
             <div className="flex gap-3 pt-1">
               <button type="button" onClick={onClose}
                 className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50">
-                Cancel
+                {t('action.cancel')}
               </button>
               <button type="button" onClick={markAlreadyPaid} disabled={saving || !selected}
-                title="Count this installment as met without recording a transaction"
+                title={t('cmp.hint.markInstallmentMetNoTx')}
                 className="flex-1 py-2.5 rounded-xl border border-emerald-200 text-emerald-700 text-sm font-semibold hover:bg-emerald-50 disabled:opacity-60">
-                Already paid
+                {t('cmp.action.alreadyPaid')}
               </button>
               <button type="submit" disabled={saving || !selected}
                 className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-60 flex items-center justify-center gap-2">
                 {saving && <Spinner className="w-4 h-4" />}
-                {saving ? 'Saving…' : 'Record installment'}
+                {saving ? t('action.saving') : t('cmp.action.recordInstallment')}
               </button>
             </div>
           </>

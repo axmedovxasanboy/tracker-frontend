@@ -21,15 +21,17 @@ import { PayPersonalLoanModal } from '../components/overview/PayPersonalLoanModa
 import { AllocationRulesModal } from '../components/overview/AllocationRulesModal'
 import { BucketHistoryPanel } from '../components/overview/BucketHistoryPanel'
 import { PaySubscriptionModal } from '../components/finance/PaySubscriptionModal'
+import { useLang } from '../i18n/LanguageContext'
+import type { TKey } from '../i18n/LanguageContext'
 import type { ActionItem, AllocationLine, Bucket, Currency, MonthlyPaymentResponse, OverviewTierResponse, PendingSubscription } from '../types'
 
 type OverviewTab = 'dashboard' | 'investments' | 'donations' | 'emergencies'
 
-const TABS: { id: OverviewTab; label: string; icon: typeof Gauge }[] = [
-  { id: 'dashboard',    label: 'Dashboard',    icon: Gauge },
-  { id: 'investments',  label: 'Investments',  icon: Building2 },
-  { id: 'donations',    label: 'Donations',    icon: HeartHandshake },
-  { id: 'emergencies',  label: 'Emergencies',  icon: ShieldAlert },
+const TABS: { id: OverviewTab; labelKey: TKey; icon: typeof Gauge }[] = [
+  { id: 'dashboard',    labelKey: 'nav.dashboard',            icon: Gauge },
+  { id: 'investments',  labelKey: 'page.investments',         icon: Building2 },
+  { id: 'donations',    labelKey: 'page.donations',           icon: HeartHandshake },
+  { id: 'emergencies',  labelKey: 'page.overview.tabEmergencies', icon: ShieldAlert },
 ]
 
 interface Props {
@@ -49,6 +51,8 @@ function formatMonthLabel(ym: string): string {
 }
 
 export function Overview({ currency }: Props) {
+  // Aliased: this component also uses `t` for the tier-data payload below.
+  const { t: translate } = useLang()
   const { tab } = useParams<{ tab: OverviewTab }>()
   const navigate = useNavigate()
 
@@ -93,7 +97,7 @@ export function Overview({ currency }: Props) {
             </div>
             <div>
               <p className="text-xs text-slate-400 font-medium uppercase tracking-wider">
-                Earned in {formatMonthLabel(month)}
+                {translate('page.overview.earnedIn', { month: formatMonthLabel(month) })}
               </p>
               {income.loading && !income.data ? (
                 <div className="h-8 flex items-center"><Spinner className="w-4 h-4" /></div>
@@ -104,7 +108,7 @@ export function Overview({ currency }: Props) {
               )}
               {income.data?.stableIncome != null && (
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Stable income (Settings): <span className="font-medium text-slate-600">
+                  {translate('page.overview.stableIncomeSettingsLabel')} <span className="font-medium text-slate-600">
                     {formatCurrency(income.data.stableIncome, currency, true)}
                   </span>
                 </p>
@@ -120,18 +124,6 @@ export function Overview({ currency }: Props) {
               className="border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300" />
           </div>
         </div>
-
-        {/* FX defaults warning */}
-        {income.data?.fxRatesUsingDefaults && (
-          <div className="mt-4 flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded-lg">
-            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-            <span>
-              FX rates are using built-in defaults.{' '}
-              <NavLink to="/settings" className="font-semibold underline">Set them in Settings</NavLink>{' '}
-              for accurate cross-currency math.
-            </span>
-          </div>
-        )}
       </section>
 
       {/* Tier badge — beside the earned card */}
@@ -143,27 +135,27 @@ export function Overview({ currency }: Props) {
         <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
           <BreakdownCard
             icon={TrendingUp} color="emerald"
-            label="Stable Income"
+            label={translate('page.overview.stableIncomeLabel')}
             value={formatCurrency(t.income, currency, true)}
-            hint="From Settings" />
+            hint={translate('page.overview.fromSettingsHint')} />
           <BreakdownCard
             icon={ListChecks} color="violet"
-            label="Mandatory (Subscriptions)"
+            label={translate('page.overview.mandatoryLabel')}
             value={formatCurrency(t.mandatorySubscriptions, currency, true)}
-            hint="Active monthly subscriptions" />
+            hint={translate('page.overview.activeMonthlySubsHint')} />
           <BreakdownCard
             icon={Wallet} color="indigo"
-            label="Left Money"
+            label={translate('page.overview.leftMoneyLabel')}
             value={formatCurrency(t.leftMoney, currency, true)}
-            hint="Income − mandatory · sets your level (1 if < 15M)" />
+            hint={translate('page.overview.leftMoneyHint')} />
           <BreakdownCard
             icon={Scale}
             color={t.debtRatio != null && t.debtRatio > 0.7 ? 'rose' : 'amber'}
-            label="Debt Payments"
+            label={translate('page.overview.debtPaymentsLabel')}
             value={formatCurrency(t.debtPayments, currency, true)}
             hint={t.debtRatio != null
-              ? `${(t.debtRatio * 100).toFixed(1)}% of income · drives sub-level`
-              : 'Debt math — drives sub-level'} />
+              ? translate('page.overview.debtRatioHint', { pct: (t.debtRatio * 100).toFixed(1) })
+              : translate('page.overview.debtMathHint')} />
         </div>
       )}
 
@@ -172,7 +164,7 @@ export function Overview({ currency }: Props) {
       {gateOpen && (
         <nav className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-x-auto">
           <div className="flex">
-            {TABS.map(({ id, label, icon: Icon }) => (
+            {TABS.map(({ id, labelKey, icon: Icon }) => (
               <NavLink key={id}
                 to={`/overview/${id}${window.location.search}`}
                 replace
@@ -184,7 +176,7 @@ export function Overview({ currency }: Props) {
                   }`
                 }>
                 <Icon className="w-4 h-4" />
-                {label}
+                {translate(labelKey)}
               </NavLink>
             ))}
           </div>
@@ -217,8 +209,16 @@ function fmtPct(n: number): string {
   return `${+n.toFixed(1)}`
 }
 
-function bucketTitle(b: string): string {
-  return b.charAt(0) + b.slice(1).toLowerCase()
+const BUCKET_LABEL_KEYS: Record<string, TKey> = {
+  DONATION:    'page.overview.bucketDonation',
+  EMERGENCY:   'page.overview.bucketEmergency',
+  INVESTMENTS: 'page.overview.bucketInvestments',
+  STOCKS:      'page.overview.bucketStocks',
+}
+
+function bucketTitle(b: string, translate: (key: TKey) => string): string {
+  const key = BUCKET_LABEL_KEYS[b]
+  return key ? translate(key) : b.charAt(0) + b.slice(1).toLowerCase()
 }
 
 function rangeLabel(start: string, end: string | null): string {
@@ -230,24 +230,26 @@ function rangeLabel(start: string, end: string | null): string {
 // Tier Dashboard
 // ────────────────────────────────────────────────────────────────────────────────
 
-const LEVEL_STYLES: Record<number, { bg: string; ring: string; text: string; label: string }> = {
-  1: { bg: 'bg-rose-50',    ring: 'ring-rose-200',    text: 'text-rose-700',    label: 'Survival tier — focus on the basics' },
-  2: { bg: 'bg-amber-50',   ring: 'ring-amber-200',   text: 'text-amber-700',   label: 'Stabilising tier' },
-  3: { bg: 'bg-yellow-50',  ring: 'ring-yellow-200',  text: 'text-yellow-700',  label: 'Comfortable tier' },
-  4: { bg: 'bg-lime-50',    ring: 'ring-lime-200',    text: 'text-lime-700',    label: 'Compounding tier' },
-  5: { bg: 'bg-emerald-50', ring: 'ring-emerald-200', text: 'text-emerald-700', label: 'Wealth-building tier' },
-  6: { bg: 'bg-indigo-50',  ring: 'ring-indigo-200',  text: 'text-indigo-700',  label: 'Top tier' },
+const LEVEL_STYLES: Record<number, { bg: string; ring: string; text: string; labelKey: TKey }> = {
+  1: { bg: 'bg-rose-50',    ring: 'ring-rose-200',    text: 'text-rose-700',    labelKey: 'page.overview.tier1Label' },
+  2: { bg: 'bg-amber-50',   ring: 'ring-amber-200',   text: 'text-amber-700',   labelKey: 'page.overview.tier2Label' },
+  3: { bg: 'bg-yellow-50',  ring: 'ring-yellow-200',  text: 'text-yellow-700',  labelKey: 'page.overview.tier3Label' },
+  4: { bg: 'bg-lime-50',    ring: 'ring-lime-200',    text: 'text-lime-700',    labelKey: 'page.overview.tier4Label' },
+  5: { bg: 'bg-emerald-50', ring: 'ring-emerald-200', text: 'text-emerald-700', labelKey: 'page.overview.tier5Label' },
+  6: { bg: 'bg-indigo-50',  ring: 'ring-indigo-200',  text: 'text-indigo-700',  labelKey: 'page.overview.tier6Label' },
 }
 
-const SUB_STYLES: Record<string, { bg: string; text: string; label: string }> = {
-  '1.1': { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'No debt — clean slate' },
-  '1.2': { bg: 'bg-amber-100',   text: 'text-amber-700',   label: 'Manageable debt (≤ 70% of income)' },
-  '1.3': { bg: 'bg-rose-100',    text: 'text-rose-700',    label: 'High debt (> 70% of income)' },
+const SUB_STYLES: Record<string, { bg: string; text: string; labelKey: TKey }> = {
+  '1.1': { bg: 'bg-emerald-100', text: 'text-emerald-700', labelKey: 'page.overview.subLevelNoDebt' },
+  '1.2': { bg: 'bg-amber-100',   text: 'text-amber-700',   labelKey: 'page.overview.subLevel1_2' },
+  '1.3': { bg: 'bg-rose-100',    text: 'text-rose-700',    labelKey: 'page.overview.subLevel1_3' },
 }
 
 function TierDashboard({ currency, month, tier }: {
   currency: Currency; month: string; tier: ReturnType<typeof useApi<OverviewTierResponse>>
 }) {
+  // Aliased: this component also uses `t` for the tier-data payload below.
+  const { t: translate } = useLang()
   const t = tier.data
 
   // Pay flow + history state — both bucket-scoped, optional.
@@ -267,7 +269,7 @@ function TierDashboard({ currency, month, tier }: {
   }
 
   if (!t) {
-    return <section className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 text-sm text-slate-500">Tier data unavailable.</section>
+    return <section className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 text-sm text-slate-500">{translate('page.overview.tierDataUnavailable')}</section>
   }
 
   const dormant = t.beforeTrackingStart
@@ -286,11 +288,10 @@ function TierDashboard({ currency, month, tier }: {
         <div className="flex items-start gap-3 p-4 rounded-2xl bg-slate-100 border border-slate-300">
           <Calendar className="w-5 h-5 text-slate-500 shrink-0 mt-0.5" />
           <div className="text-sm text-slate-600">
-            <p className="font-semibold text-slate-700">Allocation tracking hasn't started yet</p>
+            <p className="font-semibold text-slate-700">{translate('page.overview.trackingNotStarted')}</p>
             <p className="mt-0.5">
-              Your action items and allocation guidance begin in{' '}
-              <span className="font-semibold">{startLabel}</span>. Until then nothing is due —
-              the dashboard below is shown for reference only.
+              {translate('page.overview.trackingNotStartedPre')}{' '}
+              <span className="font-semibold">{startLabel}</span>. {translate('page.overview.trackingNotStartedPost')}
             </p>
           </div>
         </div>
@@ -301,25 +302,10 @@ function TierDashboard({ currency, month, tier }: {
         <div className="flex items-start gap-3 p-4 rounded-2xl bg-amber-50 border border-amber-200">
           <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
           <div className="text-sm text-amber-900">
-            <p className="font-semibold">Monthly stable income not set</p>
+            <p className="font-semibold">{translate('page.overview.missingIncomeTitle')}</p>
             <p className="mt-0.5">
-              Your tier and sub-level can't be computed until you set a monthly income.{' '}
-              <NavLink to="/settings" className="font-semibold underline">Open Settings</NavLink>.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* FX defaults banner — only shown when the user actually has FX-converted values to worry about */}
-      {!t.missingStableIncome && t.fxRatesUsingDefaults && (
-        <div className="flex items-start gap-3 p-4 rounded-2xl bg-amber-50 border border-amber-200">
-          <SettingsIcon className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-          <div className="text-sm text-amber-900">
-            <p className="font-semibold">FX rates using built-in defaults</p>
-            <p className="mt-0.5">
-              The tier math is using fallback rates (1 USD ≈ 12 500 UZS, 1 EUR ≈ 13 500 UZS).{' '}
-              <NavLink to="/settings" className="font-semibold underline">Set real rates in Settings</NavLink>{' '}
-              for accurate numbers.
+              {translate('page.overview.missingIncomePre')}{' '}
+              <NavLink to="/settings" className="font-semibold underline">{translate('action.openSettings')}</NavLink>.
             </p>
           </div>
         </div>
@@ -361,12 +347,12 @@ function TierDashboard({ currency, month, tier }: {
         <section className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 space-y-3">
           <div className="flex items-center gap-2">
             <Landmark className="w-4 h-4 text-slate-500" />
-            <h4 className="text-sm font-semibold text-slate-700">Debt Payments Breakdown</h4>
+            <h4 className="text-sm font-semibold text-slate-700">{translate('page.overview.debtBreakdownHeading')}</h4>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <DebtRow label="Bank Loans" hint="Monthly installment" value={formatCurrency(t.debtBreakdown.bankLoans, currency, true)} />
-            <DebtRow label="Borrowed (34%)" hint="34% of original (capped)" value={formatCurrency(t.debtBreakdown.loansTaken, currency, true)} />
-            <DebtRow label="Debts (34%)" hint="34% of original (capped)" value={formatCurrency(t.debtBreakdown.debts, currency, true)} />
+            <DebtRow label={translate('page.finance.tabBankLoans')} hint={translate('page.overview.monthlyInstallmentHint')} value={formatCurrency(t.debtBreakdown.bankLoans, currency, true)} />
+            <DebtRow label={translate('page.overview.borrowedPctLabel')} hint={translate('page.overview.cappedHint')} value={formatCurrency(t.debtBreakdown.loansTaken, currency, true)} />
+            <DebtRow label={translate('page.overview.debtsPctLabel')} hint={translate('page.overview.cappedHint')} value={formatCurrency(t.debtBreakdown.debts, currency, true)} />
           </div>
         </section>
 
@@ -424,15 +410,15 @@ function SubscriptionsToPaySection({ subscriptions, month, onPay }: {
   month: string
   onPay: (id: number) => void
 }) {
+  const { t } = useLang()
   return (
     <section className="bg-white rounded-2xl border border-violet-200 shadow-sm p-5 space-y-3">
       <div className="flex items-center gap-2">
         <ListChecks className="w-4 h-4 text-violet-600" />
-        <h4 className="text-sm font-semibold text-slate-700">Pay your subscriptions first</h4>
+        <h4 className="text-sm font-semibold text-slate-700">{t('page.overview.paySubsFirstHeading')}</h4>
       </div>
       <p className="text-xs text-slate-500 -mt-1">
-        Your level and allocation for {formatMonthLabel(month)} unlock once every mandatory
-        subscription is paid — {subscriptions.length} left.
+        {t('page.overview.paySubsFirstDesc', { month: formatMonthLabel(month), count: subscriptions.length })}
       </p>
       <div className="space-y-2">
         {subscriptions.map(s => {
@@ -443,13 +429,13 @@ function SubscriptionsToPaySection({ subscriptions, month, onPay }: {
                 <p className="text-sm font-medium text-slate-800 truncate">{s.name}</p>
                 <p className="text-xs text-slate-500">
                   {s.paid > 0
-                    ? <>Paid {formatCurrency(s.paid, s.currency)} of {formatCurrency(s.amount, s.currency)} · {formatCurrency(remaining, s.currency)} left</>
-                    : <>{formatCurrency(s.amount, s.currency)} due</>}
+                    ? t('page.overview.subPaidOfAmount', { paid: formatCurrency(s.paid, s.currency), amount: formatCurrency(s.amount, s.currency), remaining: formatCurrency(remaining, s.currency) })
+                    : t('page.overview.subAmountDue', { amount: formatCurrency(s.amount, s.currency) })}
                 </p>
               </div>
               <button type="button" onClick={() => onPay(s.id)}
                 className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold transition-colors">
-                <Wallet className="w-3.5 h-3.5" /> Pay
+                <Wallet className="w-3.5 h-3.5" /> {t('page.shared.payButton')}
               </button>
             </div>
           )
@@ -461,16 +447,17 @@ function SubscriptionsToPaySection({ subscriptions, month, onPay }: {
 
 // Style a sub-level by exact key (Level 1) or fall back to the debt suffix (.1/.2/.3)
 // so Levels 2–6 sub-levels (e.g. "3.2") render with the right colour + label.
-function subLevelStyle(subLevel: string | null): { bg: string; text: string; label: string } | null {
+function subLevelStyle(subLevel: string | null): { bg: string; text: string; labelKey: TKey } | null {
   if (!subLevel) return null
   if (SUB_STYLES[subLevel]) return SUB_STYLES[subLevel]
-  if (subLevel.endsWith('.1')) return { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'No debt — clean slate' }
-  if (subLevel.endsWith('.2')) return { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Manageable debt (< 70% of income)' }
-  if (subLevel.endsWith('.3')) return { bg: 'bg-rose-100', text: 'text-rose-700', label: 'High debt (≥ 70% of income)' }
+  if (subLevel.endsWith('.1')) return { bg: 'bg-emerald-100', text: 'text-emerald-700', labelKey: 'page.overview.subLevelNoDebt' }
+  if (subLevel.endsWith('.2')) return { bg: 'bg-amber-100', text: 'text-amber-700', labelKey: 'page.overview.subLevelManageable' }
+  if (subLevel.endsWith('.3')) return { bg: 'bg-rose-100', text: 'text-rose-700', labelKey: 'page.overview.subLevelHigh' }
   return null
 }
 
 function LevelBadge({ tier }: { tier: OverviewTierResponse }) {
+  const { t } = useLang()
   // Level may be null (above tier 6 or missing income). Style accordingly.
   const style = tier.level != null ? LEVEL_STYLES[tier.level] : null
   const subStyle = subLevelStyle(tier.subLevel)
@@ -479,18 +466,18 @@ function LevelBadge({ tier }: { tier: OverviewTierResponse }) {
     <section className={`rounded-2xl border border-slate-100 shadow-sm p-6 ring-1 ${style?.ring ?? 'ring-slate-200'} ${style?.bg ?? 'bg-white'}`}>
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Your tier this month</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{t('page.overview.tierThisMonth')}</p>
           <p className={`text-3xl font-bold mt-1 ${style?.text ?? 'text-slate-700'}`}>
             {tier.levelLabel}
           </p>
           {style && (
-            <p className="text-sm text-slate-500 mt-1">{style.label}</p>
+            <p className="text-sm text-slate-500 mt-1">{t(style.labelKey)}</p>
           )}
         </div>
         {subStyle && (
           <div className={`px-4 py-2 rounded-xl ${subStyle.bg}`}>
-            <p className={`text-xs font-semibold ${subStyle.text}`}>Sub-level {tier.subLevel}</p>
-            <p className={`text-sm font-medium ${subStyle.text}`}>{subStyle.label}</p>
+            <p className={`text-xs font-semibold ${subStyle.text}`}>{t('page.overview.subLevelLabel', { level: tier.subLevel ?? '' })}</p>
+            <p className={`text-sm font-medium ${subStyle.text}`}>{t(subStyle.labelKey)}</p>
           </div>
         )}
       </div>
@@ -553,6 +540,7 @@ function ActionItemsSection({ tier, onPayBank, onPayPersonal }: {
   onPayBank: () => void
   onPayPersonal: () => void
 }) {
+  const { t } = useLang()
   // Only meaningful once a tier is known. Missing-income / above-ceiling states are
   // covered by their own banners and the allocation section's empty state.
   if (tier.missingStableIncome || tier.level == null) return null
@@ -567,13 +555,13 @@ function ActionItemsSection({ tier, onPayBank, onPayPersonal }: {
       <div className="flex items-center gap-2">
         <ListChecks className="w-4 h-4 text-amber-500" />
         <div>
-          <h4 className="text-sm font-semibold text-slate-700">Action items</h4>
+          <h4 className="text-sm font-semibold text-slate-700">{t('page.overview.actionItemsHeading')}</h4>
           <p className="text-xs text-slate-400 mt-0.5">
             {actionable.length === 0
-              ? 'No required debt payments this month'
+              ? t('page.overview.noRequiredDebtPayments')
               : locked
-                ? 'Pay these to their recommended amounts to unlock allocation below'
-                : 'All caught up — allocation below is unlocked'}
+                ? t('page.overview.payToUnlock')
+                : t('page.overview.allocationUnlocked')}
           </p>
         </div>
       </div>
@@ -581,7 +569,7 @@ function ActionItemsSection({ tier, onPayBank, onPayPersonal }: {
       {actionable.length === 0 && infos.length === 0 ? (
         <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-4 flex items-center gap-2 text-sm text-emerald-700">
           <Check className="w-4 h-4 shrink-0" />
-          No action items this month — you're clear to allocate below.
+          {t('page.overview.noActionItemsClear')}
         </div>
       ) : (
         <div className="rounded-xl bg-amber-50 border border-amber-100 p-3 space-y-2">
@@ -615,6 +603,7 @@ function AllocationSection({ tier, currency, month, locked, onPay, onHistory, on
   onHistory: (bucket: Bucket) => void
   onConfigure: () => void
 }) {
+  const { t } = useLang()
   const ledger = useApi(() => overviewApi.getAllocationLedger(month, currency), [month, currency])
   const [showBreakdown, setShowBreakdown] = useState(false)
 
@@ -644,7 +633,7 @@ function AllocationSection({ tier, currency, month, locked, onPay, onHistory, on
         <div className="flex items-center gap-2">
           <Gauge className="w-4 h-4 text-indigo-500" />
           <div>
-            <h4 className="text-sm font-semibold text-slate-700">Allocation</h4>
+            <h4 className="text-sm font-semibold text-slate-700">{t('page.overview.allocationHeading')}</h4>
             {allocation?.scenarioLabel && (
               <p className="text-xs text-slate-400 mt-0.5">{allocation.scenarioLabel}</p>
             )}
@@ -653,7 +642,7 @@ function AllocationSection({ tier, currency, month, locked, onPay, onHistory, on
         {hasTier && (
           <button onClick={onConfigure}
             className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-indigo-200 text-indigo-600 text-xs font-semibold hover:bg-indigo-50 transition-colors">
-            <SettingsIcon className="w-3.5 h-3.5" /> Allocation rules
+            <SettingsIcon className="w-3.5 h-3.5" /> {t('page.overview.allocationRulesButton')}
           </button>
         )}
       </div>
@@ -669,18 +658,18 @@ function AllocationSection({ tier, currency, month, locked, onPay, onHistory, on
             <PiggyBank className="w-5 h-5 text-violet-600" />
           </div>
           <div className="min-w-0">
-            <p className="text-xs text-slate-400 font-medium uppercase tracking-wider">Allocation due</p>
+            <p className="text-xs text-slate-400 font-medium uppercase tracking-wider">{t('page.overview.allocationDueLabel')}</p>
             <p className={`text-2xl font-bold ${allClear ? 'text-emerald-600' : 'text-slate-800'}`}>
-              {allClear ? 'All caught up' : formatCurrency(totalDue, currency, true)}
+              {allClear ? t('page.overview.allCaughtUp') : formatCurrency(totalDue, currency, true)}
             </p>
             <p className="text-xs text-slate-400 mt-0.5">
               {carried > 0 && d?.carriedStartMonth && (
                 <>
                   <span className="text-amber-600 font-medium">{formatCurrency(carried, currency, true)}</span>
-                  {' '}carried from {rangeLabel(d.carriedStartMonth, d.carriedEndMonth ?? null)} ·{' '}
+                  {' '}{t('page.overview.carriedFromSuffix', { range: rangeLabel(d.carriedStartMonth, d.carriedEndMonth ?? null) })}{' '}
                 </>
               )}
-              {formatCurrency(dueThis, currency, true)} recommended this month
+              {t('page.overview.recommendedThisMonth', { amount: formatCurrency(dueThis, currency, true) })}
             </p>
           </div>
         </div>
@@ -689,12 +678,12 @@ function AllocationSection({ tier, currency, month, locked, onPay, onHistory, on
       {/* Per-bucket guidance — the actionable cards */}
       {empty ? (
         <div className="rounded-xl bg-slate-50 border border-slate-100 p-4 text-sm text-slate-500 space-y-3">
-          <p>Guidance not available for this tier yet.</p>
+          <p>{t('page.overview.guidanceUnavailable')}</p>
           {sublevelConfigurable && (
             <button onClick={onConfigure}
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold transition-colors">
               <SettingsIcon className="w-3.5 h-3.5" />
-              Set Level {tier.subLevel ?? tier.level} allocation
+              {t('page.overview.setLevelAllocation', { level: tier.subLevel ?? tier.level ?? '' })}
             </button>
           )}
         </div>
@@ -705,18 +694,16 @@ function AllocationSection({ tier, currency, month, locked, onPay, onHistory, on
             <div className="flex items-start gap-2 rounded-xl bg-amber-50 border border-amber-200 p-3 text-sm text-amber-900">
               <Lock className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
               <p>
-                <span className="font-semibold">Pay your action items first.</span>{' '}
-                Recording into these buckets unlocks once each action item above reaches its
-                recommended amount.
+                <span className="font-semibold">{t('page.overview.lockedBold')}</span>{' '}
+                {t('page.overview.lockedRest')}
               </p>
             </div>
           )}
 
           <p className="text-[11px] text-slate-400">
-            Percentages apply to your <span className="font-medium text-slate-500">left balance</span>
-            {' '}({formatCurrency(tier.allocationBase, tier.currency, true)}) — your stable income minus
-            mandatory subscriptions and monthly debt payments.
-            {tier.level === 1 && ' The 5M UZS cutoff (on stable income) sets tight vs. comfortable.'}
+            {t('page.overview.percentagesPre')} <span className="font-medium text-slate-500">{t('page.overview.leftBalanceBold')}</span>
+            {' '}({formatCurrency(tier.allocationBase, tier.currency, true)}) {t('page.overview.percentagesPost')}
+            {tier.level === 1 && ' ' + t('page.overview.tier1Cutoff')}
           </p>
 
           {/* Bucket allocation lines */}
@@ -737,13 +724,13 @@ function AllocationSection({ tier, currency, month, locked, onPay, onHistory, on
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-2">
               <PiggyBank className="w-3.5 h-3.5 text-violet-500" />
-              <h5 className="text-xs font-semibold uppercase tracking-wider text-slate-500">Outstanding across months</h5>
+              <h5 className="text-xs font-semibold uppercase tracking-wider text-slate-500">{t('page.overview.outstandingAcrossMonths')}</h5>
             </div>
             {d!.months.length > 0 && (
               <button type="button" onClick={() => setShowBreakdown(v => !v)}
                 className="flex items-center gap-1.5 text-xs font-medium text-indigo-600 hover:text-indigo-700">
                 {showBreakdown ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                How this is calculated
+                {t('page.overview.howCalculated')}
               </button>
             )}
           </div>
@@ -754,10 +741,10 @@ function AllocationSection({ tier, currency, month, locked, onPay, onHistory, on
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-[11px] uppercase tracking-wider text-slate-400 text-left">
-                    <th className="py-1.5 pr-3 font-medium">Bucket</th>
-                    <th className="py-1.5 px-3 font-medium text-right">Due</th>
-                    <th className="py-1.5 px-3 font-medium text-right">Carried</th>
-                    <th className="py-1.5 pl-3 font-medium text-right">Outstanding</th>
+                    <th className="py-1.5 pr-3 font-medium">{t('page.overview.bucketCol')}</th>
+                    <th className="py-1.5 px-3 font-medium text-right">{t('page.overview.dueCol')}</th>
+                    <th className="py-1.5 px-3 font-medium text-right">{t('page.overview.carriedCol')}</th>
+                    <th className="py-1.5 pl-3 font-medium text-right">{t('page.overview.outstandingCol')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -767,10 +754,10 @@ function AllocationSection({ tier, currency, month, locked, onPay, onHistory, on
                         <span className="font-medium text-slate-700">{b.label}</span>
                         {b.percent != null
                           ? <span className="ml-2 text-[11px] text-slate-400">{fmtPct(b.percent)}%</span>
-                          : <span className="ml-2 text-[11px] text-slate-300">not recommended</span>}
+                          : <span className="ml-2 text-[11px] text-slate-300">{t('page.overview.notRecommended')}</span>}
                         {b.overAllocated && b.effectivePercent != null && (
                           <span className="ml-2 text-[11px] text-emerald-600 font-medium">
-                            gave {fmtPct(b.effectivePercent)}%
+                            {t('page.overview.gavePct', { pct: fmtPct(b.effectivePercent) })}
                           </span>
                         )}
                       </td>
@@ -800,26 +787,26 @@ function AllocationSection({ tier, currency, month, locked, onPay, onHistory, on
                     <div className="flex items-center justify-between gap-2 flex-wrap mb-1.5">
                       <p className="text-xs font-semibold text-slate-700">
                         {formatMonthLabel(mo.month)}
-                        {mo.selected && <span className="ml-2 text-[10px] text-indigo-500 uppercase tracking-wider">this month</span>}
+                        {mo.selected && <span className="ml-2 text-[10px] text-indigo-500 uppercase tracking-wider">{t('page.overview.thisMonthTag')}</span>}
                       </p>
                       <p className="text-[11px] text-slate-400">
-                        Level {mo.subLevel ?? mo.level ?? '—'} · base {formatCurrency(mo.allocationBase, currency, true)}
+                        {t('page.overview.levelBaseLabel', { level: mo.subLevel ?? mo.level ?? '—', amount: formatCurrency(mo.allocationBase, currency, true) })}
                       </p>
                     </div>
                     <div className="space-y-0.5">
                       {mo.lines.map(l => (
                         <p key={l.bucket} className="text-[11px] text-slate-500 leading-relaxed">
-                          <span className="text-slate-600 font-medium">{bucketTitle(l.bucket)}</span>
+                          <span className="text-slate-600 font-medium">{bucketTitle(l.bucket, t)}</span>
                           {l.percent != null && (
-                            <> · {fmtPct(l.percent)}% of {formatCurrency(mo.allocationBase, currency, true)} = {formatCurrency(l.recommended, currency)}</>
+                            <> · {t('page.overview.pctOfBaseEquals', { pct: fmtPct(l.percent), base: formatCurrency(mo.allocationBase, currency, true), recommended: formatCurrency(l.recommended, currency) })}</>
                           )}
-                          {' '}− paid {formatCurrency(l.paid, currency)} ={' '}
+                          {' '}{t('page.overview.minusPaidEquals', { paid: formatCurrency(l.paid, currency) })}{' '}
                           <span className={l.net > 0 ? 'text-rose-500 font-medium' : l.net < 0 ? 'text-emerald-600 font-medium' : 'text-slate-400'}>
                             {l.net > 0
-                              ? `${formatCurrency(l.net, currency)} behind`
+                              ? t('page.overview.behindAmount', { amount: formatCurrency(l.net, currency) })
                               : l.net < 0
-                                ? `${formatCurrency(-l.net, currency)} ahead`
-                                : 'on target'}
+                                ? t('page.overview.aheadAmount', { amount: formatCurrency(-l.net, currency) })
+                                : t('page.overview.onTarget')}
                           </span>
                         </p>
                       ))}
@@ -841,6 +828,7 @@ function ActionRow({ action, currency, onPayBank, onPayPersonal }: {
   onPayBank: () => void
   onPayPersonal: () => void
 }) {
+  const { t } = useLang()
   const hasProgress = action.target != null && action.target > 0 && action.paid != null
   const paid = action.paid ?? 0
   const target = action.target ?? 0
@@ -858,13 +846,13 @@ function ActionRow({ action, currency, onPayBank, onPayPersonal }: {
         {action.action === 'PAY_BANK' && (
           <button onClick={onPayBank}
             className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold transition-colors">
-            <Plus className="w-3 h-3" /> Record
+            <Plus className="w-3 h-3" /> {t('page.overview.recordButton')}
           </button>
         )}
         {action.action === 'PAY_PERSONAL_LOAN' && (
           <button onClick={onPayPersonal}
             className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold transition-colors">
-            <Plus className="w-3 h-3" /> Record
+            <Plus className="w-3 h-3" /> {t('page.overview.recordButton')}
           </button>
         )}
       </div>
@@ -875,12 +863,11 @@ function ActionRow({ action, currency, onPayBank, onPayPersonal }: {
               style={{ width: `${paidPct}%` }} />
           </div>
           <p className="text-[11px] text-amber-900/80">
-            Paid this month: <span className="font-semibold">{formatCurrency(paid, currency, true)}</span>
-            {' '}of {formatCurrency(target, currency, true)}
+            {t('page.overview.paidThisMonth', { paid: formatCurrency(paid, currency, true), target: formatCurrency(target, currency, true) })}
             {showsThreshold && (
-              <span className="text-amber-900/60"> · unlocks at {formatCurrency(threshold, currency, true)}</span>
+              <span className="text-amber-900/60"> · {t('page.overview.unlocksAt', { threshold: formatCurrency(threshold, currency, true) })}</span>
             )}
-            {met && <span className="ml-1 text-emerald-700 font-semibold">· Met</span>}
+            {met && <span className="ml-1 text-emerald-700 font-semibold">· {t('page.overview.metLabel')}</span>}
           </p>
         </div>
       )}
@@ -895,6 +882,7 @@ function AllocationCard({ line, currency, disabled, onPay, onHistory }: {
   onPay: (suggested?: number) => void
   onHistory: () => void
 }) {
+  const { t } = useLang()
   const meta = BUCKET_ICONS[line.bucket]
   const recommended = line.recommended
   const target = line.minAmount ?? 0
@@ -935,10 +923,10 @@ function AllocationCard({ line, currency, disabled, onPay, onHistory }: {
               </span>
             </p>
           ) : (
-            <p className="text-xs text-slate-400 mt-0.5 font-medium">Not needed this month</p>
+            <p className="text-xs text-slate-400 mt-0.5 font-medium">{t('page.overview.notNeededThisMonth')}</p>
           )}
         </div>
-        <button onClick={onHistory} title="Payment history this month"
+        <button onClick={onHistory} title={t('page.overview.paymentHistoryThisMonthTitle')}
           className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 shrink-0">
           <History className="w-3.5 h-3.5" />
         </button>
@@ -956,13 +944,13 @@ function AllocationCard({ line, currency, disabled, onPay, onHistory }: {
             </div>
             <div className="flex justify-between text-[11px] text-slate-500">
               <span>
-                Paid <span className="font-semibold text-slate-700">{formatCurrency(paid, currency, true)}</span>
+                {t('page.overview.paidWord')} <span className="font-semibold text-slate-700">{formatCurrency(paid, currency, true)}</span>
                 {target > 0 && <span className="text-slate-400"> ({Math.round(paidPct)}%)</span>}
               </span>
               <span>
                 {complete
-                  ? <span className="text-emerald-600 font-semibold">Target met</span>
-                  : <>Remaining <span className="font-semibold text-slate-700">{formatCurrency(remaining, currency, true)}</span></>}
+                  ? <span className="text-emerald-600 font-semibold">{t('page.overview.targetMetLabel')}</span>
+                  : <>{t('page.shared.remaining')} <span className="font-semibold text-slate-700">{formatCurrency(remaining, currency, true)}</span></>}
               </span>
             </div>
           </div>
@@ -971,26 +959,26 @@ function AllocationCard({ line, currency, disabled, onPay, onHistory }: {
           <div className="flex items-center gap-2 pt-1.5 border-t border-slate-100">
             <button onClick={() => onPay(remaining > 0 ? remaining : target)}
               disabled={disabled}
-              title={disabled ? 'Pay your action items first to unlock' : undefined}
+              title={disabled ? t('page.overview.payActionItemsFirstTitle') : undefined}
               className="flex items-center gap-1 px-2 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-indigo-600">
-              <Plus className="w-3.5 h-3.5" /> Record payment
+              <Plus className="w-3.5 h-3.5" /> {t('page.overview.recordPaymentButton')}
             </button>
             <div className="flex items-center gap-1.5 ml-auto">
               <Split className="w-3.5 h-3.5 text-slate-400" />
               <input type="number" min={1} max={9999} value={splitInput}
                 onChange={e => setSplitInput(e.target.value)}
                 className="w-12 text-center text-xs border border-slate-200 rounded-md py-1 focus:outline-none focus:ring-1 focus:ring-indigo-300"
-                aria-label={`Split ${line.label} amount`} />
+                aria-label={t('page.overview.splitAriaLabel', { label: line.label })} />
               <span className="text-[11px] text-slate-500 whitespace-nowrap">
                 {splitN > 1
                   ? <>= <span className="font-semibold text-slate-700">{formatCurrency(perShare, currency, true)}</span></>
-                  : 'per share'}
+                  : t('page.overview.perShare')}
               </span>
               {splitN > 1 && (
                 <button onClick={() => onPay(perShare)}
                   disabled={disabled}
                   className="text-[11px] font-semibold text-indigo-600 hover:underline disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed">
-                  Record share
+                  {t('page.overview.recordShareButton')}
                 </button>
               )}
             </div>
@@ -1001,7 +989,7 @@ function AllocationCard({ line, currency, disabled, onPay, onHistory }: {
       {/* Not-recommended cards still show paid amount if any was recorded */}
       {!recommended && paid > 0 && (
         <p className="text-[11px] text-slate-400 pt-1 border-t border-slate-100">
-          Paid this month: <span className="font-semibold text-slate-600">{formatCurrency(paid, currency, true)}</span>
+          {t('page.overview.paidThisMonthOnly', { amount: formatCurrency(paid, currency, true) })}
         </p>
       )}
     </div>

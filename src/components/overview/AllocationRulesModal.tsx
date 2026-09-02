@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Lock } from 'lucide-react'
 import { Modal } from '../ui/Modal'
 import { Spinner } from '../ui/Spinner'
+import { useLang } from '../../i18n/LanguageContext'
 import { overviewApi } from '../../api/overview'
 import { extractErrorMessage } from '../../api/client'
 import { formatCurrency } from '../../utils/format'
@@ -14,7 +15,6 @@ interface Props {
 }
 
 const SUBS = ['1', '2', '3']
-const BUCKET_COLS = ['Donation', 'Emergency', 'Investments', 'Stocks'] as const
 
 type SubEdit = { d: string; e: string; i: string; s: string }
 type Edit = { minLeftover: string; expirationMonth: string; subs: Record<string, SubEdit> }
@@ -33,6 +33,8 @@ function amtRange(pct: number | null, low: number, high: number): string | null 
 }
 
 export function AllocationRulesModal({ open, onClose, onSaved }: Props) {
+  const { t } = useLang()
+  const BUCKET_COLS = [t('cmp.bucket.donation'), t('cmp.bucket.emergency'), t('cmp.bucket.investments'), t('cmp.bucket.stocks')] as const
   const [view, setView] = useState<AllocationRulesView | null>(null)
   const [edit, setEdit] = useState<Edit | null>(null)
   const [loading, setLoading] = useState(false)
@@ -101,25 +103,22 @@ export function AllocationRulesModal({ open, onClose, onSaved }: Props) {
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Allocation rules — income tiers" maxWidth="max-w-3xl">
+    <Modal open={open} onClose={onClose} title={t('cmp.allocationRules.title')} maxWidth="max-w-3xl">
       <div className="space-y-4">
         <p className="text-xs text-slate-500">
-          Minimum % of income to allocate at each sub-level (UZS). Amounts shown are the % applied to
-          the level's left-money range. Level 1 is the built-in reference. You can only edit your
-          current level{view?.currentLevel ? ` (Level ${view.currentLevel})` : ''}; lock it with an
-          expiration month to commit until then.
+          {t('cmp.allocationRules.intro')}
+          {view?.currentLevel ? t('cmp.allocationRules.currentLevelParen', { level: view.currentLevel }) : ''}
+          {t('cmp.allocationRules.lockSuffix')}
         </p>
         <p className="text-[11px] text-slate-400">
-          Level 1 follows the owner spec: the 1.2 row shows the comfortable (≥ 5M after debt) reference
-          (7 / 3 / 10 / 0). Actual percentages vary by loan-only vs. debt-only vs. both, and by the 5M
-          tight (5 / 2 / 8 / 0) split — see the allocation card for your exact numbers.
+          {t('cmp.allocationRules.level1Note')}
         </p>
 
         {loading ? (
           <div className="h-40 flex items-center justify-center"><Spinner /></div>
         ) : view?.missingStableIncome ? (
           <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 text-sm text-amber-800">
-            Set a monthly stable income in Settings first — your current level can't be determined.
+            {t('cmp.allocationRules.missingIncome')}
           </div>
         ) : view ? (
           <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
@@ -133,17 +132,17 @@ export function AllocationRulesModal({ open, onClose, onSaved }: Props) {
                   <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
                     <div className="flex items-center gap-2">
                       <p className={`text-sm font-semibold ${isCurrent ? 'text-indigo-700' : 'text-slate-700'}`}>
-                        Level {lvl.level}
+                        {t('cmp.allocationRules.level', { level: lvl.level })}
                       </p>
                       <span className="text-[11px] text-slate-400">
                         {formatCurrency(lvl.incomeLow, 'UZS', true)} – {formatCurrency(lvl.incomeHigh, 'UZS', true)}
                       </span>
-                      {lvl.builtIn && <span className="text-[10px] uppercase tracking-wider text-slate-400">built-in</span>}
-                      {isCurrent && <span className="text-[10px] uppercase tracking-wider text-indigo-500">you are here</span>}
+                      {lvl.builtIn && <span className="text-[10px] uppercase tracking-wider text-slate-400">{t('cmp.allocationRules.builtIn')}</span>}
+                      {isCurrent && <span className="text-[10px] uppercase tracking-wider text-indigo-500">{t('cmp.allocationRules.youAreHere')}</span>}
                     </div>
                     {lvl.locked && (
                       <span className="inline-flex items-center gap-1 text-[11px] text-amber-600 font-medium">
-                        <Lock className="w-3 h-3" /> Locked until {lvl.expirationMonth}
+                        <Lock className="w-3 h-3" /> {t('cmp.allocationRules.lockedUntil', { month: lvl.expirationMonth ?? '' })}
                       </span>
                     )}
                   </div>
@@ -151,7 +150,7 @@ export function AllocationRulesModal({ open, onClose, onSaved }: Props) {
                   {/* Per-level config: min leftover + expiration */}
                   <div className="flex items-end gap-4 flex-wrap mb-3">
                     <div>
-                      <label className="block text-[11px] font-medium text-slate-500 mb-0.5">Min leftover (UZS)</label>
+                      <label className="block text-[11px] font-medium text-slate-500 mb-0.5">{t('cmp.allocationRules.minLeftover')}</label>
                       {ev ? (
                         <input type="number" min="0" step="100000" value={ev.minLeftover}
                           onChange={e => setEdit(p => p && ({ ...p, minLeftover: e.target.value }))}
@@ -161,7 +160,7 @@ export function AllocationRulesModal({ open, onClose, onSaved }: Props) {
                       )}
                     </div>
                     <div>
-                      <label className="block text-[11px] font-medium text-slate-500 mb-0.5">Lock until (month)</label>
+                      <label className="block text-[11px] font-medium text-slate-500 mb-0.5">{t('cmp.allocationRules.lockUntilMonth')}</label>
                       {ev ? (
                         <input type="month" value={ev.expirationMonth}
                           onChange={e => setEdit(p => p && ({ ...p, expirationMonth: e.target.value }))}
@@ -176,7 +175,7 @@ export function AllocationRulesModal({ open, onClose, onSaved }: Props) {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="text-[11px] uppercase tracking-wider text-slate-400 text-left">
-                        <th className="font-medium py-1 pr-2">Sub-level</th>
+                        <th className="font-medium py-1 pr-2">{t('cmp.allocationRules.subLevel')}</th>
                         {BUCKET_COLS.map(c => <th key={c} className="font-medium py-1 px-1 text-right">{c}</th>)}
                       </tr>
                     </thead>
@@ -231,21 +230,21 @@ export function AllocationRulesModal({ open, onClose, onSaved }: Props) {
         {!loading && view && !view.missingStableIncome && !editLevelView && (
           <p className="text-xs text-slate-400">
             {view.currentLevel == null
-              ? 'No editable level — set your income to determine your current tier.'
-              : `Level ${view.currentLevel} is locked until its expiration month. Other levels are read-only.`}
+              ? t('cmp.allocationRules.noEditableLevel')
+              : t('cmp.allocationRules.lockedReadOnly', { level: view.currentLevel })}
           </p>
         )}
 
         <div className="flex gap-3 pt-1">
           <button type="button" onClick={onClose}
             className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50">
-            Close
+            {t('action.close')}
           </button>
           {editLevelView && (
             <button type="button" onClick={handleSave} disabled={saving}
               className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-60 flex items-center justify-center gap-2">
               {saving && <Spinner className="w-4 h-4" />}
-              {saving ? 'Saving…' : `Save Level ${editLevelView.level}`}
+              {saving ? t('action.saving') : t('cmp.allocationRules.saveLevel', { level: editLevelView.level })}
             </button>
           )}
         </div>

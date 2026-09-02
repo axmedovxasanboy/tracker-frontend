@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Modal } from '../ui/Modal'
 import { Spinner } from '../ui/Spinner'
 import { AmountInput } from '../ui/AmountInput'
+import { useLang } from '../../i18n/LanguageContext'
 import { cardsApi } from '../../api/cards'
 import { financeApi } from '../../api/finance'
 import { extractErrorMessage } from '../../api/client'
@@ -23,6 +24,7 @@ interface Props {
 
 /** Add money to an existing investment / savings goal. Contribution currency matches the goal. */
 export function ContributeInvestmentModal({ open, onClose, onSaved, investment }: Props) {
+  const { t } = useLang()
   const [amount, setAmount] = useState(0)
   const [date, setDate] = useState(today())
   const [description, setDescription] = useState('')
@@ -44,7 +46,7 @@ export function ContributeInvestmentModal({ open, onClose, onSaved, investment }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (amount <= 0) { setError('Amount must be greater than 0.'); return }
+    if (amount <= 0) { setError(t('cmp.err.amountPositive')); return }
     setSaving(true); setError(null)
     try {
       await financeApi.contributeInvestment(investment.id, {
@@ -60,23 +62,23 @@ export function ContributeInvestmentModal({ open, onClose, onSaved, investment }
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={`Contribute to ${investment.name}`} maxWidth="max-w-lg">
+    <Modal open={open} onClose={onClose} title={t('cmp.contributeInvestment.title', { name: investment.name })} maxWidth="max-w-lg">
       <form onSubmit={handleSubmit} className="space-y-3">
-        <Field label={`Amount * (${currency})`}>
+        <Field label={t('cmp.field.amountWithCurrency', { currency })}>
           <AmountInput required value={amount} currency={currency}
             onChange={v => setAmount(v)} className={INPUT} suffix={currency} />
         </Field>
 
-        <Field label="Date *">
+        <Field label={t('cmp.field.dateRequired')}>
           <input required type="date" value={date} onChange={e => setDate(e.target.value)} className={INPUT} />
         </Field>
 
-        <Field label="Source">
+        <Field label={t('cmp.field.source')}>
           <select value={source}
             onChange={e => setSource(e.target.value)}
             className={`${INPUT} bg-white`}>
-            <option value="none">— None (just record, don't move money) —</option>
-            <option value="cash">Cash</option>
+            <option value="none">{t('cmp.source.noneOption')}</option>
+            <option value="cash">{t('tx.cash')}</option>
             {matchingCards.map(c => (
               <option key={c.id} value={String(c.id)}>
                 {c.name} •••• {c.lastFourDigits} · {formatCurrency(c.currentBalance, c.currency)}
@@ -85,12 +87,12 @@ export function ContributeInvestmentModal({ open, onClose, onSaved, investment }
           </select>
           {source === 'none' && (
             <p className="text-[11px] text-slate-400 mt-1">
-              No wallet will be debited — only the invested total goes up.
+              {t('cmp.contributeInvestment.noWalletHint')}
             </p>
           )}
         </Field>
 
-        <Field label="Description">
+        <Field label={t('tx.description')}>
           <textarea rows={2} value={description}
             onChange={e => setDescription(e.target.value)}
             className={`${INPUT} resize-none`} />
@@ -103,12 +105,12 @@ export function ContributeInvestmentModal({ open, onClose, onSaved, investment }
         <div className="flex gap-3 pt-1">
           <button type="button" onClick={onClose}
             className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50">
-            Cancel
+            {t('action.cancel')}
           </button>
           <button type="submit" disabled={saving}
             className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-60 flex items-center justify-center gap-2">
             {saving && <Spinner className="w-4 h-4" />}
-            {saving ? 'Saving…' : 'Contribute'}
+            {saving ? t('action.saving') : t('cmp.contributeInvestment.submit')}
           </button>
         </div>
       </form>

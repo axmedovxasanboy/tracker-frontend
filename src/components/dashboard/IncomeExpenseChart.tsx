@@ -3,6 +3,7 @@ import {
 } from 'recharts'
 import { Spinner } from '../ui/Spinner'
 import { CacheBadge } from '../ui/CacheBadge'
+import { useLang } from '../../i18n/LanguageContext'
 import type { MonthlyData, Currency } from '../../types'
 import { formatCurrency } from '../../utils/format'
 
@@ -15,12 +16,13 @@ interface Props {
 }
 
 export function IncomeExpenseChart({ data, loading, currency, isCached, cachedAt }: Props) {
+  const { t } = useLang()
   return (
     <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h3 className="font-semibold text-slate-800">Income vs Expenses</h3>
-          <p className="text-xs text-slate-400 mt-0.5">Monthly overview for this year</p>
+          <h3 className="font-semibold text-slate-800">{t('cmp.dashboard.incomeVsExpenses')}</h3>
+          <p className="text-xs text-slate-400 mt-0.5">{t('cmp.dashboard.monthlyOverview')}</p>
         </div>
         <CacheBadge isCached={!!isCached} cachedAt={cachedAt ?? null} />
       </div>
@@ -55,8 +57,8 @@ export function IncomeExpenseChart({ data, loading, currency, isCached, cachedAt
               formatter={(value: number) => [formatCurrency(value, currency), '']}
             />
             <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} />
-            <Area type="monotone" dataKey="income" name="Income" stroke="#10b981" strokeWidth={2} fill="url(#incomeGrad)" dot={false} activeDot={{ r: 4 }} />
-            <Area type="monotone" dataKey="expense" name="Expense" stroke="#f43f5e" strokeWidth={2} fill="url(#expenseGrad)" dot={false} activeDot={{ r: 4 }} />
+            <Area type="monotone" dataKey="income" name={t('tx.income')} stroke="#10b981" strokeWidth={2} fill="url(#incomeGrad)" dot={false} activeDot={{ r: 4 }} />
+            <Area type="monotone" dataKey="expense" name={t('tx.expense')} stroke="#f43f5e" strokeWidth={2} fill="url(#expenseGrad)" dot={false} activeDot={{ r: 4 }} />
           </AreaChart>
         </ResponsiveContainer>
       )}

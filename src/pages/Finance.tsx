@@ -1,6 +1,8 @@
 import { useState, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useToast } from '../context/ToastContext'
+import { useLang } from '../i18n/LanguageContext'
+import type { TKey } from '../i18n/LanguageContext'
 import { useConfirm } from '../context/ConfirmContext'
 import { Plus, Pencil, Trash2, AlertCircle, CheckCircle, Clock, TrendingUp, TrendingDown, CreditCard, X, ArrowUpRight, History, Wallet, ArrowUp, ArrowDown, DollarSign } from 'lucide-react'
 import { format, differenceInCalendarMonths } from 'date-fns'
@@ -14,7 +16,7 @@ import { financeApi } from '../api/finance'
 import { categoriesApi } from '../api/categories'
 import { formatCurrency, snap } from '../utils/format'
 import type {
-  Currency, RecordStatus,
+  RecordStatus,
   DebtRequest, DebtResponse, LoanGivenRequest, LoanGivenResponse,
   LoanTakenRequest, LoanTakenResponse,
   BankLoanRequest, MonthlyPaymentRequest, MonthlyPaymentResponse,
@@ -23,36 +25,38 @@ import type {
 type FinanceTab = 'overview' | 'debts' | 'bank-loans' | 'monthly-payments'
 type DebtSubTab = 'debts' | 'loans-given' | 'loans-taken'
 
-const TABS: { id: FinanceTab; label: string; color: string }[] = [
-  { id: 'overview',         label: 'Overview',    color: 'indigo' },
-  { id: 'debts',            label: 'Loans',       color: 'rose'   },
-  { id: 'bank-loans',       label: 'Bank Loans',  color: 'indigo' },
-  { id: 'monthly-payments', label: 'Monthly',     color: 'violet' },
+const TABS: { id: FinanceTab; labelKey: TKey; color: string }[] = [
+  { id: 'overview',         labelKey: 'nav.overview',           color: 'indigo' },
+  { id: 'debts',            labelKey: 'page.finance.tabLoans',  color: 'rose'   },
+  { id: 'bank-loans',       labelKey: 'page.finance.tabBankLoans', color: 'indigo' },
+  { id: 'monthly-payments', labelKey: 'page.finance.tabMonthly', color: 'violet' },
 ]
 
 // No "debts" sub-tab — only Lent and Borrowed
-const DEBT_SUB_TABS: { id: DebtSubTab; label: string }[] = [
-  { id: 'loans-given', label: 'Lented Money'   },
-  { id: 'loans-taken', label: 'Borrowed Money' },
+const DEBT_SUB_TABS: { id: DebtSubTab; labelKey: TKey }[] = [
+  { id: 'loans-given', labelKey: 'page.finance.subTabLentedMoney'   },
+  { id: 'loans-taken', labelKey: 'page.finance.subTabBorrowedMoney' },
 ]
 
-const STATUS_BADGE: Record<RecordStatus, { label: string; className: string }> = {
-  PENDING:        { label: 'Pending',          className: 'bg-amber-100 text-amber-700' },
-  PARTIALLY_PAID: { label: 'Partial',          className: 'bg-blue-100 text-blue-700' },
-  PAID:           { label: 'Paid',             className: 'bg-emerald-100 text-emerald-700' },
-  OVERDUE:        { label: 'Overdue',          className: 'bg-rose-100 text-rose-700' },
+const STATUS_BADGE: Record<RecordStatus, { labelKey: TKey; className: string }> = {
+  PENDING:        { labelKey: 'page.finance.statusPending', className: 'bg-amber-100 text-amber-700' },
+  PARTIALLY_PAID: { labelKey: 'page.finance.statusPartial', className: 'bg-blue-100 text-blue-700' },
+  PAID:           { labelKey: 'page.finance.statusPaid',    className: 'bg-emerald-100 text-emerald-700' },
+  OVERDUE:        { labelKey: 'page.finance.statusOverdue', className: 'bg-rose-100 text-rose-700' },
 }
 
 function StatusBadge({ status }: { status: RecordStatus }) {
-  const { label, className } = STATUS_BADGE[status]
-  return <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${className}`}>{label}</span>
+  const { t } = useLang()
+  const { labelKey, className } = STATUS_BADGE[status]
+  return <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${className}`}>{t(labelKey)}</span>
 }
 
 function EmptyState({ label }: { label: string }) {
+  const { t } = useLang()
   return (
     <div className="flex flex-col items-center justify-center py-20 text-slate-300 gap-2">
       <AlertCircle className="w-10 h-10" />
-      <p className="text-sm text-slate-400">No {label} yet</p>
+      <p className="text-sm text-slate-400">{t('page.finance.noItemsYet', { label })}</p>
     </div>
   )
 }
@@ -74,6 +78,7 @@ function ActionButtons({ onEdit, onDelete, deleting }: { onEdit: () => void; onD
 }
 
 export function Finance() {
+  const { t, categoryName } = useLang()
   const { tab = 'debts' } = useParams<{ tab: FinanceTab }>()
   const navigate = useNavigate()
   const confirm = useConfirm()
@@ -147,37 +152,34 @@ export function Finance() {
   }
 
   // ── DEBT FORM ──────────────────────────────────────────────────────────────
-  const [debtForm, setDebtForm] = useState<DebtRequest>({ creditorName: '', totalAmount: 0, currency: 'USD', borrowedDate: today() })
+  const [debtForm, setDebtForm] = useState<DebtRequest>({ creditorName: '', totalAmount: 0, currency: 'UZS', borrowedDate: today() })
   const DebtModal = () => {
     const existing = editId ? debts.data?.find(d => d.id === editId) : null
     return (
-      <Modal open={modalOpen && eff === 'debts'} onClose={closeModal} title={editId ? 'Edit Debt' : 'New Debt'}>
+      <Modal open={modalOpen && eff === 'debts'} onClose={closeModal} title={editId ? t('page.finance.editDebtTitle') : t('page.finance.newDebtTitle')}>
         <form onSubmit={save} className="space-y-3">
-          <Field label="Creditor Name *"><input required value={debtForm.creditorName} onChange={e => setDebtForm(p => ({ ...p, creditorName: e.target.value }))} className={INPUT} placeholder="Who you owe" /></Field>
+          <Field label={t('page.finance.creditorNameLabel')}><input required value={debtForm.creditorName} onChange={e => setDebtForm(p => ({ ...p, creditorName: e.target.value }))} className={INPUT} placeholder={t('page.finance.whoYouOwePlaceholder')} /></Field>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Total Amount *">
+            <Field label={t('page.finance.totalAmountLabel')}>
               <AmountInput required value={debtForm.totalAmount || 0} currency={debtForm.currency}
                 onChange={v => setDebtForm(p => ({ ...p, totalAmount: v }))} className={INPUT} suffix={debtForm.currency} />
             </Field>
-            <Field label="Paid Amount">
+            <Field label={t('page.finance.paidAmountLabel')}>
               <AmountInput value={debtForm.paidAmount || 0} currency={debtForm.currency}
                 onChange={v => setDebtForm(p => ({ ...p, paidAmount: v }))} className={INPUT} suffix={debtForm.currency} />
             </Field>
           </div>
+          <Field label={t('page.finance.statusLabel')}><StatusSelect value={debtForm.status ?? 'PENDING'} onChange={v => setDebtForm(p => ({ ...p, status: v }))} /></Field>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Currency *"><CurrencySelect value={debtForm.currency} onChange={v => setDebtForm(p => ({ ...p, currency: v }))} /></Field>
-            <Field label="Status"><StatusSelect value={debtForm.status ?? 'PENDING'} onChange={v => setDebtForm(p => ({ ...p, status: v }))} /></Field>
+            <Field label={t('page.finance.borrowedDateLabel')}><input required type="date" value={debtForm.borrowedDate} onChange={e => setDebtForm(p => ({ ...p, borrowedDate: e.target.value }))} className={INPUT} /></Field>
+            <Field label={t('page.finance.dueDateLabel')}><input type="date" value={debtForm.dueDate ?? ''} onChange={e => setDebtForm(p => ({ ...p, dueDate: e.target.value }))} className={INPUT} /></Field>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Borrowed Date *"><input required type="date" value={debtForm.borrowedDate} onChange={e => setDebtForm(p => ({ ...p, borrowedDate: e.target.value }))} className={INPUT} /></Field>
-            <Field label="Due Date"><input type="date" value={debtForm.dueDate ?? ''} onChange={e => setDebtForm(p => ({ ...p, dueDate: e.target.value }))} className={INPUT} /></Field>
-          </div>
-          <Field label="Payment starts">
+          <Field label={t('page.finance.paymentStartsLabel')}>
             <input type="month" value={(debtForm.paymentStartDate ?? '').slice(0, 7)}
               onChange={e => setDebtForm(p => ({ ...p, paymentStartDate: e.target.value ? `${e.target.value}-01` : undefined }))} className={INPUT} />
-            <p className="text-[11px] text-slate-400 mt-1">Month this debt starts counting toward the Overview tier. Defaults to next month.</p>
+            <p className="text-[11px] text-slate-400 mt-1">{t('page.finance.paymentStartsHintDebt')}</p>
           </Field>
-          <Field label="Description"><textarea rows={2} value={debtForm.description ?? ''} onChange={e => setDebtForm(p => ({ ...p, description: e.target.value }))} className={`${INPUT} resize-none`} /></Field>
+          <Field label={t('tx.description')}><textarea rows={2} value={debtForm.description ?? ''} onChange={e => setDebtForm(p => ({ ...p, description: e.target.value }))} className={`${INPUT} resize-none`} /></Field>
           <ModalActions onClose={closeModal} saving={saving} isEdit={!!editId} />
         </form>
       </Modal>
@@ -185,102 +187,93 @@ export function Finance() {
   }
 
   // ── LOAN GIVEN FORM ────────────────────────────────────────────────────────
-  const [lgForm, setLgForm] = useState<LoanGivenRequest>({ debtorName: '', totalAmount: 0, currency: 'USD', lentDate: today() })
+  const [lgForm, setLgForm] = useState<LoanGivenRequest>({ debtorName: '', totalAmount: 0, currency: 'UZS', lentDate: today() })
   const LoanGivenModal = () => (
-    <Modal open={modalOpen && eff === 'loans-given'} onClose={closeModal} title={editId ? 'Edit Loan Lent' : 'New Loan Lent'}>
+    <Modal open={modalOpen && eff === 'loans-given'} onClose={closeModal} title={editId ? t('page.finance.editLoanLentTitle') : t('page.finance.newLoanLentTitle')}>
       <form onSubmit={save} className="space-y-3">
-        <Field label="Debtor Name *"><input required value={lgForm.debtorName} onChange={e => setLgForm(p => ({ ...p, debtorName: e.target.value }))} className={INPUT} placeholder="Who owes you" /></Field>
+        <Field label={t('page.finance.debtorNameLabel')}><input required value={lgForm.debtorName} onChange={e => setLgForm(p => ({ ...p, debtorName: e.target.value }))} className={INPUT} placeholder={t('page.finance.whoOwesYouPlaceholder')} /></Field>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Amount Lent *">
+          <Field label={t('page.finance.amountLentLabel')}>
             <AmountInput required value={lgForm.totalAmount || 0} currency={lgForm.currency}
               onChange={v => setLgForm(p => ({ ...p, totalAmount: v }))} className={INPUT} suffix={lgForm.currency} />
           </Field>
-          <Field label="Received Back">
+          <Field label={t('page.finance.receivedBackLabel')}>
             <AmountInput value={lgForm.receivedAmount || 0} currency={lgForm.currency}
               onChange={v => setLgForm(p => ({ ...p, receivedAmount: v }))} className={INPUT} suffix={lgForm.currency} />
           </Field>
         </div>
+        <Field label={t('page.finance.statusLabel')}><StatusSelect value={lgForm.status ?? 'PENDING'} onChange={v => setLgForm(p => ({ ...p, status: v }))} /></Field>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Currency *"><CurrencySelect value={lgForm.currency} onChange={v => setLgForm(p => ({ ...p, currency: v }))} /></Field>
-          <Field label="Status"><StatusSelect value={lgForm.status ?? 'PENDING'} onChange={v => setLgForm(p => ({ ...p, status: v }))} /></Field>
+          <Field label={t('page.finance.lentDateLabel')}><input required type="date" value={lgForm.lentDate} onChange={e => setLgForm(p => ({ ...p, lentDate: e.target.value }))} className={INPUT} /></Field>
+          <Field label={t('page.finance.expectedReturnLabel')}><input type="date" value={lgForm.expectedReturnDate ?? ''} onChange={e => setLgForm(p => ({ ...p, expectedReturnDate: e.target.value }))} className={INPUT} /></Field>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Lent Date *"><input required type="date" value={lgForm.lentDate} onChange={e => setLgForm(p => ({ ...p, lentDate: e.target.value }))} className={INPUT} /></Field>
-          <Field label="Expected Return"><input type="date" value={lgForm.expectedReturnDate ?? ''} onChange={e => setLgForm(p => ({ ...p, expectedReturnDate: e.target.value }))} className={INPUT} /></Field>
-        </div>
-        <Field label="Description"><textarea rows={2} value={lgForm.description ?? ''} onChange={e => setLgForm(p => ({ ...p, description: e.target.value }))} className={`${INPUT} resize-none`} /></Field>
+        <Field label={t('tx.description')}><textarea rows={2} value={lgForm.description ?? ''} onChange={e => setLgForm(p => ({ ...p, description: e.target.value }))} className={`${INPUT} resize-none`} /></Field>
         <ModalActions onClose={closeModal} saving={saving} isEdit={!!editId} />
       </form>
     </Modal>
   )
 
   // ── LOAN TAKEN FORM ────────────────────────────────────────────────────────
-  const [ltForm, setLtForm] = useState<LoanTakenRequest>({ lenderName: '', totalAmount: 0, currency: 'USD', borrowedDate: today() })
+  const [ltForm, setLtForm] = useState<LoanTakenRequest>({ lenderName: '', totalAmount: 0, currency: 'UZS', borrowedDate: today() })
   const LoanTakenModal = () => (
-    <Modal open={modalOpen && eff === 'loans-taken'} onClose={closeModal} title={editId ? 'Edit Loan Borrowed' : 'New Loan Borrowed'}>
+    <Modal open={modalOpen && eff === 'loans-taken'} onClose={closeModal} title={editId ? t('page.finance.editLoanBorrowedTitle') : t('page.finance.newLoanBorrowedTitle')}>
       <form onSubmit={save} className="space-y-3">
-        <Field label="Lender Name *"><input required value={ltForm.lenderName} onChange={e => setLtForm(p => ({ ...p, lenderName: e.target.value }))} className={INPUT} placeholder="Who lent you money" /></Field>
+        <Field label={t('page.finance.lenderNameLabel')}><input required value={ltForm.lenderName} onChange={e => setLtForm(p => ({ ...p, lenderName: e.target.value }))} className={INPUT} placeholder={t('page.finance.whoLentYouPlaceholder')} /></Field>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Total Amount *">
+          <Field label={t('page.finance.totalAmountLabel')}>
             <AmountInput required value={ltForm.totalAmount || 0} currency={ltForm.currency}
               onChange={v => setLtForm(p => ({ ...p, totalAmount: v }))} className={INPUT} suffix={ltForm.currency} />
           </Field>
-          <Field label="Paid Back">
+          <Field label={t('page.finance.paidBackLabel')}>
             <AmountInput value={ltForm.paidAmount || 0} currency={ltForm.currency}
               onChange={v => setLtForm(p => ({ ...p, paidAmount: v }))} className={INPUT} suffix={ltForm.currency} />
           </Field>
         </div>
+        <Field label={t('page.finance.statusLabel')}><StatusSelect value={ltForm.status ?? 'PENDING'} onChange={v => setLtForm(p => ({ ...p, status: v }))} /></Field>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Currency *"><CurrencySelect value={ltForm.currency} onChange={v => setLtForm(p => ({ ...p, currency: v }))} /></Field>
-          <Field label="Status"><StatusSelect value={ltForm.status ?? 'PENDING'} onChange={v => setLtForm(p => ({ ...p, status: v }))} /></Field>
+          <Field label={t('page.finance.borrowedDateLabel')}><input required type="date" value={ltForm.borrowedDate} onChange={e => setLtForm(p => ({ ...p, borrowedDate: e.target.value }))} className={INPUT} /></Field>
+          <Field label={t('page.finance.dueDateLabel')}><input type="date" value={ltForm.dueDate ?? ''} onChange={e => setLtForm(p => ({ ...p, dueDate: e.target.value }))} className={INPUT} /></Field>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Borrowed Date *"><input required type="date" value={ltForm.borrowedDate} onChange={e => setLtForm(p => ({ ...p, borrowedDate: e.target.value }))} className={INPUT} /></Field>
-          <Field label="Due Date"><input type="date" value={ltForm.dueDate ?? ''} onChange={e => setLtForm(p => ({ ...p, dueDate: e.target.value }))} className={INPUT} /></Field>
-        </div>
-        <Field label="Payment starts">
+        <Field label={t('page.finance.paymentStartsLabel')}>
           <input type="month" value={(ltForm.paymentStartDate ?? '').slice(0, 7)}
             onChange={e => setLtForm(p => ({ ...p, paymentStartDate: e.target.value ? `${e.target.value}-01` : undefined }))} className={INPUT} />
-          <p className="text-[11px] text-slate-400 mt-1">Month repayments start counting toward the Overview tier. Defaults to next month.</p>
+          <p className="text-[11px] text-slate-400 mt-1">{t('page.finance.paymentStartsHintLoanTaken')}</p>
         </Field>
-        <Field label="Description"><textarea rows={2} value={ltForm.description ?? ''} onChange={e => setLtForm(p => ({ ...p, description: e.target.value }))} className={`${INPUT} resize-none`} /></Field>
+        <Field label={t('tx.description')}><textarea rows={2} value={ltForm.description ?? ''} onChange={e => setLtForm(p => ({ ...p, description: e.target.value }))} className={`${INPUT} resize-none`} /></Field>
         <ModalActions onClose={closeModal} saving={saving} isEdit={!!editId} />
       </form>
     </Modal>
   )
 
   // ── BANK LOAN FORM ─────────────────────────────────────────────────────────
-  const [blForm, setBlForm] = useState<BankLoanRequest>({ bankName: '', loanName: '', totalAmount: 0, currency: 'USD', takenDate: today() })
+  const [blForm, setBlForm] = useState<BankLoanRequest>({ bankName: '', loanName: '', totalAmount: 0, currency: 'UZS', takenDate: today() })
   const BankLoanModal = () => (
-    <Modal open={modalOpen && eff === 'bank-loans'} onClose={closeModal} title={editId ? 'Edit Bank Loan' : 'New Bank Loan'}>
+    <Modal open={modalOpen && eff === 'bank-loans'} onClose={closeModal} title={editId ? t('page.finance.editBankLoanTitle') : t('page.finance.newBankLoanTitle')}>
       <form onSubmit={save} className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Bank Name *"><input required value={blForm.bankName} onChange={e => setBlForm(p => ({ ...p, bankName: e.target.value }))} className={INPUT} placeholder="e.g. Kapitalbank" /></Field>
-          <Field label="Loan Type *">
+          <Field label={t('page.shared.bankNameLabel')}><input required value={blForm.bankName} onChange={e => setBlForm(p => ({ ...p, bankName: e.target.value }))} className={INPUT} placeholder={t('page.finance.bankNamePlaceholder')} /></Field>
+          <Field label={t('page.finance.loanTypeLabel')}>
             <select required value={blForm.loanName} onChange={e => setBlForm(p => ({ ...p, loanName: e.target.value }))} className={`${INPUT} bg-white`}>
-              <option value="">Select type *</option>
+              <option value="">{t('page.finance.selectTypePlaceholder')}</option>
               <option value="Talim kredit">Talim kredit</option>
               <option value="Avtokredit">Avtokredit</option>
               <option value="Ipoteka / Uy kredit">Ipoteka / Uy kredit</option>
             </select>
           </Field>
         </div>
+        <Field label={t('page.finance.totalAmountLabel')}>
+          <AmountInput required value={blForm.totalAmount || 0} currency={blForm.currency}
+            onChange={v => setBlForm(p => ({ ...p, totalAmount: v }))} className={INPUT} suffix={blForm.currency} />
+        </Field>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Total Amount *">
-            <AmountInput required value={blForm.totalAmount || 0} currency={blForm.currency}
-              onChange={v => setBlForm(p => ({ ...p, totalAmount: v }))} className={INPUT} suffix={blForm.currency} />
-          </Field>
-          <Field label="Currency *"><CurrencySelect value={blForm.currency} onChange={v => setBlForm(p => ({ ...p, currency: v }))} /></Field>
+          <Field label={t('page.finance.takenDateLabel')}><input required type="date" value={blForm.takenDate} onChange={e => setBlForm(p => ({ ...p, takenDate: e.target.value }))} className={INPUT} /></Field>
+          <Field label={t('page.finance.endDateLabel')}><input type="date" value={blForm.endDate ?? ''} onChange={e => setBlForm(p => ({ ...p, endDate: e.target.value }))} className={INPUT} /></Field>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Taken Date *"><input required type="date" value={blForm.takenDate} onChange={e => setBlForm(p => ({ ...p, takenDate: e.target.value }))} className={INPUT} /></Field>
-          <Field label="End Date"><input type="date" value={blForm.endDate ?? ''} onChange={e => setBlForm(p => ({ ...p, endDate: e.target.value }))} className={INPUT} /></Field>
-        </div>
-        <Field label="Monthly Payment">
+        <Field label={t('page.finance.monthlyPaymentLabel')}>
           <AmountInput value={blForm.monthlyPayment ?? 0} currency={blForm.currency}
             onChange={v => setBlForm(p => ({ ...p, monthlyPayment: v > 0 ? v : undefined }))}
             className={INPUT} suffix={blForm.currency} />
-          <p className="text-[11px] text-slate-400 mt-1">Average installment — counted as a mandatory debt payment in the Overview dashboard.</p>
+          <p className="text-[11px] text-slate-400 mt-1">{t('page.finance.monthlyPaymentHint')}</p>
         </Field>
         <ModalActions onClose={closeModal} saving={saving} isEdit={!!editId} />
       </form>
@@ -288,38 +281,37 @@ export function Finance() {
   )
 
   // ── MONTHLY PAYMENT FORM ───────────────────────────────────────────────────
-  const [mpForm, setMpForm] = useState<MonthlyPaymentRequest>({ name: '', amount: 0, currency: 'USD', dueDay: 1, active: true })
+  const [mpForm, setMpForm] = useState<MonthlyPaymentRequest>({ name: '', amount: 0, currency: 'UZS', dueDay: 1, active: true })
   const MonthlyModal = () => (
-    <Modal open={modalOpen && eff === 'monthly-payments'} onClose={closeModal} title={editId ? 'Edit Monthly Payment' : 'New Monthly Payment'}>
+    <Modal open={modalOpen && eff === 'monthly-payments'} onClose={closeModal} title={editId ? t('page.finance.editMonthlyTitle') : t('page.finance.newMonthlyTitle')}>
       <form onSubmit={save} className="space-y-3">
-        <Field label="Name *"><input required value={mpForm.name} onChange={e => setMpForm(p => ({ ...p, name: e.target.value }))} className={INPUT} placeholder="Netflix, Rent, etc." /></Field>
-        <div className="grid grid-cols-3 gap-3">
-          <Field label="Amount *">
+        <Field label={t('page.shared.nameLabel')}><input required value={mpForm.name} onChange={e => setMpForm(p => ({ ...p, name: e.target.value }))} className={INPUT} placeholder={t('page.finance.monthlyNamePlaceholder')} /></Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label={`${t('tx.amount')} *`}>
             <AmountInput required value={mpForm.amount || 0} currency={mpForm.currency}
               onChange={v => setMpForm(p => ({ ...p, amount: v }))} className={INPUT} suffix={mpForm.currency} />
           </Field>
-          <Field label="Currency *"><CurrencySelect value={mpForm.currency} onChange={v => setMpForm(p => ({ ...p, currency: v }))} /></Field>
-          <Field label="Due Day *"><input required type="number" min="1" max="31" value={mpForm.dueDay} onChange={e => setMpForm(p => ({ ...p, dueDay: +e.target.value }))} className={INPUT} /></Field>
+          <Field label={t('page.finance.dueDayLabel')}><input required type="number" min="1" max="31" value={mpForm.dueDay} onChange={e => setMpForm(p => ({ ...p, dueDay: +e.target.value }))} className={INPUT} /></Field>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Category">
+          <Field label={t('tx.category')}>
             <select value={mpForm.categoryId ?? ''} onChange={e => setMpForm(p => ({ ...p, categoryId: e.target.value ? +e.target.value : undefined }))} className={`${INPUT} bg-white`}>
-              <option value="">— None —</option>
-              {(categories.data ?? []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              <option value="">{t('page.finance.noneOption')}</option>
+              {(categories.data ?? []).map(c => <option key={c.id} value={c.id}>{categoryName(c)}</option>)}
             </select>
           </Field>
-          <Field label="Next Due Date"><input type="date" value={mpForm.nextDueDate ?? ''} onChange={e => setMpForm(p => ({ ...p, nextDueDate: e.target.value }))} className={INPUT} /></Field>
+          <Field label={t('page.finance.nextDueDateLabel')}><input type="date" value={mpForm.nextDueDate ?? ''} onChange={e => setMpForm(p => ({ ...p, nextDueDate: e.target.value }))} className={INPUT} /></Field>
         </div>
-        <Field label="Subscribed since">
+        <Field label={t('page.finance.subscribedSinceLabel')}>
           <input type="date" value={mpForm.subscribedSince ?? ''}
             onChange={e => setMpForm(p => ({ ...p, subscribedSince: e.target.value || undefined }))}
             className={INPUT} />
         </Field>
         <label className="flex items-center gap-2 cursor-pointer">
           <input type="checkbox" checked={mpForm.active ?? true} onChange={e => setMpForm(p => ({ ...p, active: e.target.checked }))} className="w-4 h-4 rounded text-indigo-600" />
-          <span className="text-sm text-slate-600">Active</span>
+          <span className="text-sm text-slate-600">{t('page.finance.activeLabel')}</span>
         </label>
-        <Field label="Description"><textarea rows={2} value={mpForm.description ?? ''} onChange={e => setMpForm(p => ({ ...p, description: e.target.value }))} className={`${INPUT} resize-none`} /></Field>
+        <Field label={t('tx.description')}><textarea rows={2} value={mpForm.description ?? ''} onChange={e => setMpForm(p => ({ ...p, description: e.target.value }))} className={`${INPUT} resize-none`} /></Field>
         <ModalActions onClose={closeModal} saving={saving} isEdit={!!editId} />
       </form>
     </Modal>
@@ -337,11 +329,11 @@ export function Finance() {
   }
 
   const resetForms = () => {
-    setDebtForm({ creditorName: '', totalAmount: 0, currency: 'USD', borrowedDate: today(), paymentStartDate: nextMonthFirst() })
-    setLgForm({ debtorName: '', totalAmount: 0, currency: 'USD', lentDate: today() })
-    setLtForm({ lenderName: '', totalAmount: 0, currency: 'USD', borrowedDate: today(), paymentStartDate: nextMonthFirst() })
-    setBlForm({ bankName: '', loanName: '', totalAmount: 0, currency: 'USD', takenDate: today() })
-    setMpForm({ name: '', amount: 0, currency: 'USD', dueDay: 1, active: true })
+    setDebtForm({ creditorName: '', totalAmount: 0, currency: 'UZS', borrowedDate: today(), paymentStartDate: nextMonthFirst() })
+    setLgForm({ debtorName: '', totalAmount: 0, currency: 'UZS', lentDate: today() })
+    setLtForm({ lenderName: '', totalAmount: 0, currency: 'UZS', borrowedDate: today(), paymentStartDate: nextMonthFirst() })
+    setBlForm({ bankName: '', loanName: '', totalAmount: 0, currency: 'UZS', takenDate: today() })
+    setMpForm({ name: '', amount: 0, currency: 'UZS', dueDay: 1, active: true })
   }
 
   const openEdit = (id: number) => {
@@ -376,12 +368,12 @@ export function Finance() {
       else if (eff === 'monthly-payments') { editId ? await financeApi.updateMonthlyPayment(editId, mpForm) : await financeApi.createMonthlyPayment(mpForm) }
       closeModal()
       refetchAll()
-      showSuccess(editId ? 'Record updated successfully' : 'Record created successfully')
+      showSuccess(editId ? t('page.finance.recordUpdatedToast') : t('page.finance.recordCreatedToast'))
     } finally { setSaving(false) }
   }
 
   const del = async (id: number) => {
-    if (!await confirm({ message: 'Delete this record?', destructive: true })) return
+    if (!await confirm({ message: t('page.finance.confirmDeleteRecord'), destructive: true })) return
     setDeleting(id)
     try {
       if (eff === 'debts') await financeApi.deleteDebt(id)
@@ -393,30 +385,30 @@ export function Finance() {
     } finally { setDeleting(null) }
   }
 
-  const tabColor = TABS.find(t => t.id === activeTab)?.color ?? 'indigo'
+  const tabColor = TABS.find(tab => tab.id === activeTab)?.color ?? 'indigo'
 
   return (
     <div className="p-6 space-y-5">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-slate-800">Finance</h2>
+        <h2 className="text-xl font-bold text-slate-800">{t('page.finance')}</h2>
         <button onClick={openAdd} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors shadow-sm">
-          <Plus className="w-4 h-4" /> Add
+          <Plus className="w-4 h-4" /> {t('action.add')}
         </button>
       </div>
 
       {/* Tabs */}
       {/* Main tabs */}
       <div className="flex gap-1 bg-slate-100 rounded-2xl p-1 overflow-x-auto">
-        {TABS.map(t => (
+        {TABS.map(tabItem => (
           <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
+            key={tabItem.id}
+            onClick={() => setTab(tabItem.id)}
             className={`flex-1 min-w-fit px-3 py-2 rounded-xl text-xs font-semibold transition-all whitespace-nowrap ${
-              activeTab === t.id ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              activeTab === tabItem.id ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
             }`}
           >
-            {t.label}
+            {t(tabItem.labelKey)}
           </button>
         ))}
       </div>
@@ -432,7 +424,7 @@ export function Finance() {
                 debtSubTab === s.id ? 'bg-white text-rose-700 shadow-sm' : 'text-rose-400 hover:text-rose-600'
               }`}
             >
-              {s.label}
+              {t(s.labelKey)}
             </button>
           ))}
         </div>
@@ -466,9 +458,9 @@ export function Finance() {
       <div className={`bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden ${activeTab === 'overview' ? 'hidden' : ''}`}>
         {/* Debts sub-tabs content */}
         {activeTab === 'debts' && eff === 'debts' && (
-          debts.loading ? <Loading /> : (debts.data?.length ?? 0) === 0 ? <EmptyState label="debts" /> : (
+          debts.loading ? <Loading /> : (debts.data?.length ?? 0) === 0 ? <EmptyState label={t('page.finance.debtsNoun')} /> : (
             <div className="overflow-x-auto"><table className="w-full text-sm min-w-[640px]">
-              <THead cols={['Creditor', 'Total', 'Paid', 'Remaining', 'Due Date', 'Status', '']} />
+              <THead cols={[t('page.finance.creditorCol'), t('page.shared.total'), t('page.shared.paid'), t('page.shared.remaining'), t('page.finance.dueDateLabel'), t('page.finance.statusLabel'), '']} />
               <tbody className="divide-y divide-slate-50">
                 {debts.data?.map(d => (
                   <tr key={d.id} className="group hover:bg-slate-50/60 transition-colors">
@@ -482,13 +474,13 @@ export function Finance() {
                       <div className="flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                         {d.status !== 'PAID' && (
                           <button onClick={() => setRepayTarget({ kind: 'debt', record: d })}
-                            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-medium transition-colors" title="Repay">
-                            <CreditCard className="w-3 h-3" /> Repay
+                            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-medium transition-colors" title={t('page.finance.repayButton')}>
+                            <CreditCard className="w-3 h-3" /> {t('page.finance.repayButton')}
                           </button>
                         )}
                         <button onClick={() => { setHistory({ kind: 'debt', record: d }); setHistorySortAsc(false) }}
-                          className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-600 text-xs font-medium transition-colors" title="Payment history">
-                          <History className="w-3 h-3" /> History
+                          className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-600 text-xs font-medium transition-colors" title={t('page.finance.paymentHistoryTitle')}>
+                          <History className="w-3 h-3" /> {t('action.history')}
                         </button>
                         <ActionButtons onEdit={() => openEdit(d.id)} onDelete={() => del(d.id)} deleting={deleting === d.id} />
                       </div>
@@ -501,9 +493,9 @@ export function Finance() {
         )}
 
         {activeTab === 'debts' && eff === 'loans-given' && (
-          loansGiven.loading ? <Loading /> : (loansGiven.data?.length ?? 0) === 0 ? <EmptyState label="loans lent" /> : (
+          loansGiven.loading ? <Loading /> : (loansGiven.data?.length ?? 0) === 0 ? <EmptyState label={t('page.finance.loansLentNoun')} /> : (
             <div className="overflow-x-auto"><table className="w-full text-sm min-w-[640px]">
-              <THead cols={['Debtor', 'Lent', 'Received', 'Pending', 'Expected Return', 'Status', '']} />
+              <THead cols={[t('page.finance.debtorCol'), t('page.finance.lentCol'), t('page.finance.receivedCol'), t('page.finance.pendingCol'), t('page.finance.expectedReturnLabel'), t('page.finance.statusLabel'), '']} />
               <tbody className="divide-y divide-slate-50">
                 {loansGiven.data?.map(l => (
                   <tr key={l.id} className="group hover:bg-slate-50/60 transition-colors">
@@ -517,13 +509,13 @@ export function Finance() {
                       <div className="flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                         {l.status !== 'PAID' && (
                           <button onClick={() => setRepayTarget({ kind: 'loan-given', record: l })}
-                            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-600 text-xs font-medium transition-colors" title="Mark returned">
-                            <CreditCard className="w-3 h-3" /> Returned
+                            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-600 text-xs font-medium transition-colors" title={t('page.finance.markReturnedTitle')}>
+                            <CreditCard className="w-3 h-3" /> {t('page.finance.returnedButton')}
                           </button>
                         )}
                         <button onClick={() => { setHistory({ kind: 'loan-given', record: l }); setHistorySortAsc(false) }}
-                          className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-600 text-xs font-medium transition-colors" title="Payment history">
-                          <History className="w-3 h-3" /> History
+                          className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-600 text-xs font-medium transition-colors" title={t('page.finance.paymentHistoryTitle')}>
+                          <History className="w-3 h-3" /> {t('action.history')}
                         </button>
                         <ActionButtons onEdit={() => openEdit(l.id)} onDelete={() => del(l.id)} deleting={deleting === l.id} />
                       </div>
@@ -536,9 +528,9 @@ export function Finance() {
         )}
 
         {activeTab === 'debts' && eff === 'loans-taken' && (
-          loansTaken.loading ? <Loading /> : (loansTaken.data?.length ?? 0) === 0 ? <EmptyState label="loans borrowed" /> : (
+          loansTaken.loading ? <Loading /> : (loansTaken.data?.length ?? 0) === 0 ? <EmptyState label={t('page.finance.loansBorrowedNoun')} /> : (
             <div className="overflow-x-auto"><table className="w-full text-sm min-w-[640px]">
-              <THead cols={['Lender', 'Total', 'Paid', 'Remaining', 'Due Date', 'Status', '']} />
+              <THead cols={[t('page.finance.lenderCol'), t('page.shared.total'), t('page.shared.paid'), t('page.shared.remaining'), t('page.finance.dueDateLabel'), t('page.finance.statusLabel'), '']} />
               <tbody className="divide-y divide-slate-50">
                 {loansTaken.data?.map(l => (
                   <tr key={l.id} className="group hover:bg-slate-50/60 transition-colors">
@@ -552,13 +544,13 @@ export function Finance() {
                       <div className="flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                         {l.status !== 'PAID' && (
                           <button onClick={() => setRepayTarget({ kind: 'loan-taken', record: l })}
-                            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-medium transition-colors" title="Repay">
-                            <CreditCard className="w-3 h-3" /> Repay
+                            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-medium transition-colors" title={t('page.finance.repayButton')}>
+                            <CreditCard className="w-3 h-3" /> {t('page.finance.repayButton')}
                           </button>
                         )}
                         <button onClick={() => { setHistory({ kind: 'loan-taken', record: l }); setHistorySortAsc(false) }}
-                          className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-600 text-xs font-medium transition-colors" title="Payment history">
-                          <History className="w-3 h-3" /> History
+                          className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-600 text-xs font-medium transition-colors" title={t('page.finance.paymentHistoryTitle')}>
+                          <History className="w-3 h-3" /> {t('action.history')}
                         </button>
                         <ActionButtons onEdit={() => openEdit(l.id)} onDelete={() => del(l.id)} deleting={deleting === l.id} />
                       </div>
@@ -571,9 +563,9 @@ export function Finance() {
         )}
 
         {activeTab === 'bank-loans' && (
-          bankLoans.loading ? <Loading /> : (bankLoans.data?.length ?? 0) === 0 ? <EmptyState label="bank loans" /> : (
+          bankLoans.loading ? <Loading /> : (bankLoans.data?.length ?? 0) === 0 ? <EmptyState label={t('page.finance.bankLoansNoun')} /> : (
             <div className="overflow-x-auto"><table className="w-full text-sm min-w-[640px]">
-              <THead cols={['Bank', 'Loan Type', 'Total Amount', 'Taken Date', 'End Date', '']} />
+              <THead cols={[t('page.finance.bankCol'), t('page.finance.loanTypeCol'), t('page.finance.totalAmountCol'), t('page.finance.takenDateCol'), t('page.finance.endDateLabel'), '']} />
               <tbody className="divide-y divide-slate-50">
                 {bankLoans.data?.map(b => (
                   <tr key={b.id} className="group hover:bg-slate-50/60 transition-colors">
@@ -591,9 +583,9 @@ export function Finance() {
         )}
 
         {activeTab === 'monthly-payments' && (
-          monthly.loading ? <Loading /> : (monthly.data?.length ?? 0) === 0 ? <EmptyState label="monthly payments" /> : (
+          monthly.loading ? <Loading /> : (monthly.data?.length ?? 0) === 0 ? <EmptyState label={t('page.finance.monthlyPaymentsNoun')} /> : (
             <div className="overflow-x-auto"><table className="w-full text-sm min-w-[640px]">
-              <THead cols={['Name', 'Amount', 'Due Day', 'Next Due', 'Subscribed', 'Total paid', 'Category', 'Active', '']} />
+              <THead cols={[t('page.finance.nameCol'), t('tx.amount'), t('page.finance.dueDayCol'), t('page.finance.nextDueCol'), t('page.finance.subscribedCol'), t('page.finance.totalPaidCol'), t('tx.category'), t('page.finance.activeLabel'), '']} />
               <tbody className="divide-y divide-slate-50">
                 {monthly.data?.map(m => {
                   const subSince = m.subscribedSince ? new Date(m.subscribedSince) : null
@@ -602,32 +594,32 @@ export function Finance() {
                   <tr key={m.id} className="group hover:bg-slate-50/60 transition-colors">
                     <td className="px-5 py-3.5 font-medium text-slate-700">{m.name}</td>
                     <td className="px-5 py-3.5 text-indigo-600 font-semibold">{formatCurrency(m.amount, m.currency)}</td>
-                    <td className="px-5 py-3.5 text-slate-500">Day {m.dueDay}</td>
+                    <td className="px-5 py-3.5 text-slate-500">{t('page.finance.dayN', { n: m.dueDay })}</td>
                     <td className="px-5 py-3.5 text-slate-500 text-xs">{m.nextDueDate ? format(new Date(m.nextDueDate), 'dd-MMM') : '—'}</td>
                     <td className="px-5 py-3.5 text-slate-500 text-xs">
                       {subSince ? (
                         <span title={format(subSince, 'dd-MMM-yyyy')}>
-                          {months === 0 ? 'This month' : `${months} mo${months === 1 ? '' : 's'}`}
+                          {months === 0 ? t('page.finance.thisMonth') : t(months === 1 ? 'page.finance.monthShort' : 'page.finance.monthsShort', { months: months ?? 0 })}
                         </span>
                       ) : '—'}
                     </td>
                     <td className="px-5 py-3.5 text-emerald-600 text-xs font-semibold">
                       {m.paymentCount > 0
-                        ? <span title={`${m.paymentCount} payment${m.paymentCount === 1 ? '' : 's'}`}>{formatCurrency(m.totalPaid, m.currency)}</span>
+                        ? <span title={t(m.paymentCount === 1 ? 'page.finance.paymentSingular' : 'page.finance.paymentPlural', { count: m.paymentCount })}>{formatCurrency(m.totalPaid, m.currency)}</span>
                         : <span className="text-slate-400 font-normal">—</span>}
                     </td>
-                    <td className="px-5 py-3.5">{m.category ? <span className="px-2 py-0.5 rounded-lg text-xs font-medium" style={{ backgroundColor: m.category.color + '20', color: m.category.color }}>{m.category.name}</span> : '—'}</td>
+                    <td className="px-5 py-3.5">{m.category ? <span className="px-2 py-0.5 rounded-lg text-xs font-medium" style={{ backgroundColor: m.category.color + '20', color: m.category.color }}>{categoryName(m.category)}</span> : '—'}</td>
                     <td className="px-5 py-3.5">{m.active ? <CheckCircle className="w-4 h-4 text-emerald-500" /> : <Clock className="w-4 h-4 text-slate-300" />}</td>
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-1">
                         <button onClick={() => setPayTarget(m)}
                           className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-violet-100 hover:bg-violet-200 text-violet-700 text-xs font-medium transition-colors"
-                          title="Record a payment">
-                          <DollarSign className="w-3.5 h-3.5" /> Pay
+                          title={t('page.finance.recordPaymentTitle')}>
+                          <DollarSign className="w-3.5 h-3.5" /> {t('page.shared.payButton')}
                         </button>
                         <button onClick={() => setSubHistory(m)}
                           className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors"
-                          title="Payment history">
+                          title={t('page.finance.paymentHistoryTitle')}>
                           <History className="w-3.5 h-3.5" />
                         </button>
                         <ActionButtons onEdit={() => openEdit(m.id)} onDelete={() => del(m.id)} deleting={deleting === m.id} />
@@ -658,22 +650,23 @@ export function Finance() {
           const cmp = a.transactionDate.localeCompare(b.transactionDate)
           return historySortAsc ? cmp : -cmp
         })
-        const label = history.kind === 'loan-given' ? 'Received' : 'Paid'
+        const label = history.kind === 'loan-given' ? t('page.finance.receivedLabel') : t('page.finance.paidCol')
+        const paymentCountText = t(rows.length === 1 ? 'page.finance.paymentSingular' : 'page.finance.paymentPlural', { count: rows.length })
         return (
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
               <div>
-                <h3 className="font-semibold text-slate-800">{personName} — Payment History</h3>
+                <h3 className="font-semibold text-slate-800">{t('page.finance.paymentHistoryPanelTitle', { name: personName })}</h3>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  {label} so far {formatCurrency(paidSoFar, r.currency)} of {formatCurrency(totalAmount, r.currency)} · {rows.length} payment{rows.length === 1 ? '' : 's'}
+                  {t('page.finance.soFarOfTotal', { label, paidSoFar: formatCurrency(paidSoFar, r.currency), total: formatCurrency(totalAmount, r.currency) })} · {paymentCountText}
                 </p>
               </div>
               <div className="flex items-center gap-2">
                 <button onClick={() => setHistorySortAsc(s => !s)}
                   className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-medium transition-colors">
                   {historySortAsc
-                    ? <><ArrowUp className="w-3 h-3" /> Oldest first</>
-                    : <><ArrowDown className="w-3 h-3" /> Newest first</>}
+                    ? <><ArrowUp className="w-3 h-3" /> {t('page.finance.oldestFirst')}</>
+                    : <><ArrowDown className="w-3 h-3" /> {t('page.finance.newestFirst')}</>}
                 </button>
                 <button onClick={() => setHistory(null)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 text-slate-400">
                   <X className="w-4 h-4" />
@@ -684,38 +677,38 @@ export function Finance() {
               <div className="h-32 flex items-center justify-center"><Spinner /></div>
             ) : rows.length === 0 ? (
               <div className="h-32 flex flex-col items-center justify-center gap-2 text-slate-400">
-                <p className="text-sm">No payments recorded yet</p>
-                <p className="text-xs">Use the Repay / Returned button to log a payment.</p>
+                <p className="text-sm">{t('page.finance.noPaymentsYet')}</p>
+                <p className="text-xs">{t('page.finance.noPaymentsHintDebt')}</p>
               </div>
             ) : (
               <div className="overflow-x-auto"><table className="w-full text-sm min-w-[640px]">
                 <thead>
                   <tr className="border-b border-slate-100">
-                    {['Date', 'Amount', 'Paid via', 'Note'].map(h => (
+                    {[t('tx.date'), t('tx.amount'), t('page.finance.paidViaCol'), t('tx.note')].map(h => (
                       <th key={h} className="text-left text-xs font-medium text-slate-400 px-5 py-3">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {rows.map(t => (
-                    <tr key={t.id} className="hover:bg-slate-50/60 transition-colors">
-                      <td className="px-5 py-3 text-slate-600 text-xs whitespace-nowrap">{format(new Date(t.transactionDate), 'dd-MMM-yyyy')}</td>
-                      <td className={`px-5 py-3 font-semibold whitespace-nowrap ${t.type === 'INCOME' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                        {t.type === 'INCOME' ? '+' : '-'}{formatCurrency(t.amount, t.currency)}
+                  {rows.map(row => (
+                    <tr key={row.id} className="hover:bg-slate-50/60 transition-colors">
+                      <td className="px-5 py-3 text-slate-600 text-xs whitespace-nowrap">{format(new Date(row.transactionDate), 'dd-MMM-yyyy')}</td>
+                      <td className={`px-5 py-3 font-semibold whitespace-nowrap ${row.type === 'INCOME' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                        {row.type === 'INCOME' ? '+' : '-'}{formatCurrency(row.amount, row.currency)}
                       </td>
                       <td className="px-5 py-3 text-slate-500 text-xs">
-                        {t.card ? (
+                        {row.card ? (
                           <span className="inline-flex items-center gap-1.5">
                             <CreditCard className="w-3.5 h-3.5 text-slate-400" />
-                            {t.card.name} •••• {t.card.lastFourDigits}
+                            {row.card.name} •••• {row.card.lastFourDigits}
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1.5 text-amber-700">
-                            <Wallet className="w-3.5 h-3.5" /> Cash
+                            <Wallet className="w-3.5 h-3.5" /> {t('tx.cash')}
                           </span>
                         )}
                       </td>
-                      <td className="px-5 py-3 text-slate-400 text-xs max-w-64 truncate">{t.note || t.description}</td>
+                      <td className="px-5 py-3 text-slate-400 text-xs max-w-64 truncate">{row.note || row.description}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -735,24 +728,28 @@ export function Finance() {
           const cmp = a.transactionDate.localeCompare(b.transactionDate)
           return subHistorySortAsc ? cmp : -cmp
         })
+        const when = subSince
+          ? (months === 0 ? t('page.finance.subscribedThisMonth') : t(months === 1 ? 'page.finance.monthAgo' : 'page.finance.monthsAgo', { months: months ?? 0 }))
+          : null
+        const paymentCountText = t(m.paymentCount === 1 ? 'page.finance.paymentSingular' : 'page.finance.paymentPlural', { count: m.paymentCount })
         return (
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
               <div>
-                <h3 className="font-semibold text-slate-800">{m.name} — Payment History</h3>
+                <h3 className="font-semibold text-slate-800">{t('page.finance.paymentHistoryPanelTitle', { name: m.name })}</h3>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  {subSince
-                    ? <>Subscribed {months === 0 ? 'this month' : `${months} month${months === 1 ? '' : 's'} ago`} ({format(subSince, 'dd-MMM-yyyy')}) · </>
+                  {subSince && when
+                    ? <>{t('page.finance.subscribedPrefix', { when, date: format(subSince, 'dd-MMM-yyyy') })} · </>
                     : null}
-                  Paid {formatCurrency(m.totalPaid, m.currency)} across {m.paymentCount} payment{m.paymentCount === 1 ? '' : 's'}
+                  {t('page.finance.paidAcross', { amount: formatCurrency(m.totalPaid, m.currency) })} {paymentCountText}
                 </p>
               </div>
               <div className="flex items-center gap-2">
                 <button onClick={() => setSubHistorySortAsc(s => !s)}
                   className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-medium transition-colors">
                   {subHistorySortAsc
-                    ? <><ArrowUp className="w-3 h-3" /> Oldest first</>
-                    : <><ArrowDown className="w-3 h-3" /> Newest first</>}
+                    ? <><ArrowUp className="w-3 h-3" /> {t('page.finance.oldestFirst')}</>
+                    : <><ArrowDown className="w-3 h-3" /> {t('page.finance.newestFirst')}</>}
                 </button>
                 <button onClick={() => setSubHistory(null)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 text-slate-400">
                   <X className="w-4 h-4" />
@@ -763,39 +760,39 @@ export function Finance() {
               <div className="h-32 flex items-center justify-center"><Spinner /></div>
             ) : rows.length === 0 ? (
               <div className="h-32 flex flex-col items-center justify-center gap-2 text-slate-400">
-                <p className="text-sm">No payments recorded yet</p>
-                <p className="text-xs">Click Pay to log this month's payment.</p>
+                <p className="text-sm">{t('page.finance.noPaymentsYet')}</p>
+                <p className="text-xs">{t('page.finance.noPaymentsHintSub')}</p>
               </div>
             ) : (
               <div className="overflow-x-auto"><table className="w-full text-sm min-w-[640px]">
                 <thead>
                   <tr className="border-b border-slate-100">
-                    {['Date', 'Amount', 'Paid via', 'Note'].map(h => (
+                    {[t('tx.date'), t('tx.amount'), t('page.finance.paidViaCol'), t('tx.note')].map(h => (
                       <th key={h} className="text-left text-xs font-medium text-slate-400 px-5 py-3">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {rows.map(t => (
-                    <tr key={t.id} className="hover:bg-slate-50/60 transition-colors">
-                      <td className="px-5 py-3 text-slate-600 text-xs whitespace-nowrap">{format(new Date(t.transactionDate), 'dd-MMM-yyyy')}</td>
+                  {rows.map(row => (
+                    <tr key={row.id} className="hover:bg-slate-50/60 transition-colors">
+                      <td className="px-5 py-3 text-slate-600 text-xs whitespace-nowrap">{format(new Date(row.transactionDate), 'dd-MMM-yyyy')}</td>
                       <td className="px-5 py-3 font-semibold text-rose-600 whitespace-nowrap">
-                        -{formatCurrency(t.amount, t.currency)}
+                        -{formatCurrency(row.amount, row.currency)}
                       </td>
                       <td className="px-5 py-3 text-slate-500 text-xs">
-                        {t.card ? (
+                        {row.card ? (
                           <span className="inline-flex items-center gap-1.5">
                             <CreditCard className="w-3.5 h-3.5 text-slate-400" />
-                            {t.card.name} •••• {t.card.lastFourDigits}
-                            {t.cashAmount != null && t.cashAmount > 0 && <span className="ml-1 text-amber-600">(+cash {formatCurrency(t.cashAmount, t.currency)})</span>}
+                            {row.card.name} •••• {row.card.lastFourDigits}
+                            {row.cashAmount != null && row.cashAmount > 0 && <span className="ml-1 text-amber-600">{t('page.finance.plusCash', { amount: formatCurrency(row.cashAmount, row.currency) })}</span>}
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1.5 text-amber-700">
-                            <Wallet className="w-3.5 h-3.5" /> Cash
+                            <Wallet className="w-3.5 h-3.5" /> {t('tx.cash')}
                           </span>
                         )}
                       </td>
-                      <td className="px-5 py-3 text-slate-400 text-xs max-w-64 truncate">{t.note || t.description}</td>
+                      <td className="px-5 py-3 text-slate-400 text-xs max-w-64 truncate">{row.note || row.description}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -825,7 +822,7 @@ export function Finance() {
       <PaySubscriptionModal
         open={!!payTarget}
         onClose={() => setPayTarget(null)}
-        onSaved={() => { monthly.refetch(); setPayTarget(null); showSuccess('Payment recorded') }}
+        onSaved={() => { monthly.refetch(); setPayTarget(null); showSuccess(t('page.finance.paymentRecordedToast')) }}
         subscription={payTarget}
       />
     </div>
@@ -844,31 +841,25 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   )
 }
 
-function CurrencySelect({ value, onChange }: { value: Currency; onChange: (v: Currency) => void }) {
-  return (
-    <select value={value} onChange={e => onChange(e.target.value as Currency)} className={`${INPUT} bg-white`}>
-      <option>USD</option><option>EUR</option><option>UZS</option>
-    </select>
-  )
-}
-
 function StatusSelect({ value, onChange }: { value: RecordStatus; onChange: (v: RecordStatus) => void }) {
+  const { t } = useLang()
   return (
     <select value={value} onChange={e => onChange(e.target.value as RecordStatus)} className={`${INPUT} bg-white`}>
-      <option value="PENDING">Pending</option>
-      <option value="PARTIALLY_PAID">Partially Paid</option>
-      <option value="PAID">Paid</option>
-      <option value="OVERDUE">Overdue</option>
+      <option value="PENDING">{t('page.finance.statusPending')}</option>
+      <option value="PARTIALLY_PAID">{t('page.finance.statusPartiallyPaid')}</option>
+      <option value="PAID">{t('page.finance.statusPaid')}</option>
+      <option value="OVERDUE">{t('page.finance.statusOverdue')}</option>
     </select>
   )
 }
 
 function ModalActions({ onClose, saving, isEdit }: { onClose: () => void; saving: boolean; isEdit: boolean }) {
+  const { t } = useLang()
   return (
     <div className="flex gap-3 pt-1">
-      <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50 transition-colors">Cancel</button>
+      <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50 transition-colors">{t('action.cancel')}</button>
       <button type="submit" disabled={saving} className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
-        {saving && <Spinner className="w-4 h-4" />}{saving ? 'Saving…' : isEdit ? 'Update' : 'Create'}
+        {saving && <Spinner className="w-4 h-4" />}{saving ? t('action.saving') : isEdit ? t('action.update') : t('action.create')}
       </button>
     </div>
   )
@@ -911,14 +902,15 @@ function FinanceTotals({ tab, debts, loansGiven, loansTaken, bankLoans, monthly 
   bankLoans: BankLoanResponse[]
   monthly: MonthlyPaymentResponse[]
 }) {
+  const { t } = useLang()
   if (tab === 'debts' && debts.length > 0) {
     const total     = snap(debts.reduce((s, d) => s + d.totalAmount, 0))
     const remaining = snap(debts.reduce((s, d) => s + d.remainingAmount, 0))
     const paid      = snap(debts.reduce((s, d) => s + d.paidAmount, 0))
     return <TotalsRow items={[
-      { label: 'Total Borrowed', value: total.toFixed(2),     color: 'text-slate-700' },
-      { label: 'Remaining',      value: remaining.toFixed(2), color: 'text-rose-600' },
-      { label: 'Paid Back',      value: paid.toFixed(2),      color: 'text-emerald-600' },
+      { label: t('page.finance.totalBorrowedLabel'), value: total.toFixed(2),     color: 'text-slate-700' },
+      { label: t('page.shared.remaining'),           value: remaining.toFixed(2), color: 'text-rose-600' },
+      { label: t('page.finance.paidBackLabel'),      value: paid.toFixed(2),      color: 'text-emerald-600' },
     ]} />
   }
   if (tab === 'loans-given' && loansGiven.length > 0) {
@@ -926,9 +918,9 @@ function FinanceTotals({ tab, debts, loansGiven, loansTaken, bankLoans, monthly 
     const pending  = snap(loansGiven.reduce((s, l) => s + l.pendingAmount, 0))
     const received = snap(loansGiven.reduce((s, l) => s + l.receivedAmount, 0))
     return <TotalsRow items={[
-      { label: 'Total Lent',      value: total.toFixed(2),    color: 'text-slate-700' },
-      { label: 'Pending Return',  value: pending.toFixed(2),  color: 'text-amber-600' },
-      { label: 'Received Back',   value: received.toFixed(2), color: 'text-emerald-600' },
+      { label: t('page.finance.totalLentLabel'),     value: total.toFixed(2),    color: 'text-slate-700' },
+      { label: t('page.finance.pendingReturnLabel'), value: pending.toFixed(2),  color: 'text-amber-600' },
+      { label: t('page.finance.receivedBackLabel'),  value: received.toFixed(2), color: 'text-emerald-600' },
     ]} />
   }
   if (tab === 'loans-taken' && loansTaken.length > 0) {
@@ -936,24 +928,24 @@ function FinanceTotals({ tab, debts, loansGiven, loansTaken, bankLoans, monthly 
     const remaining = snap(loansTaken.reduce((s, l) => s + l.remainingAmount, 0))
     const paid      = snap(loansTaken.reduce((s, l) => s + l.paidAmount, 0))
     return <TotalsRow items={[
-      { label: 'Total Borrowed', value: total.toFixed(2),     color: 'text-slate-700' },
-      { label: 'Remaining',      value: remaining.toFixed(2), color: 'text-rose-600' },
-      { label: 'Paid Back',      value: paid.toFixed(2),      color: 'text-emerald-600' },
+      { label: t('page.finance.totalBorrowedLabel'), value: total.toFixed(2),     color: 'text-slate-700' },
+      { label: t('page.shared.remaining'),           value: remaining.toFixed(2), color: 'text-rose-600' },
+      { label: t('page.finance.paidBackLabel'),      value: paid.toFixed(2),      color: 'text-emerald-600' },
     ]} />
   }
   if (tab === 'bank-loans' && bankLoans.length > 0) {
     const total = snap(bankLoans.reduce((s, b) => s + b.totalAmount, 0))
     return <TotalsRow items={[
-      { label: 'Total Bank Loans', value: String(bankLoans.length), color: 'text-slate-700' },
-      { label: 'Total Committed',  value: total.toFixed(2),         color: 'text-rose-600' },
+      { label: t('page.finance.totalBankLoansLabel'), value: String(bankLoans.length), color: 'text-slate-700' },
+      { label: t('page.finance.totalCommittedLabel'), value: total.toFixed(2),         color: 'text-rose-600' },
     ]} />
   }
   if (tab === 'monthly-payments' && monthly.length > 0) {
     const active = monthly.filter(m => m.active)
     const total  = snap(active.reduce((s, m) => s + m.amount, 0))
     return <TotalsRow items={[
-      { label: 'Active Subscriptions', value: String(active.length), color: 'text-slate-700' },
-      { label: 'Total / Month',        value: total.toFixed(2),      color: 'text-violet-600' },
+      { label: t('page.finance.activeSubscriptionsLabel'), value: String(active.length), color: 'text-slate-700' },
+      { label: t('page.finance.totalPerMonthLabel'),        value: total.toFixed(2),      color: 'text-violet-600' },
     ]} />
   }
   return null
@@ -980,16 +972,17 @@ function FinanceOverview({
   bankLoans: BankLoanResponse[]; monthly: MonthlyPaymentResponse[]
   onNavigate: (tab: FinanceTab) => void
 }) {
+  const { t } = useLang()
   const lentPending       = snap(loansGiven.reduce((s, l) => s + l.pendingAmount, 0))
   const borrowedRemaining = snap(loansTaken.reduce((s, l) => s + l.remainingAmount, 0))
   const bankTotal         = snap(bankLoans.reduce((s, b) => s + b.totalAmount, 0))
   const monthlyTotal      = snap(monthly.filter(m => m.active).reduce((s, m) => s + m.amount, 0))
 
   const cards: { tab: FinanceTab; title: string; value: string; sub: string; bg: string; text: string }[] = [
-    { tab: 'debts',            title: 'Loans Lent Pending',  value: lentPending.toFixed(2),        sub: `${loansGiven.length} loans given`,             bg: 'bg-emerald-50', text: 'text-emerald-700' },
-    { tab: 'debts',            title: 'Loans Borrowed Owed', value: borrowedRemaining.toFixed(2),  sub: `${loansTaken.length} loans taken`,             bg: 'bg-amber-50',   text: 'text-amber-700' },
-    { tab: 'bank-loans',       title: 'Bank Loans',          value: bankTotal.toFixed(2),          sub: `${bankLoans.length} loans`,                    bg: 'bg-indigo-50',  text: 'text-indigo-700' },
-    { tab: 'monthly-payments', title: 'Monthly Commitments', value: monthlyTotal.toFixed(2),       sub: `${monthly.filter(m=>m.active).length} active`, bg: 'bg-violet-50',  text: 'text-violet-700' },
+    { tab: 'debts',            title: t('page.finance.cardLoansLentPending'),  value: lentPending.toFixed(2),        sub: t('page.finance.loansGivenCount', { count: loansGiven.length }),             bg: 'bg-emerald-50', text: 'text-emerald-700' },
+    { tab: 'debts',            title: t('page.finance.cardLoansBorrowedOwed'), value: borrowedRemaining.toFixed(2),  sub: t('page.finance.loansTakenCount', { count: loansTaken.length }),             bg: 'bg-amber-50',   text: 'text-amber-700' },
+    { tab: 'bank-loans',       title: t('page.finance.tabBankLoans'),          value: bankTotal.toFixed(2),          sub: t('page.finance.loansCountGeneric', { count: bankLoans.length }),            bg: 'bg-indigo-50',  text: 'text-indigo-700' },
+    { tab: 'monthly-payments', title: t('page.finance.cardMonthlyCommitments'), value: monthlyTotal.toFixed(2),      sub: t('page.finance.activeCount', { count: monthly.filter(m => m.active).length }), bg: 'bg-violet-50',  text: 'text-violet-700' },
   ]
 
   return (
@@ -1007,20 +1000,20 @@ function FinanceOverview({
 
       {/* Net loan position */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
-        <h3 className="font-semibold text-slate-800 mb-4">Net Loan Position</h3>
+        <h3 className="font-semibold text-slate-800 mb-4">{t('page.finance.netLoanPositionHeading')}</h3>
         <div className="grid grid-cols-3 gap-4 text-center">
           <div>
-            <p className="text-xs text-slate-400 mb-1">You Owe (Borrowed)</p>
+            <p className="text-xs text-slate-400 mb-1">{t('page.finance.youOweLabel')}</p>
             <p className="text-xl font-bold text-rose-600">{borrowedRemaining.toFixed(2)}</p>
           </div>
           <div className="border-x border-slate-100">
-            <p className="text-xs text-slate-400 mb-1">Net (Lent − Borrowed)</p>
+            <p className="text-xs text-slate-400 mb-1">{t('page.finance.netLentBorrowedLabel')}</p>
             <p className={`text-xl font-bold ${lentPending - borrowedRemaining >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
               {(lentPending - borrowedRemaining).toFixed(2)}
             </p>
           </div>
           <div>
-            <p className="text-xs text-slate-400 mb-1">Owed to You (Lent)</p>
+            <p className="text-xs text-slate-400 mb-1">{t('page.finance.owedToYouLabel')}</p>
             <p className="text-xl font-bold text-emerald-600">{lentPending.toFixed(2)}</p>
           </div>
         </div>

@@ -2,7 +2,6 @@ import { apiClient } from './client'
 import type {
   BalanceTransferRequest,
   Currency,
-  ExchangeRequest,
   PageResponse,
   Transaction,
   TransactionFilters,
@@ -64,6 +63,4 @@ export const transactionsApi = {
   transfer: (data: BalanceTransferRequest) =>
     apiClient.post<Transaction[]>('/transactions/transfer', data),
 
-  exchange: (data: ExchangeRequest) =>
-    apiClient.post<Transaction[]>('/transactions/exchange', data),
 }

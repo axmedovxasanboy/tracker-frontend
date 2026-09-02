@@ -9,6 +9,7 @@ import { AmountInput } from '../components/ui/AmountInput'
 import { useApi } from '../hooks/useApi'
 import { useToast } from '../context/ToastContext'
 import { useConfirm } from '../context/ConfirmContext'
+import { useLang } from '../i18n/LanguageContext'
 import { emergenciesApi } from '../api/emergencies'
 import { formatCurrency, snap } from '../utils/format'
 import { extractErrorMessage } from '../api/client'
@@ -21,6 +22,7 @@ function today() {
 }
 
 export function EmergenciesPage() {
+  const { t } = useLang()
   const confirm = useConfirm()
   const { showSuccess, showError } = useToast()
 
@@ -31,12 +33,12 @@ export function EmergenciesPage() {
   const [deleting, setDeleting] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState<EmergencyRequest>({
-    amount: 0, currency: 'USD', date: today(),
+    amount: 0, currency: 'UZS', date: today(),
   })
 
   const openAdd = () => {
     setEditId(null)
-    setForm({ amount: 0, currency: 'USD', date: today() })
+    setForm({ amount: 0, currency: 'UZS', date: today() })
     setModalOpen(true)
   }
 
@@ -61,19 +63,19 @@ export function EmergenciesPage() {
       else await emergenciesApi.create(form)
       closeModal()
       emergencies.refetch()
-      showSuccess(editId ? 'Emergency record updated' : 'Emergency contribution added')
+      showSuccess(editId ? t('page.emergencies.updatedToast') : t('page.emergencies.addedToast'))
     } catch (err) {
       showError(extractErrorMessage(err))
     } finally { setSaving(false) }
   }
 
   const del = async (id: number) => {
-    if (!await confirm({ message: 'Delete this emergency record?', destructive: true })) return
+    if (!await confirm({ message: t('page.emergencies.confirmDelete'), destructive: true })) return
     setDeleting(id)
     try {
       await emergenciesApi.delete(id)
       emergencies.refetch()
-      showSuccess('Emergency record deleted')
+      showSuccess(t('page.emergencies.deletedToast'))
     } catch (err) {
       showError(extractErrorMessage(err))
     } finally { setDeleting(null) }
@@ -93,16 +95,16 @@ export function EmergenciesPage() {
             <ShieldAlert className="w-5 h-5 text-amber-600" />
           </div>
           <div>
-            <h3 className="text-lg font-bold text-slate-800">Emergency Fund</h3>
+            <h3 className="text-lg font-bold text-slate-800">{t('page.emergencies')}</h3>
             <p className="text-xs text-slate-400">
-              {list.length} contribution{list.length === 1 ? '' : 's'} ·{' '}
+              {list.length === 1 ? t('page.emergencies.contribution', { count: list.length }) : t('page.emergencies.contributions', { count: list.length })} ·{' '}
               {Object.entries(totalsByCurrency).map(([ccy, sum]) => formatCurrency(snap(sum), ccy as Currency)).join(' + ') || '—'}
             </p>
           </div>
         </div>
         <button onClick={openAdd}
           className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-sm">
-          <Plus className="w-4 h-4" /> Add contribution
+          <Plus className="w-4 h-4" /> {t('page.emergencies.addContribution')}
         </button>
       </div>
 
@@ -115,7 +117,7 @@ export function EmergenciesPage() {
           <div className="overflow-x-auto"><table className="w-full text-sm min-w-[640px]">
             <thead>
               <tr className="border-b border-slate-100">
-                {['Date', 'Amount', 'Notes', ''].map(h => (
+                {[t('tx.date'), t('tx.amount'), t('page.shared.notesCol'), ''].map(h => (
                   <th key={h} className="text-left text-xs font-medium text-slate-400 px-5 py-3">{h}</th>
                 ))}
               </tr>
@@ -145,41 +147,32 @@ export function EmergenciesPage() {
         )}
       </div>
 
-      <Modal open={modalOpen} onClose={closeModal} title={editId ? 'Edit emergency contribution' : 'New emergency contribution'}>
+      <Modal open={modalOpen} onClose={closeModal} title={editId ? t('page.emergencies.editTitle') : t('page.emergencies.newTitle')}>
         <form onSubmit={save} className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Amount *">
-              <AmountInput required value={form.amount || 0} currency={form.currency}
-                onChange={v => setForm(p => ({ ...p, amount: v }))}
-                className={INPUT} suffix={form.currency} />
-            </Field>
-            <Field label="Currency *">
-              <select value={form.currency}
-                onChange={e => setForm(p => ({ ...p, currency: e.target.value as Currency }))}
-                className={`${INPUT} bg-white`}>
-                <option>USD</option><option>EUR</option><option>UZS</option>
-              </select>
-            </Field>
-          </div>
-          <Field label="Date *">
+          <Field label={`${t('tx.amount')} *`}>
+            <AmountInput required value={form.amount || 0} currency={form.currency}
+              onChange={v => setForm(p => ({ ...p, amount: v }))}
+              className={INPUT} suffix={form.currency} />
+          </Field>
+          <Field label={`${t('tx.date')} *`}>
             <input required type="date" value={form.date}
               onChange={e => setForm(p => ({ ...p, date: e.target.value }))}
               className={INPUT} />
           </Field>
-          <Field label="Description">
+          <Field label={t('tx.description')}>
             <textarea rows={2} value={form.description ?? ''}
               onChange={e => setForm(p => ({ ...p, description: e.target.value }))}
-              className={`${INPUT} resize-none`} placeholder="e.g. car repair, dentist visit, sudden fee…" />
+              className={`${INPUT} resize-none`} placeholder={t('page.emergencies.descPlaceholder')} />
           </Field>
           <div className="flex gap-3 pt-1">
             <button type="button" onClick={closeModal}
               className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50">
-              Cancel
+              {t('action.cancel')}
             </button>
             <button type="submit" disabled={saving}
               className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-60 flex items-center justify-center gap-2">
               {saving && <Spinner className="w-4 h-4" />}
-              {saving ? 'Saving…' : editId ? 'Update' : 'Create'}
+              {saving ? t('action.saving') : editId ? t('action.update') : t('action.create')}
             </button>
           </div>
         </form>
@@ -198,10 +191,11 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 function EmptyState() {
+  const { t } = useLang()
   return (
     <div className="flex flex-col items-center justify-center py-20 text-slate-300 gap-2">
       <AlertCircle className="w-10 h-10" />
-      <p className="text-sm text-slate-400">No emergency contributions yet</p>
+      <p className="text-sm text-slate-400">{t('page.emergencies.empty')}</p>
     </div>
   )
 }

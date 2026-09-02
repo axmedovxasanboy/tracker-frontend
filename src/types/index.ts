@@ -5,8 +5,7 @@ export type TransactionSubType =
   | 'BANK_LOAN_PAYMENT' | 'INVESTMENT' | 'STOCK_PURCHASE' | 'DONATION'
   | 'EMERGENCY_CONTRIBUTION'
   | 'TRANSFER_OUT' | 'TRANSFER_IN'
-  | 'EXCHANGE_OUT' | 'EXCHANGE_IN'
-export type Currency = 'USD' | 'EUR' | 'UZS'
+export type Currency = 'UZS'
 export type CategoryType = 'INCOME' | 'EXPENSE' | 'BOTH'
 export type CategoryKind = 'GENERIC' | 'FOOD' | 'TRANSPORT'
 export type CardType = 'UZCARD' | 'HUMO' | 'VISA' | 'CASH'
@@ -17,6 +16,8 @@ export type InvestmentType = 'REAL_ESTATE' | 'BONDS' | 'MUTUAL_FUND' | 'GOLD' | 
 export interface Category {
   id: number
   name: string
+  /** Uzbek display name; null falls back to `name`. */
+  nameUz?: string | null
   type: CategoryType
   color: string
   icon: string
@@ -169,6 +170,7 @@ export interface TransactionRequest {
 
 export interface CategoryRequest {
   name: string
+  nameUz?: string | null
   type: CategoryType
   color?: string
   icon?: string
@@ -443,7 +445,6 @@ export interface OverviewIncomeResponse {
   currency: Currency
   actualIncome: number
   stableIncome: number | null
-  fxRatesUsingDefaults: boolean
 }
 
 export type Bucket = 'DONATION' | 'EMERGENCY' | 'INVESTMENTS' | 'STOCKS'
@@ -526,7 +527,6 @@ export interface OverviewTierResponse {
   level: number | null
   subLevel: string | null
   levelLabel: string
-  fxRatesUsingDefaults: boolean
   missingStableIncome: boolean
   // True when the viewed month is before the configured allocation tracking start month —
   // guidance is paused (no payment asks) and the dashboard is greyed out.
@@ -551,8 +551,6 @@ export interface SettingsResponse {
   id: number
   monthlyStableIncome: number | null
   monthlyStableIncomeCurrency: Currency | null
-  usdToUzs: number | null
-  eurToUzs: number | null
   allocationTrackingStartMonth: string | null
   telegramWebhookUrl: string | null
   telegramWebViewUrl: string | null
@@ -562,8 +560,6 @@ export interface SettingsResponse {
 export interface SettingsRequest {
   monthlyStableIncome?: number
   monthlyStableIncomeCurrency?: Currency
-  usdToUzs?: number
-  eurToUzs?: number
   allocationTrackingStartMonth?: string
   telegramWebhookUrl?: string
   telegramWebViewUrl?: string
@@ -689,17 +685,6 @@ export interface BalanceTransferRequest {
   transactionDate: string
 }
 
-export interface ExchangeRequest {
-  fromCardId?: number          // null/undefined = source is cash
-  fromCurrency: Currency
-  fromAmount: number
-  toCardId?: number            // null/undefined = destination is cash
-  toCurrency: Currency
-  toAmount: number
-  transactionDate: string
-  description?: string
-}
-
 // ── Monthly-envelope: month close + summary ───────────────────────────────
 export type WalletType = 'CARD' | 'CASH'
 
@@ -720,7 +705,6 @@ export interface MonthSummaryResponse {
   everydaySpend: number | null
   totalSpent: number | null
   leftover: number | null
-  fxRatesUsingDefaults: boolean
 }
 
 export interface MonthPreviewWallet {
@@ -748,7 +732,6 @@ export interface MonthClosePreviewResponse {
   savings: number
   taggedTotal: number
   spendableNow: number
-  fxRatesUsingDefaults: boolean
 }
 
 export interface MonthCloseWalletEntry {
@@ -790,4 +773,27 @@ export interface MonthCloseResponse {
   totalSpent: number
   leftover: number
   wallets: MonthCloseWalletResult[]
+}
+
+// ── Allocation preview (what a draft transaction would do) ────────────────
+export interface AllocationPreviewRequest {
+  subType?: TransactionSubType | ''
+  amount: number
+  transactionDate: string
+  investmentId?: number
+}
+
+export interface AllocationPreviewResponse {
+  applicable: boolean
+  bucket?: string
+  label?: string
+  message?: string
+  bucketNotRecommended: boolean
+  recommended?: number
+  paidBefore?: number
+  amount?: number
+  paidAfter?: number
+  remainingBefore?: number
+  remainingAfter?: number
+  completesBucket: boolean
 }

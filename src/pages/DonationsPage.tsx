@@ -9,6 +9,7 @@ import { AmountInput } from '../components/ui/AmountInput'
 import { useApi } from '../hooks/useApi'
 import { useToast } from '../context/ToastContext'
 import { useConfirm } from '../context/ConfirmContext'
+import { useLang } from '../i18n/LanguageContext'
 import { financeApi } from '../api/finance'
 import { formatCurrency, snap } from '../utils/format'
 import { extractErrorMessage } from '../api/client'
@@ -21,6 +22,7 @@ function today() {
 }
 
 export function DonationsPage() {
+  const { t } = useLang()
   const confirm = useConfirm()
   const { showSuccess, showError } = useToast()
 
@@ -31,12 +33,12 @@ export function DonationsPage() {
   const [deleting, setDeleting] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState<DonationRequest>({
-    recipientName: '', amount: 0, currency: 'USD', donationDate: today(),
+    recipientName: '', amount: 0, currency: 'UZS', donationDate: today(),
   })
 
   const openAdd = () => {
     setEditId(null)
-    setForm({ recipientName: '', amount: 0, currency: 'USD', donationDate: today() })
+    setForm({ recipientName: '', amount: 0, currency: 'UZS', donationDate: today() })
     setModalOpen(true)
   }
 
@@ -63,19 +65,19 @@ export function DonationsPage() {
       else await financeApi.createDonation(form)
       closeModal()
       donations.refetch()
-      showSuccess(editId ? 'Donation updated' : 'Donation created')
+      showSuccess(editId ? t('page.donations.updatedToast') : t('page.donations.createdToast'))
     } catch (err) {
       showError(extractErrorMessage(err))
     } finally { setSaving(false) }
   }
 
   const del = async (id: number) => {
-    if (!await confirm({ message: 'Delete this donation?', destructive: true })) return
+    if (!await confirm({ message: t('page.donations.confirmDelete'), destructive: true })) return
     setDeleting(id)
     try {
       await financeApi.deleteDonation(id)
       donations.refetch()
-      showSuccess('Donation deleted')
+      showSuccess(t('page.donations.deletedToast'))
     } catch (err) {
       showError(extractErrorMessage(err))
     } finally { setDeleting(null) }
@@ -96,16 +98,16 @@ export function DonationsPage() {
             <HeartHandshake className="w-5 h-5 text-pink-600" />
           </div>
           <div>
-            <h3 className="text-lg font-bold text-slate-800">Donations</h3>
+            <h3 className="text-lg font-bold text-slate-800">{t('page.donations')}</h3>
             <p className="text-xs text-slate-400">
-              {list.length} donation{list.length === 1 ? '' : 's'} ·{' '}
+              {list.length === 1 ? t('page.donations.donation', { count: list.length }) : t('page.donations.donations', { count: list.length })} ·{' '}
               {Object.entries(totalsByCurrency).map(([ccy, sum]) => formatCurrency(snap(sum), ccy as Currency)).join(' + ') || '—'}
             </p>
           </div>
         </div>
         <button onClick={openAdd}
           className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-sm">
-          <Plus className="w-4 h-4" /> Add Donation
+          <Plus className="w-4 h-4" /> {t('page.donations.addDonation')}
         </button>
       </div>
 
@@ -119,7 +121,7 @@ export function DonationsPage() {
           <div className="overflow-x-auto"><table className="w-full text-sm min-w-[640px]">
             <thead>
               <tr className="border-b border-slate-100">
-                {['Recipient', 'Amount', 'Date', 'Anonymous', 'Notes', ''].map(h => (
+                {[t('page.donations.recipientCol'), t('tx.amount'), t('tx.date'), t('page.donations.anonymousCol'), t('page.shared.notesCol'), ''].map(h => (
                   <th key={h} className="text-left text-xs font-medium text-slate-400 px-5 py-3">{h}</th>
                 ))}
               </tr>
@@ -132,7 +134,7 @@ export function DonationsPage() {
                   <td className="px-5 py-3.5 text-slate-500 text-xs">{format(new Date(d.donationDate), 'dd-MMM-yyyy')}</td>
                   <td className="px-5 py-3.5">
                     {d.anonymous
-                      ? <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full text-xs">Yes</span>
+                      ? <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full text-xs">{t('common.yes')}</span>
                       : '—'}
                   </td>
                   <td className="px-5 py-3.5 text-slate-400 text-xs max-w-40 truncate">{d.description ?? '—'}</td>
@@ -156,28 +158,19 @@ export function DonationsPage() {
       </div>
 
       {/* Modal */}
-      <Modal open={modalOpen} onClose={closeModal} title={editId ? 'Edit Donation' : 'New Donation'}>
+      <Modal open={modalOpen} onClose={closeModal} title={editId ? t('page.donations.editTitle') : t('page.donations.newTitle')}>
         <form onSubmit={save} className="space-y-3">
-          <Field label="Recipient *">
+          <Field label={t('page.donations.recipientLabel')}>
             <input required value={form.recipientName}
               onChange={e => setForm(p => ({ ...p, recipientName: e.target.value }))}
               className={INPUT} />
           </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Amount *">
-              <AmountInput required value={form.amount || 0} currency={form.currency}
-                onChange={v => setForm(p => ({ ...p, amount: v }))}
-                className={INPUT} suffix={form.currency} />
-            </Field>
-            <Field label="Currency *">
-              <select value={form.currency}
-                onChange={e => setForm(p => ({ ...p, currency: e.target.value as Currency }))}
-                className={`${INPUT} bg-white`}>
-                <option>USD</option><option>EUR</option><option>UZS</option>
-              </select>
-            </Field>
-          </div>
-          <Field label="Donation Date *">
+          <Field label={`${t('tx.amount')} *`}>
+            <AmountInput required value={form.amount || 0} currency={form.currency}
+              onChange={v => setForm(p => ({ ...p, amount: v }))}
+              className={INPUT} suffix={form.currency} />
+          </Field>
+          <Field label={t('page.donations.donationDateLabel')}>
             <input required type="date" value={form.donationDate}
               onChange={e => setForm(p => ({ ...p, donationDate: e.target.value }))}
               className={INPUT} />
@@ -186,9 +179,9 @@ export function DonationsPage() {
             <input type="checkbox" checked={form.anonymous ?? false}
               onChange={e => setForm(p => ({ ...p, anonymous: e.target.checked }))}
               className="w-4 h-4 rounded text-indigo-600" />
-            <span className="text-sm text-slate-600">Anonymous donation</span>
+            <span className="text-sm text-slate-600">{t('page.donations.anonymousLabel')}</span>
           </label>
-          <Field label="Description">
+          <Field label={t('tx.description')}>
             <textarea rows={2} value={form.description ?? ''}
               onChange={e => setForm(p => ({ ...p, description: e.target.value }))}
               className={`${INPUT} resize-none`} />
@@ -196,12 +189,12 @@ export function DonationsPage() {
           <div className="flex gap-3 pt-1">
             <button type="button" onClick={closeModal}
               className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50">
-              Cancel
+              {t('action.cancel')}
             </button>
             <button type="submit" disabled={saving}
               className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-60 flex items-center justify-center gap-2">
               {saving && <Spinner className="w-4 h-4" />}
-              {saving ? 'Saving…' : editId ? 'Update' : 'Create'}
+              {saving ? t('action.saving') : editId ? t('action.update') : t('action.create')}
             </button>
           </div>
         </form>
@@ -220,10 +213,11 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 function EmptyState() {
+  const { t } = useLang()
   return (
     <div className="flex flex-col items-center justify-center py-20 text-slate-300 gap-2">
       <AlertCircle className="w-10 h-10" />
-      <p className="text-sm text-slate-400">No donations yet</p>
+      <p className="text-sm text-slate-400">{t('page.donations.empty')}</p>
     </div>
   )
 }

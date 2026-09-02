@@ -3,6 +3,8 @@ import { ArrowDownCircle, ArrowUpCircle } from 'lucide-react'
 import { Modal } from '../ui/Modal'
 import { Spinner } from '../ui/Spinner'
 import { AmountInput } from '../ui/AmountInput'
+import { useLang } from '../../i18n/LanguageContext'
+import type { TKey } from '../../i18n/LanguageContext'
 import { cardsApi } from '../../api/cards'
 import { financeApi } from '../../api/finance'
 import { extractErrorMessage } from '../../api/client'
@@ -21,11 +23,11 @@ interface Props {
   target: RepayTarget | null
 }
 
-function getInfo(target: RepayTarget | null) {
-  if (!target) return { label: '', person: '', remaining: 0, currency: 'USD' as Currency, maxAmount: 0 }
+function getInfo(target: RepayTarget | null, t: (key: TKey) => string) {
+  if (!target) return { label: '', person: '', remaining: 0, currency: 'UZS' as Currency, maxAmount: 0 }
   if (target.kind === 'loan-taken') {
     return {
-      label: 'Pay Back Borrowed Loan',
+      label: t('cmp.repay.title.loanTaken'),
       person: target.record.lenderName,
       remaining: target.record.remainingAmount,
       currency: target.record.currency,
@@ -34,7 +36,7 @@ function getInfo(target: RepayTarget | null) {
   }
   if (target.kind === 'debt') {
     return {
-      label: 'Pay Off Debt',
+      label: t('cmp.repay.title.debt'),
       person: target.record.creditorName,
       remaining: target.record.remainingAmount,
       currency: target.record.currency,
@@ -42,7 +44,7 @@ function getInfo(target: RepayTarget | null) {
     }
   }
   return {
-    label: 'Mark Loan Returned',
+    label: t('cmp.repay.title.loanGiven'),
     person: target.record.debtorName,
     remaining: target.record.pendingAmount,
     currency: target.record.currency,
@@ -51,7 +53,8 @@ function getInfo(target: RepayTarget | null) {
 }
 
 export function RepaymentModal({ open, onClose, onSaved, target }: Props) {
-  const info = getInfo(target)
+  const { t } = useLang()
+  const info = getInfo(target, t)
   const [amount, setAmount] = useState(0)
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0])
   const [cardId, setCardId] = useState<number | undefined>()
@@ -73,8 +76,8 @@ export function RepaymentModal({ open, onClose, onSaved, target }: Props) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (amount <= 0) { setError('Amount must be greater than 0'); return }
-    if (amount > info.maxAmount) { setError(`Cannot exceed remaining: ${formatCurrency(info.maxAmount, info.currency)}`); return }
+    if (amount <= 0) { setError(t('cmp.err.amountPositive')); return }
+    if (amount > info.maxAmount) { setError(t('cmp.err.cannotExceedRemaining', { amount: formatCurrency(info.maxAmount, info.currency) })); return }
 
     setSaving(true); setError(null)
     const req: RepaymentRequest = { amount, paymentDate, cardId }
@@ -93,8 +96,8 @@ export function RepaymentModal({ open, onClose, onSaved, target }: Props) {
   const canMarkPaid = target?.kind === 'loan-taken' || target?.kind === 'debt'
   const markAlreadyPaid = async () => {
     if (!target || !canMarkPaid) return
-    if (amount <= 0) { setError('Amount must be greater than 0'); return }
-    if (amount > info.maxAmount) { setError(`Cannot exceed remaining: ${formatCurrency(info.maxAmount, info.currency)}`); return }
+    if (amount <= 0) { setError(t('cmp.err.amountPositive')); return }
+    if (amount > info.maxAmount) { setError(t('cmp.err.cannotExceedRemaining', { amount: formatCurrency(info.maxAmount, info.currency) })); return }
     setSaving(true); setError(null)
     try {
       await financeApi.markPaid({
@@ -124,7 +127,7 @@ export function RepaymentModal({ open, onClose, onSaved, target }: Props) {
           <div>
             <p className="text-sm font-semibold text-slate-800">{info.person}</p>
             <p className="text-xs text-slate-500">
-              {target?.kind === 'loan-given' ? 'Pending return: ' : 'Remaining: '}
+              {target?.kind === 'loan-given' ? t('cmp.repay.pendingReturn') : t('cmp.repay.remaining')}
               <span className="font-semibold">{formatCurrency(info.remaining, info.currency as Currency)}</span>
             </p>
           </div>
@@ -133,7 +136,7 @@ export function RepaymentModal({ open, onClose, onSaved, target }: Props) {
         {/* Amount */}
         <div>
           <label className="block text-xs font-medium text-slate-500 mb-1">
-            Payment Amount * <span className="text-slate-400">(max {formatCurrency(info.maxAmount, info.currency as Currency)})</span>
+            {t('cmp.repay.paymentAmount')} <span className="text-slate-400">({t('cmp.repay.max', { amount: formatCurrency(info.maxAmount, info.currency as Currency) })})</span>
           </label>
           <AmountInput
             required
@@ -150,7 +153,7 @@ export function RepaymentModal({ open, onClose, onSaved, target }: Props) {
               <button key={pct} type="button"
                 onClick={() => setAmount(snap(info.maxAmount * pct))}
                 className="flex-1 py-1 text-xs bg-slate-100 hover:bg-indigo-100 hover:text-indigo-700 rounded-lg transition-colors">
-                {pct === 1 ? 'Full' : `${pct * 100}%`}
+                {pct === 1 ? t('cmp.repay.full') : `${pct * 100}%`}
               </button>
             ))}
           </div>
@@ -158,7 +161,7 @@ export function RepaymentModal({ open, onClose, onSaved, target }: Props) {
 
         {/* Payment date */}
         <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1">Payment Date *</label>
+          <label className="block text-xs font-medium text-slate-500 mb-1">{t('cmp.field.paymentDateRequired')}</label>
           <input required type="date" value={paymentDate}
             onChange={e => setPaymentDate(e.target.value)}
             className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300" />
@@ -167,11 +170,11 @@ export function RepaymentModal({ open, onClose, onSaved, target }: Props) {
         {/* Card (optional) */}
         <div>
           <label className="block text-xs font-medium text-slate-500 mb-1">
-            Pay From Card <span className="text-slate-400">(optional)</span>
+            {t('cmp.field.payFromCard')} <span className="text-slate-400">({t('common.optional')})</span>
           </label>
           <select value={cardId ?? ''} onChange={e => setCardId(e.target.value ? Number(e.target.value) : undefined)}
             className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300">
-            <option value="">— Cash / No card —</option>
+            <option value="">{t('cmp.source.cashNoCard')}</option>
             {filteredCards.map(c => (
               <option key={c.id} value={c.id}>
                 {c.name} •••• {c.lastFourDigits} · {formatCurrency(c.currentBalance, c.currency)}
@@ -188,15 +191,15 @@ export function RepaymentModal({ open, onClose, onSaved, target }: Props) {
         {amount > 0 && (
           <div className="bg-slate-50 rounded-xl px-3 py-2.5 text-xs text-slate-600 space-y-1">
             <div className="flex justify-between">
-              <span>Paying now</span>
+              <span>{t('cmp.repay.payingNow')}</span>
               <span className="font-semibold text-indigo-700">{formatCurrency(amount, info.currency as Currency)}</span>
             </div>
             <div className="flex justify-between">
-              <span>Remaining after</span>
+              <span>{t('cmp.repay.remainingAfter')}</span>
               <span className="font-semibold">{formatCurrency(Math.max(0, info.remaining - amount), info.currency as Currency)}</span>
             </div>
             {Math.abs(amount - info.remaining) < 0.001 && (
-              <p className="text-emerald-600 font-semibold text-center pt-0.5">Full payment — will be marked as Paid</p>
+              <p className="text-emerald-600 font-semibold text-center pt-0.5">{t('cmp.repay.fullPaymentNotice')}</p>
             )}
           </div>
         )}
@@ -204,19 +207,19 @@ export function RepaymentModal({ open, onClose, onSaved, target }: Props) {
         <div className="flex gap-3 pt-1">
           <button type="button" onClick={onClose}
             className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50">
-            Cancel
+            {t('action.cancel')}
           </button>
           {canMarkPaid && (
             <button type="button" onClick={markAlreadyPaid} disabled={saving}
-              title="Reduce the balance without recording a transaction"
+              title={t('cmp.hint.markPaidNoTx')}
               className="flex-1 py-2.5 rounded-xl border border-emerald-200 text-emerald-700 text-sm font-semibold hover:bg-emerald-50 disabled:opacity-60">
-              Already paid
+              {t('cmp.action.alreadyPaid')}
             </button>
           )}
           <button type="submit" disabled={saving}
             className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-60 flex items-center justify-center gap-2">
             {saving && <Spinner className="w-4 h-4" />}
-            {saving ? 'Processing…' : 'Confirm Payment'}
+            {saving ? t('cmp.state.processing') : t('cmp.action.confirmPayment')}
           </button>
         </div>
       </form>

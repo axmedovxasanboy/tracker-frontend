@@ -3,26 +3,29 @@ import { Terminal, Save, Webhook, MonitorSmartphone, Copy, Check, Info } from 'l
 import { Spinner } from '../components/ui/Spinner'
 import { useApi } from '../hooks/useApi'
 import { useToast } from '../context/ToastContext'
+import { useLang } from '../i18n/LanguageContext'
 import { settingsApi } from '../api/settings'
 import { extractErrorMessage } from '../api/client'
 import type { SettingsRequest } from '../types'
 
 const INPUT = 'w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300'
 
-/** Lenient client-side hint — saving isn't blocked (localhost dev), we just warn. */
-function urlWarning(value: string): string | null {
+/** Lenient client-side hint — saving isn't blocked (localhost dev), we just warn.
+ *  Messages are pre-localized by the caller since this runs outside the component. */
+function urlWarning(value: string, invalidMsg: string, httpsMsg: string): string | null {
   const v = value.trim()
   if (!v) return null
   try {
     const u = new URL(v)
-    if (u.protocol !== 'https:') return 'Telegram requires HTTPS in production — http will only work for local testing.'
+    if (u.protocol !== 'https:') return httpsMsg
     return null
   } catch {
-    return 'Doesn’t look like a valid URL.'
+    return invalidMsg
   }
 }
 
 export function Developer() {
+  const { t } = useLang()
   const settings = useApi(() => settingsApi.get(), [])
   const { showSuccess } = useToast()
 
@@ -61,14 +64,14 @@ export function Developer() {
       }
       await settingsApi.update(req)
       settings.refetch()
-      showSuccess('Developer settings saved')
+      showSuccess(t('page.developer.savedToast'))
     } catch (err: unknown) {
       setError(extractErrorMessage(err))
     } finally { setSaving(false) }
   }
 
-  const webhookWarn = urlWarning(webhookUrl)
-  const webViewWarn = urlWarning(webViewUrl)
+  const webhookWarn = urlWarning(webhookUrl, t('page.developer.invalidUrlWarning'), t('page.developer.httpsWarning'))
+  const webViewWarn = urlWarning(webViewUrl, t('page.developer.invalidUrlWarning'), t('page.developer.httpsWarning'))
 
   return (
     <div className="p-4 sm:p-6 space-y-6 max-w-3xl">
@@ -77,17 +80,17 @@ export function Developer() {
           <Terminal className="w-5 h-5 text-emerald-300" />
         </div>
         <div className="min-w-0">
-          <h2 className="text-xl font-bold text-slate-800">Developer</h2>
-          <p className="text-sm text-slate-400">Telegram bot integration — webhook &amp; web-view URLs.</p>
+          <h2 className="text-xl font-bold text-slate-800">{t('page.developer')}</h2>
+          <p className="text-sm text-slate-400">{t('page.developer.subtitle')}</p>
         </div>
       </header>
 
       <div className="flex gap-2.5 text-xs text-slate-600 bg-indigo-50 border border-indigo-100 rounded-xl px-3.5 py-3">
         <Info className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />
         <p>
-          The Telegram bot reads these at startup from a public endpoint
-          (<code className="text-[11px] bg-white/70 px-1 py-0.5 rounded">GET /api/v1/settings/telegram</code>).
-          After changing them, <strong>restart the bot</strong> so it re-registers the webhook.
+          {t('page.developer.webhookInfoPre')}
+          {' '}(<code className="text-[11px] bg-white/70 px-1 py-0.5 rounded">GET /api/v1/settings/telegram</code>).
+          {' '}{t('page.developer.webhookInfoAfter')} <strong>{t('page.developer.restartBot')}</strong> {t('page.developer.webhookInfoEnd')}
         </p>
       </div>
 
@@ -99,12 +102,12 @@ export function Developer() {
           <section className="space-y-2.5">
             <div className="flex items-center gap-2">
               <Webhook className="w-4 h-4 text-indigo-500" />
-              <h3 className="text-sm font-semibold text-slate-700">Webhook URL</h3>
+              <h3 className="text-sm font-semibold text-slate-700">{t('page.developer.webhookUrlHeading')}</h3>
             </div>
             <p className="text-xs text-slate-500 -mt-1">
-              The public HTTPS URL Telegram pushes updates to. The bot registers this with
+              {t('page.developer.webhookDescPre')}
               <code className="text-[11px] bg-slate-100 px-1 py-0.5 rounded mx-1">setWebhook</code>
-              on boot — e.g. <span className="text-slate-600">https://your-tunnel.example/webhook</span>.
+              {t('page.developer.webhookDescPost')} <span className="text-slate-600">https://your-tunnel.example/webhook</span>.
             </p>
             <div className="flex gap-2">
               <input type="url" inputMode="url" autoComplete="off" spellCheck={false}
@@ -112,7 +115,7 @@ export function Developer() {
                 placeholder="https://your-tunnel.example/webhook"
                 className={`${INPUT} font-mono`} />
               <button type="button" onClick={() => copy('webhook', webhookUrl)}
-                disabled={!webhookUrl.trim()} title="Copy"
+                disabled={!webhookUrl.trim()} title={t('page.developer.copyTitle')}
                 className="shrink-0 px-3 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 transition-colors">
                 {copied === 'webhook' ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
               </button>
@@ -124,11 +127,10 @@ export function Developer() {
           <section className="space-y-2.5 pt-2 border-t border-slate-100">
             <div className="flex items-center gap-2">
               <MonitorSmartphone className="w-4 h-4 text-violet-500" />
-              <h3 className="text-sm font-semibold text-slate-700">Web-view URL</h3>
+              <h3 className="text-sm font-semibold text-slate-700">{t('page.developer.webViewUrlHeading')}</h3>
             </div>
             <p className="text-xs text-slate-500 -mt-1">
-              The public HTTPS URL of this web app, opened inside Telegram. Surfaced as the bot's
-              "Open App" button and the chat menu button. Must be HTTPS for Telegram to launch it.
+              {t('page.developer.webViewDesc')}
             </p>
             <div className="flex gap-2">
               <input type="url" inputMode="url" autoComplete="off" spellCheck={false}
@@ -136,7 +138,7 @@ export function Developer() {
                 placeholder="https://your-frontend.example"
                 className={`${INPUT} font-mono`} />
               <button type="button" onClick={() => copy('webview', webViewUrl)}
-                disabled={!webViewUrl.trim()} title="Copy"
+                disabled={!webViewUrl.trim()} title={t('page.developer.copyTitle')}
                 className="shrink-0 px-3 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 transition-colors">
                 {copied === 'webview' ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
               </button>
@@ -152,13 +154,13 @@ export function Developer() {
             <button type="submit" disabled={saving}
               className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors disabled:opacity-60">
               {saving ? <Spinner className="w-4 h-4" /> : <Save className="w-4 h-4" />}
-              {saving ? 'Saving…' : 'Save changes'}
+              {saving ? t('action.saving') : t('page.shared.saveChanges')}
             </button>
           </div>
 
           {settings.data?.updatedAt && (
             <p className="text-[11px] text-slate-400 text-right -mt-3">
-              Last updated {new Date(settings.data.updatedAt).toLocaleString()}
+              {t('page.shared.lastUpdated', { date: new Date(settings.data.updatedAt).toLocaleString() })}
             </p>
           )}
         </form>

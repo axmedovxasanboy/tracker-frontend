@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import {
   Calendar, CalendarCheck, Lock, PiggyBank, TrendingUp, Wallet, Coins,
-  AlertTriangle, ChevronDown, ChevronRight,
+  ChevronDown, ChevronRight,
 } from 'lucide-react'
 import { useApi } from '../hooks/useApi'
 import { monthsApi } from '../api/months'
 import { formatCurrency } from '../utils/format'
 import { Spinner } from '../components/ui/Spinner'
 import { CloseMonthModal } from '../components/months/CloseMonthModal'
+import { useLang } from '../i18n/LanguageContext'
 import type { Currency } from '../types'
 
 interface Props { currency: Currency }
@@ -32,6 +33,7 @@ const COLOR: Record<BreakdownColor, { bg: string; text: string }> = {
 }
 
 export function Months({ currency }: Props) {
+  const { t } = useLang()
   const [month, setMonth] = useState(currentMonth())
   const [closeOpen, setCloseOpen] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
@@ -51,7 +53,7 @@ export function Months({ currency }: Props) {
             <CalendarCheck className="w-5 h-5 text-indigo-600" />
           </div>
           <div>
-            <h2 className="text-xl font-bold text-slate-800">Monthly Summary</h2>
+            <h2 className="text-xl font-bold text-slate-800">{t('page.months.header')}</h2>
             <p className="text-sm text-slate-400">{monthLabel(month)} · {currency}</p>
           </div>
         </div>
@@ -65,48 +67,40 @@ export function Months({ currency }: Props) {
       {summary.loading && !s ? (
         <div className="h-48 flex items-center justify-center"><Spinner /></div>
       ) : !s ? (
-        <p className="text-sm text-slate-400">No data for this month.</p>
+        <p className="text-sm text-slate-400">{t('page.months.noDataForMonth')}</p>
       ) : (
         <>
-          {/* FX defaults warning */}
-          {s.fxRatesUsingDefaults && (
-            <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded-lg">
-              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-              <span>FX rates are using built-in defaults — set them in Settings for accurate cross-currency math.</span>
-            </div>
-          )}
-
           {/* The envelope: Start + Earned − Spent = Left */}
           <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
-            <BreakdownCard icon={Wallet} color="indigo" label="Started with"
-              value={formatCurrency(s.startBalance, currency, true)} hint="Carried from last month" />
-            <BreakdownCard icon={TrendingUp} color="emerald" label="Earned"
-              value={formatCurrency(s.income, currency, true)} hint="Income this month" />
-            <BreakdownCard icon={Coins} color="rose" label="Spent"
+            <BreakdownCard icon={Wallet} color="indigo" label={t('page.months.startedWith')}
+              value={formatCurrency(s.startBalance, currency, true)} hint={t('page.months.startedWithHint')} />
+            <BreakdownCard icon={TrendingUp} color="emerald" label={t('page.months.earned')}
+              value={formatCurrency(s.income, currency, true)} hint={t('page.months.earnedHint')} />
+            <BreakdownCard icon={Coins} color="rose" label={t('page.months.spent')}
               value={s.totalSpent != null ? formatCurrency(s.totalSpent, currency, true) : '—'}
-              hint={s.closed ? 'Tagged + everyday' : 'Known once closed'} />
-            <BreakdownCard icon={PiggyBank} color="amber" label="Left"
+              hint={s.closed ? t('page.months.spentHintClosed') : t('page.months.knownOnceClosed')} />
+            <BreakdownCard icon={PiggyBank} color="amber" label={t('page.months.left')}
               value={s.leftover != null ? formatCurrency(s.leftover, currency, true) : '—'}
-              hint={s.closed ? 'Entered at close → next start' : 'Known once closed'} />
+              hint={s.closed ? t('page.months.leftHintClosed') : t('page.months.knownOnceClosed')} />
           </div>
 
           {/* Where the money went */}
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 space-y-3">
-            <h3 className="text-sm font-semibold text-slate-700">Where it went</h3>
+            <h3 className="text-sm font-semibold text-slate-700">{t('page.months.whereItWent')}</h3>
             <div className="space-y-1.5">
-              <Line label="Donation" value={formatCurrency(s.donation, currency)} />
-              <Line label="Emergency" value={formatCurrency(s.emergency, currency)} />
-              <Line label="Investments" value={formatCurrency(s.investments, currency)} />
-              <Line label="Stocks" value={formatCurrency(s.stocks, currency)} />
-              <Line label="Savings goals" value={formatCurrency(s.savings, currency)} />
+              <Line label={t('page.months.donation')} value={formatCurrency(s.donation, currency)} />
+              <Line label={t('page.months.emergency')} value={formatCurrency(s.emergency, currency)} />
+              <Line label={t('page.months.investments')} value={formatCurrency(s.investments, currency)} />
+              <Line label={t('page.months.stocks')} value={formatCurrency(s.stocks, currency)} />
+              <Line label={t('page.months.savingsGoals')} value={formatCurrency(s.savings, currency)} />
               <div className="flex items-center justify-between pt-1.5 border-t border-slate-100 text-sm font-semibold">
-                <span className="text-slate-600">Tagged total</span>
+                <span className="text-slate-600">{t('page.months.taggedTotal')}</span>
                 <span className="text-slate-800">{formatCurrency(s.taggedTotal, currency)}</span>
               </div>
               <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-500">Everyday spending</span>
+                <span className="text-slate-500">{t('page.months.everydaySpending')}</span>
                 <span className={s.everydaySpend != null ? 'font-semibold text-slate-800' : 'text-slate-400'}>
-                  {s.everydaySpend != null ? formatCurrency(s.everydaySpend, currency) : 'Known once closed'}
+                  {s.everydaySpend != null ? formatCurrency(s.everydaySpend, currency) : t('page.months.knownOnceClosed')}
                 </span>
               </div>
             </div>
@@ -116,19 +110,19 @@ export function Months({ currency }: Props) {
           {s.closed ? (
             <div className="flex items-center gap-2 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 px-4 py-3 rounded-xl">
               <Lock className="w-4 h-4 shrink-0" />
-              <span><span className="font-semibold">{monthLabel(month)}</span> is closed and locked.</span>
+              <span><span className="font-semibold">{monthLabel(month)}</span> {t('page.months.isClosedAndLocked')}</span>
             </div>
           ) : (
             <div className="flex items-center justify-between gap-3 flex-wrap bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
               <div>
-                <p className="text-sm font-semibold text-slate-700">Close this month</p>
+                <p className="text-sm font-semibold text-slate-700">{t('page.months.closeThisMonth')}</p>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Enter your real wallet balances; the gap becomes everyday spending and carries forward.
+                  {t('page.months.closeThisMonthHint')}
                 </p>
               </div>
               <button onClick={() => setCloseOpen(true)}
                 className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-sm">
-                <CalendarCheck className="w-4 h-4" /> Close {monthLabel(month)}
+                <CalendarCheck className="w-4 h-4" /> {t('page.months.closeMonth', { month: monthLabel(month) })}
               </button>
             </div>
           )}
@@ -139,18 +133,18 @@ export function Months({ currency }: Props) {
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm">
         <button onClick={() => setShowHistory(v => !v)}
           className="w-full flex items-center justify-between px-5 py-4 text-left">
-          <span className="text-sm font-semibold text-slate-700">Closed months ({history.data?.length ?? 0})</span>
+          <span className="text-sm font-semibold text-slate-700">{t('page.months.closedMonthsCount', { count: history.data?.length ?? 0 })}</span>
           {showHistory ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
         </button>
         {showHistory && (
           <div className="border-t border-slate-100">
             {(history.data?.length ?? 0) === 0 ? (
-              <p className="px-5 py-6 text-sm text-slate-400">No months closed yet.</p>
+              <p className="px-5 py-6 text-sm text-slate-400">{t('page.months.noClosedMonths')}</p>
             ) : (
               <div className="overflow-x-auto"><table className="w-full text-sm min-w-[640px]">
                 <thead>
                   <tr className="border-b border-slate-100">
-                    {['Month', 'Earned', 'Spent', 'Everyday', 'Left'].map(h => (
+                    {[t('page.months.monthCol'), t('page.months.earned'), t('page.months.spent'), t('page.months.everydayShort'), t('page.months.left')].map(h => (
                       <th key={h} className="text-left text-xs font-medium text-slate-400 px-5 py-3">{h}</th>
                     ))}
                   </tr>

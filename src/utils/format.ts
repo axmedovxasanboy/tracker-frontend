@@ -2,17 +2,16 @@ import type { Currency } from '../types'
 
 /**
  * Display rules — dot is the thousands separator, comma is the decimal separator
- * (European / Uzbek convention). UZS never shows decimals; USD/EUR show two.
+ * (European / Uzbek convention). UZS never shows decimals.
  *
- * Examples: 1000000 + UZS → "1.000.000 UZS"
- *           1000000.5 + USD → "1.000.000,50 USD"
+ * Example: 1000000 + UZS → "1.000.000 UZS"
  *
  * We intentionally do NOT use Intl.NumberFormat — its currency-data tables and
  * locale-specific grouping behaviour vary across browsers/Node versions and have
  * produced visible drift (e.g. 10.000.000 rendering as 9.999.999,99 under some
  * UZS formatters). A hand-rolled formatter is precise and predictable.
  */
-const CURRENCY_DECIMALS: Record<Currency, number> = { UZS: 0, USD: 2, EUR: 2 }
+const CURRENCY_DECIMALS: Record<Currency, number> = { UZS: 0 }
 
 /**
  * Snap a JS float to 4-decimal-place precision.

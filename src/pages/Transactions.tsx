@@ -1,15 +1,17 @@
 import { useState, useCallback } from 'react'
-import { Plus, Pencil, Trash2, ArrowUpRight, ArrowDownRight, ChevronLeft, ChevronRight, ArrowLeftRight, Repeat } from 'lucide-react'
+import { Plus, Pencil, Trash2, ArrowUpRight, ArrowDownRight, ChevronLeft, ChevronRight, ArrowLeftRight } from 'lucide-react'
 import { format } from 'date-fns'
 import { useSearchParams } from 'react-router-dom'
 import { BalanceTransferModal } from '../components/transactions/BalanceTransferModal'
-import { ExchangeModal } from '../components/transactions/ExchangeModal'
+import { useLang } from '../i18n/LanguageContext'
 import { TransactionModal } from '../components/transactions/TransactionModal'
 import { TransactionDetailModal } from '../components/transactions/TransactionDetailModal'
 import { TransactionFilters } from '../components/transactions/TransactionFilters'
 import { Spinner } from '../components/ui/Spinner'
 import { CacheBadge } from '../components/ui/CacheBadge'
 import { useApi } from '../hooks/useApi'
+import { IncomeRequiredNotice } from '../components/ui/IncomeRequiredNotice'
+import { useSettings } from '../context/SettingsContext'
 import { parseTransportDescription } from '../utils/transactionDescription'
 import { useConfirm } from '../context/ConfirmContext'
 import { transactionsApi } from '../api/transactions'
@@ -28,7 +30,9 @@ const DEFAULT_FILTERS: Filters = {
 }
 
 export function Transactions({ currency }: Props) {
+  const { t, categoryName } = useLang()
   const confirm = useConfirm()
+  const { hasStableIncome } = useSettings()
   const [searchParams] = useSearchParams()
   const [filters, setFilters] = useState<Filters>(() => {
     const num = (key: string): number | '' => {
@@ -50,7 +54,6 @@ export function Transactions({ currency }: Props) {
   })
   const [modalOpen, setModalOpen] = useState(false)
   const [transferOpen, setTransferOpen] = useState(false)
-  const [exchangeOpen, setExchangeOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<Transaction | null>(null)
   const [detailTx, setDetailTx] = useState<Transaction | null>(null)
   const [deleting, setDeleting] = useState<number | null>(null)
@@ -66,7 +69,7 @@ export function Transactions({ currency }: Props) {
   const categories = useApi(() => categoriesApi.getAll(), [])
 
   const handleDelete = async (id: number) => {
-    if (!await confirm({ message: 'Delete this transaction?', destructive: true })) return
+    if (!await confirm({ message: t('tx.confirmDelete'), destructive: true })) return
     setDeleting(id)
     try {
       await transactionsApi.delete(id)
@@ -90,10 +93,10 @@ export function Transactions({ currency }: Props) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold text-slate-800">Transactions</h2>
+          <h2 className="text-xl font-bold text-slate-800">{t('page.transactions')}</h2>
           {!transactions.loading && (
             <p className="text-sm text-slate-400 mt-0.5">
-              {total} record{total !== 1 ? 's' : ''}
+              {total === 1 ? t('tx.record', { count: total }) : t('tx.records', { count: total })}
               {transactions.isCached && (
                 <span className="ml-2 inline-flex">
                   <CacheBadge isCached cachedAt={transactions.cachedAt} />
@@ -105,27 +108,26 @@ export function Transactions({ currency }: Props) {
         <div className="flex gap-2 flex-wrap">
           <button
             onClick={() => setTransferOpen(true)}
-            className="flex items-center gap-2 border border-indigo-200 text-indigo-600 hover:bg-indigo-50 px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
+            disabled={!hasStableIncome}
+            title={!hasStableIncome ? t('income.requiredTooltip') : undefined}
+            className="flex items-center gap-2 border border-indigo-200 text-indigo-600 hover:bg-indigo-50 px-4 py-2 rounded-xl text-sm font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <ArrowLeftRight className="w-4 h-4" />
-            Transfer
-          </button>
-          <button
-            onClick={() => setExchangeOpen(true)}
-            className="flex items-center gap-2 border border-amber-200 text-amber-700 hover:bg-amber-50 px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
-          >
-            <Repeat className="w-4 h-4" />
-            Exchange
+            {t('action.transfer')}
           </button>
           <button
             onClick={() => { setEditTarget(null); setModalOpen(true) }}
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors shadow-sm"
+            disabled={!hasStableIncome}
+            title={!hasStableIncome ? t('income.requiredTooltip') : undefined}
+            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Plus className="w-4 h-4" />
-            Add
+            {t('action.add')}
           </button>
         </div>
       </div>
+
+      <IncomeRequiredNotice />
 
       {/* Filters */}
       <TransactionFilters
@@ -144,12 +146,12 @@ export function Transactions({ currency }: Props) {
           </div>
         ) : (data?.content.length ?? 0) === 0 ? (
           <div className="h-48 flex flex-col items-center justify-center gap-2 text-slate-400">
-            <p className="text-sm">No transactions found</p>
+            <p className="text-sm">{t('tx.none')}</p>
             <button
               onClick={() => setFilters(DEFAULT_FILTERS)}
               className="text-xs text-indigo-500 hover:underline"
             >
-              Clear filters
+              {t('action.clearFilters')}
             </button>
           </div>
         ) : (
@@ -157,7 +159,7 @@ export function Transactions({ currency }: Props) {
             <div className="overflow-x-auto"><table className="w-full text-sm min-w-[640px]">
               <thead>
                 <tr className="border-b border-slate-100">
-                  {['Date', 'Description', 'Category', 'Amount', 'Currency', ''].map((h) => (
+                  {[t('tx.date'), t('tx.description'), t('tx.category'), t('tx.amount'), t('tx.currency'), ''].map((h) => (
                     <th key={h} className="text-left text-xs font-medium text-slate-400 px-5 py-3 first:pl-5">
                       {h}
                     </th>
@@ -165,30 +167,30 @@ export function Transactions({ currency }: Props) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {data?.content.map((t) => {
-                  const isTransport = t.category?.kind === 'TRANSPORT'
-                  const parsed = parseTransportDescription(t.description, isTransport)
-                  const routeFrom = parsed.from ?? t.fromLocation ?? undefined
-                  const routeTo = parsed.to ?? t.toLocation ?? undefined
+                {data?.content.map((tx) => {
+                  const isTransport = tx.category?.kind === 'TRANSPORT'
+                  const parsed = parseTransportDescription(tx.description, isTransport)
+                  const routeFrom = parsed.from ?? tx.fromLocation ?? undefined
+                  const routeTo = parsed.to ?? tx.toLocation ?? undefined
                   const primary = isTransport
-                    ? (parsed.note.trim() || (routeFrom || routeTo ? `${routeFrom || '—'} → ${routeTo || '—'}` : t.description))
-                    : t.description
+                    ? (parsed.note.trim() || (routeFrom || routeTo ? `${routeFrom || '—'} → ${routeTo || '—'}` : tx.description))
+                    : tx.description
                   const subtitle = isTransport && (routeFrom || routeTo) && parsed.note.trim()
                     ? `${routeFrom || '—'} → ${routeTo || '—'}`
-                    : (t.note || t.place || '')
+                    : (tx.note || tx.place || '')
                   // Split: a single transaction that paid partly in cash and partly via a card.
-                  const isSplit = (t.cashAmount ?? 0) > 0 && (t.cardAmount ?? 0) > 0 && !!t.card
+                  const isSplit = (tx.cashAmount ?? 0) > 0 && (tx.cardAmount ?? 0) > 0 && !!tx.card
                   return (
-                  <tr key={t.id} className="hover:bg-slate-50/60 transition-colors group cursor-pointer" onClick={() => openDetail(t)}>
+                  <tr key={tx.id} className="hover:bg-slate-50/60 transition-colors group cursor-pointer" onClick={() => openDetail(tx)}>
                     <td className="px-5 py-3.5 text-slate-500 text-xs whitespace-nowrap">
-                      {format(new Date(t.transactionDate), 'dd-MMM-yyyy')}
+                      {format(new Date(tx.transactionDate), 'dd-MMM-yyyy')}
                     </td>
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-2">
                         <span className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 ${
-                          t.type === 'INCOME' ? 'bg-emerald-100' : 'bg-rose-100'
+                          tx.type === 'INCOME' ? 'bg-emerald-100' : 'bg-rose-100'
                         }`}>
-                          {t.type === 'INCOME'
+                          {tx.type === 'INCOME'
                             ? <ArrowUpRight className="w-3.5 h-3.5 text-emerald-600" />
                             : <ArrowDownRight className="w-3.5 h-3.5 text-rose-600" />
                           }
@@ -198,9 +200,9 @@ export function Transactions({ currency }: Props) {
                             <p className="font-medium text-slate-700">{primary}</p>
                             {isSplit && (
                               <span
-                                title={`Cash ${formatCurrency(t.cashAmount, t.currency)} + Card ${formatCurrency(t.cardAmount, t.currency)}`}
+                                title={t('page.transactions.splitTooltip', { cash: formatCurrency(tx.cashAmount, tx.currency), card: formatCurrency(tx.cardAmount, tx.currency) })}
                                 className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-700 text-[10px] font-semibold uppercase tracking-wide"
-                              >Split</span>
+                              >{t('page.shared.splitBadge')}</span>
                             )}
                           </div>
                           {subtitle && (
@@ -210,37 +212,37 @@ export function Transactions({ currency }: Props) {
                       </div>
                     </td>
                     <td className="px-5 py-3.5">
-                      {t.category ? (
+                      {tx.category ? (
                         <span
                           className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium"
-                          style={{ backgroundColor: t.category.color + '20', color: t.category.color }}
+                          style={{ backgroundColor: tx.category.color + '20', color: tx.category.color }}
                         >
-                          {t.category.name}
+                          {categoryName(tx.category)}
                         </span>
                       ) : (
                         <span className="text-slate-300 text-xs">—</span>
                       )}
                     </td>
                     <td className={`px-5 py-3.5 font-semibold whitespace-nowrap ${
-                      t.type === 'INCOME' ? 'text-emerald-600' : 'text-rose-600'
+                      tx.type === 'INCOME' ? 'text-emerald-600' : 'text-rose-600'
                     }`}>
-                      {t.type === 'INCOME' ? '+' : '-'}{formatCurrency(t.amount, t.currency)}
+                      {tx.type === 'INCOME' ? '+' : '-'}{formatCurrency(tx.amount, tx.currency)}
                     </td>
-                    <td className="px-5 py-3.5 text-slate-400 text-xs">{t.currency}</td>
+                    <td className="px-5 py-3.5 text-slate-400 text-xs">{tx.currency}</td>
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
                         <button
-                          onClick={() => openEdit(t)}
+                          onClick={() => openEdit(tx)}
                           className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-indigo-50 text-slate-400 hover:text-indigo-600 transition-colors"
                         >
                           <Pencil className="w-3.5 h-3.5" />
                         </button>
                         <button
-                          onClick={() => handleDelete(t.id)}
-                          disabled={deleting === t.id}
+                          onClick={() => handleDelete(tx.id)}
+                          disabled={deleting === tx.id}
                           className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-colors disabled:opacity-50"
                         >
-                          {deleting === t.id ? <Spinner className="w-3.5 h-3.5" /> : <Trash2 className="w-3.5 h-3.5" />}
+                          {deleting === tx.id ? <Spinner className="w-3.5 h-3.5" /> : <Trash2 className="w-3.5 h-3.5" />}
                         </button>
                       </div>
                     </td>
@@ -254,7 +256,7 @@ export function Transactions({ currency }: Props) {
             {totalPages > 1 && (
               <div className="flex items-center justify-between px-5 py-3.5 border-t border-slate-100">
                 <p className="text-xs text-slate-400">
-                  Page {page + 1} of {totalPages}
+                  {t('page.pagination.pageOf', { page: page + 1, total: totalPages })}
                 </p>
                 <div className="flex gap-1">
                   <button
@@ -290,13 +292,6 @@ export function Transactions({ currency }: Props) {
         open={transferOpen}
         onClose={() => setTransferOpen(false)}
         onSaved={() => { transactions.refetch(); setTransferOpen(false) }}
-      />
-
-      <ExchangeModal
-        open={exchangeOpen}
-        onClose={() => setExchangeOpen(false)}
-        onSaved={() => { transactions.refetch(); setExchangeOpen(false) }}
-        defaultCurrency={currency}
       />
 
       <TransactionDetailModal

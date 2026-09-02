@@ -3,10 +3,12 @@ import { ArrowLeftRight, UserPlus, Lock, User } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { extractErrorMessage } from '../api/client'
 import { Spinner } from '../components/ui/Spinner'
+import { useLang } from '../i18n/LanguageContext'
 
 const INPUT = 'w-full border border-slate-200 rounded-xl pl-10 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300'
 
 export function Signup() {
+  const { t } = useLang()
   const { signup } = useAuth()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -16,8 +18,8 @@ export function Signup() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (password.length < 6) { setError('Password must be at least 6 characters.'); return }
-    if (password !== confirm) { setError('Passwords do not match.'); return }
+    if (password.length < 6) { setError(t('page.signup.passwordTooShort')); return }
+    if (password !== confirm) { setError(t('page.signup.passwordMismatch')); return }
     setSubmitting(true); setError(null)
     try {
       await signup(username.trim(), password)
@@ -37,24 +39,24 @@ export function Signup() {
         </div>
 
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-          <h1 className="text-lg font-bold text-slate-800">Create your account</h1>
-          <p className="text-sm text-slate-400 mb-5">First-time setup — this is the only account.</p>
+          <h1 className="text-lg font-bold text-slate-800">{t('page.signup.title')}</h1>
+          <p className="text-sm text-slate-400 mb-5">{t('page.signup.subtitle')}</p>
 
           <form onSubmit={handleSubmit} className="space-y-3">
             <div className="relative">
               <User className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input autoFocus required value={username} onChange={(e) => setUsername(e.target.value)}
-                placeholder="Choose a username" autoComplete="username" className={INPUT} />
+                placeholder={t('page.signup.usernamePlaceholder')} autoComplete="username" className={INPUT} />
             </div>
             <div className="relative">
               <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input required type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-                placeholder="Password (min 6 chars)" autoComplete="new-password" className={INPUT} />
+                placeholder={t('page.signup.passwordPlaceholder')} autoComplete="new-password" className={INPUT} />
             </div>
             <div className="relative">
               <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input required type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)}
-                placeholder="Confirm password" autoComplete="new-password" className={INPUT} />
+                placeholder={t('page.signup.confirmPasswordPlaceholder')} autoComplete="new-password" className={INPUT} />
             </div>
 
             {error && (
@@ -64,7 +66,7 @@ export function Signup() {
             <button type="submit" disabled={submitting}
               className="w-full py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-60 flex items-center justify-center gap-2">
               {submitting ? <Spinner className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
-              {submitting ? 'Creating…' : 'Create account'}
+              {submitting ? t('page.signup.creating') : t('page.signup.createAccount')}
             </button>
           </form>
         </div>

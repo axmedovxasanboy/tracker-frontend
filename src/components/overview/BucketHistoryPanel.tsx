@@ -1,6 +1,7 @@
 import { X } from 'lucide-react'
 import { format, parse } from 'date-fns'
 import { Spinner } from '../ui/Spinner'
+import { useLang } from '../../i18n/LanguageContext'
 import { useApi } from '../../hooks/useApi'
 import { overviewApi } from '../../api/overview'
 import { formatCurrency } from '../../utils/format'
@@ -13,19 +14,19 @@ interface Props {
   onClose: () => void
 }
 
-const BUCKET_LABELS: Record<Bucket, string> = {
-  DONATION:    'Donations',
-  EMERGENCY:   'Emergency contributions',
-  INVESTMENTS: 'Investments',
-  STOCKS:      'Stocks',
-}
-
 function formatMonthLabel(ym: string): string {
   try { return format(parse(ym, 'yyyy-MM', new Date()), 'MMMM yyyy') }
   catch { return ym }
 }
 
 export function BucketHistoryPanel({ bucket, month, currency, onClose }: Props) {
+  const { t } = useLang()
+  const BUCKET_LABELS: Record<Bucket, string> = {
+    DONATION:    t('cmp.bucketHistory.donations'),
+    EMERGENCY:   t('cmp.bucketHistory.emergencyContributions'),
+    INVESTMENTS: t('cmp.bucket.investments'),
+    STOCKS:      t('cmp.bucket.stocks'),
+  }
   const payments = useApi(() => overviewApi.getBucketPayments(bucket, month, currency), [bucket, month, currency])
   const rows = payments.data ?? []
   const total = rows.reduce((s, p) => s + p.amount, 0)
@@ -38,8 +39,8 @@ export function BucketHistoryPanel({ bucket, month, currency, onClose }: Props) 
             {BUCKET_LABELS[bucket]} — {formatMonthLabel(month)}
           </h3>
           <p className="text-xs text-slate-400 mt-0.5">
-            {rows.length} payment{rows.length === 1 ? '' : 's'} ·{' '}
-            <span className="font-semibold text-slate-600">{formatCurrency(total, currency, true)}</span> total
+            {t(rows.length === 1 ? 'cmp.bucketHistory.paymentCountOne' : 'cmp.bucketHistory.paymentCountMany', { count: rows.length })} ·{' '}
+            <span className="font-semibold text-slate-600">{formatCurrency(total, currency, true)}</span> {t('cmp.bucketHistory.totalSuffix')}
           </p>
         </div>
         <button onClick={onClose}
@@ -52,13 +53,13 @@ export function BucketHistoryPanel({ bucket, month, currency, onClose }: Props) 
         <div className="h-32 flex items-center justify-center"><Spinner /></div>
       ) : rows.length === 0 ? (
         <div className="h-24 flex items-center justify-center text-sm text-slate-400">
-          No payments recorded for this bucket in {formatMonthLabel(month)}.
+          {t('cmp.bucketHistory.noPayments', { month: formatMonthLabel(month) })}
         </div>
       ) : (
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-slate-100">
-              {['Date', 'Label', 'Amount', 'Note'].map(h => (
+              {[t('tx.date'), t('cmp.bucketHistory.label'), t('tx.amount'), t('tx.note')].map(h => (
                 <th key={h} className="text-left text-xs font-medium text-slate-400 px-5 py-3">{h}</th>
               ))}
             </tr>

@@ -13,7 +13,7 @@ interface Props {
   max?: number
   autoFocus?: boolean
   disabled?: boolean
-  /** Number of decimal places to allow/display. Defaults to currency-driven (UZS=0, USD/EUR=2). */
+  /** Number of decimal places to allow/display. Defaults to currency-driven (UZS=0). */
   decimals?: number
   /** Optional suffix shown inside the input (e.g. currency code). */
   suffix?: string
@@ -24,7 +24,7 @@ interface Props {
   'aria-invalid'?: boolean
 }
 
-const CURRENCY_DECIMALS: Record<Currency, number> = { UZS: 0, USD: 2, EUR: 2 }
+const CURRENCY_DECIMALS: Record<Currency, number> = { UZS: 0 }
 
 /**
  * Numeric input that shows the value with dot thousands separators while the user types,

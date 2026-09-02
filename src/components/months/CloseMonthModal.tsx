@@ -3,6 +3,7 @@ import { AlertTriangle, Lock } from 'lucide-react'
 import { Modal } from '../ui/Modal'
 import { Spinner } from '../ui/Spinner'
 import { AmountInput } from '../ui/AmountInput'
+import { useLang } from '../../i18n/LanguageContext'
 import { monthsApi } from '../../api/months'
 import { extractErrorMessage } from '../../api/client'
 import { formatCurrency } from '../../utils/format'
@@ -32,6 +33,7 @@ function monthLabel(ym: string) {
 }
 
 export function CloseMonthModal({ open, onClose, onSaved, month, currency }: Props) {
+  const { t } = useLang()
   const [preview, setPreview] = useState<MonthClosePreviewResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [entered, setEntered] = useState<Record<string, number>>({})
@@ -75,12 +77,12 @@ export function CloseMonthModal({ open, onClose, onSaved, month, currency }: Pro
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={`Close ${monthLabel(month)}`} maxWidth="max-w-2xl">
+    <Modal open={open} onClose={onClose} title={t('cmp.closeMonth.title', { month: monthLabel(month) })} maxWidth="max-w-2xl">
       {loading ? (
         <div className="h-40 flex items-center justify-center"><Spinner /></div>
       ) : !preview ? (
         <p className="text-sm text-rose-500 bg-rose-50 border border-rose-200 px-3 py-2 rounded-lg">
-          {error ?? 'Could not load the month preview.'}
+          {error ?? t('cmp.closeMonth.previewLoadFailed')}
         </p>
       ) : (
         <div className="space-y-4">
@@ -88,27 +90,26 @@ export function CloseMonthModal({ open, onClose, onSaved, month, currency }: Pro
           {!preview.closeable && (
             <div className="flex items-start gap-2 text-sm text-amber-800 bg-amber-50 border border-amber-200 px-3 py-2.5 rounded-xl">
               <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-              <span>{preview.blockedReason ?? 'This month cannot be closed right now.'}</span>
+              <span>{preview.blockedReason ?? t('cmp.closeMonth.cannotCloseNow')}</span>
             </div>
           )}
 
           <p className="text-sm text-slate-500">
-            Enter the <span className="font-medium text-slate-700">real balance of each wallet</span> at month-end.
-            Whatever the app can't account for becomes your <span className="font-medium">everyday spending</span>,
-            and the balance you enter carries into next month.
+            {t('cmp.closeMonth.introPrefix')} <span className="font-medium text-slate-700">{t('cmp.closeMonth.realBalance')}</span> {t('cmp.closeMonth.introMid')}
+            {' '}<span className="font-medium">{t('cmp.closeMonth.everydaySpending')}</span>{t('cmp.closeMonth.introSuffix')}
           </p>
 
           {/* Month figures */}
           <div className="grid grid-cols-3 gap-2 text-center">
-            <Stat label="Start" value={formatCurrency(preview.startBalance, currency, true)} />
-            <Stat label="Earned" value={formatCurrency(preview.income, currency, true)} />
-            <Stat label="Tagged out" value={formatCurrency(preview.taggedTotal, currency, true)} />
+            <Stat label={t('cmp.closeMonth.start')} value={formatCurrency(preview.startBalance, currency, true)} />
+            <Stat label={t('cmp.closeMonth.earned')} value={formatCurrency(preview.income, currency, true)} />
+            <Stat label={t('cmp.closeMonth.taggedOut')} value={formatCurrency(preview.taggedTotal, currency, true)} />
           </div>
 
           {/* Per-wallet reconciliation */}
           <div className="space-y-2">
             {preview.wallets.length === 0 && (
-              <p className="text-sm text-slate-400">No wallets to reconcile.</p>
+              <p className="text-sm text-slate-400">{t('cmp.closeMonth.noWallets')}</p>
             )}
             {preview.wallets.map(w => {
               const ev = everydayFor(w)
@@ -118,11 +119,11 @@ export function CloseMonthModal({ open, onClose, onSaved, month, currency }: Pro
                     <div>
                       <p className="text-sm font-medium text-slate-700">{w.label}</p>
                       <p className="text-[11px] text-slate-400">
-                        App thinks: {formatCurrency(w.computedBalance, w.currency)}
+                        {t('cmp.closeMonth.appThinks')} {formatCurrency(w.computedBalance, w.currency)}
                       </p>
                     </div>
                     <p className={`text-xs font-medium ${ev > 0 ? 'text-rose-600' : ev < 0 ? 'text-emerald-600' : 'text-slate-400'}`}>
-                      {ev > 0 ? 'Spent ' : ev < 0 ? 'Surplus ' : ''}{formatCurrency(Math.abs(ev), w.currency)}
+                      {ev > 0 ? t('cmp.closeMonth.spent') : ev < 0 ? t('cmp.closeMonth.surplus') : ''}{formatCurrency(Math.abs(ev), w.currency)}
                     </p>
                   </div>
                   <AmountInput
@@ -149,8 +150,7 @@ export function CloseMonthModal({ open, onClose, onSaved, month, currency }: Pro
                 className="w-4 h-4 mt-0.5 rounded text-indigo-600" />
               <span className="text-xs text-slate-600 leading-relaxed flex items-center gap-1">
                 <Lock className="w-3 h-3 shrink-0" />
-                I understand closing <span className="font-semibold">{monthLabel(month)}</span> is permanent — it
-                can't be reopened and its transactions become locked.
+                {t('cmp.closeMonth.confirmPrefix')} <span className="font-semibold">{monthLabel(month)}</span> {t('cmp.closeMonth.confirmSuffix')}
               </span>
             </label>
           )}
@@ -158,13 +158,13 @@ export function CloseMonthModal({ open, onClose, onSaved, month, currency }: Pro
           <div className="flex gap-3 pt-1">
             <button type="button" onClick={onClose}
               className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50">
-              Cancel
+              {t('action.cancel')}
             </button>
             <button type="button" onClick={commit}
               disabled={saving || !preview.closeable || !confirmed}
               className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 flex items-center justify-center gap-2">
               {saving && <Spinner className="w-4 h-4" />}
-              {saving ? 'Closing…' : 'Close month'}
+              {saving ? t('cmp.state.closing') : t('cmp.closeMonth.closeMonth')}
             </button>
           </div>
         </div>

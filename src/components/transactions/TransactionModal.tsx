@@ -1,8 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Plus, X, ChevronRight } from 'lucide-react'
 import { Modal } from '../ui/Modal'
+import { useLang } from '../../i18n/LanguageContext'
 import { Spinner } from '../ui/Spinner'
+import { AllocationPreviewPanel } from './AllocationPreviewPanel'
 import { useToast } from '../../context/ToastContext'
+import { overviewApi } from '../../api/overview'
 import { categoriesApi } from '../../api/categories'
 import { cardsApi } from '../../api/cards'
 import { transactionsApi } from '../../api/transactions'
@@ -31,27 +34,9 @@ interface Props {
   preselectCardId?: number
 }
 
-const INCOME_SUB_TYPES: { value: TransactionSubType; label: string; hint: string }[] = [
-  { value: 'REGULAR_INCOME',      label: 'Regular Income',      hint: 'Salary, freelance…' },
-  { value: 'LOAN_RECEIVED',       label: 'Loan Received',       hint: 'Creates Loans Borrowed' },
-  { value: 'LOAN_RETURNED_TO_ME', label: 'Loan Returned to Me', hint: 'Someone paid you back' },
-]
-const EXPENSE_SUB_TYPES: { value: TransactionSubType; label: string; hint: string }[] = [
-  { value: 'REGULAR_EXPENSE',   label: 'Regular Expense',   hint: 'Shopping, food, bills…' },
-  { value: 'LOAN_GIVEN',        label: 'Loan Given',        hint: 'Creates Loans Lent' },
-  { value: 'LOAN_REPAYMENT',    label: 'Loan Repayment',    hint: 'Paying back owed money' },
-  { value: 'BANK_LOAN_PAYMENT', label: 'Bank Loan Payment', hint: 'Monthly bank instalment' },
-  { value: 'INVESTMENT',        label: 'Investment',        hint: 'Creates Investment record' },
-  { value: 'DONATION',          label: 'Donation',          hint: 'Creates Donation record' },
-]
 const NEEDS_COUNTERPARTY = new Set<TransactionSubType>([
   'LOAN_RECEIVED','LOAN_RETURNED_TO_ME','LOAN_GIVEN','LOAN_REPAYMENT','BANK_LOAN_PAYMENT','INVESTMENT','DONATION',
 ])
-const COUNTERPARTY_LABEL: Partial<Record<TransactionSubType, string>> = {
-  LOAN_RECEIVED: 'Lender Name', LOAN_RETURNED_TO_ME: 'Debtor Name', LOAN_GIVEN: 'Borrower Name',
-  LOAN_REPAYMENT: 'Lender / Creditor', BANK_LOAN_PAYMENT: 'Bank Name',
-  INVESTMENT: 'Asset / Platform', DONATION: 'Recipient Name',
-}
 const AUTO_CREATES = new Set<TransactionSubType>(['LOAN_RECEIVED','LOAN_GIVEN','INVESTMENT','DONATION'])
 const COLORS = ['#10b981','#f43f5e','#6366f1','#f59e0b','#06b6d4','#a855f7','#ec4899','#14b8a6','#3b82f6','#ef4444','#8b5cf6','#6b7280']
 
@@ -70,6 +55,39 @@ function nextMonthStr() {
 
 
 export function TransactionModal({ open, onClose, onSaved, transaction, defaultCurrency, preselectCardId }: Props) {
+  // Aliased to `translate` — this file uses `t` as a local loop variable in a couple of
+  // .map() callbacks (income/expense toggle, investment-type select), so binding the hook
+  // itself to `t` would shadow those and silently break translation calls made inside them.
+  const { t: translate, categoryName } = useLang()
+  const INCOME_SUB_TYPES: { value: TransactionSubType; label: string; hint: string }[] = [
+    { value: 'REGULAR_INCOME',      label: translate('cmp.txModal.subType.regularIncome'),      hint: translate('cmp.txModal.hint.regularIncome') },
+    { value: 'LOAN_RECEIVED',       label: translate('cmp.txModal.subType.loanReceived'),       hint: translate('cmp.txModal.hint.loanReceived') },
+    { value: 'LOAN_RETURNED_TO_ME', label: translate('cmp.txModal.subType.loanReturnedToMe'), hint: translate('cmp.txModal.hint.loanReturnedToMe') },
+  ]
+  const EXPENSE_SUB_TYPES: { value: TransactionSubType; label: string; hint: string }[] = [
+    { value: 'REGULAR_EXPENSE',   label: translate('cmp.txModal.subType.regularExpense'),   hint: translate('cmp.txModal.hint.regularExpense') },
+    { value: 'LOAN_GIVEN',        label: translate('cmp.txModal.subType.loanGiven'),        hint: translate('cmp.txModal.hint.loanGiven') },
+    { value: 'LOAN_REPAYMENT',    label: translate('cmp.txModal.subType.loanRepayment'),    hint: translate('cmp.txModal.hint.loanRepayment') },
+    { value: 'BANK_LOAN_PAYMENT', label: translate('cmp.txModal.subType.bankLoanPayment'), hint: translate('cmp.txModal.hint.bankLoanPayment') },
+    { value: 'INVESTMENT',        label: translate('cmp.txModal.subType.investment'),        hint: translate('cmp.txModal.hint.investment') },
+    { value: 'DONATION',          label: translate('cmp.txModal.subType.donation'),          hint: translate('cmp.txModal.hint.donation') },
+  ]
+  const COUNTERPARTY_LABEL: Partial<Record<TransactionSubType, string>> = {
+    LOAN_RECEIVED: translate('cmp.txModal.counterparty.lenderName'),
+    LOAN_RETURNED_TO_ME: translate('cmp.txModal.counterparty.debtorName'),
+    LOAN_GIVEN: translate('cmp.txModal.counterparty.borrowerName'),
+    LOAN_REPAYMENT: translate('cmp.txModal.counterparty.lenderCreditor'),
+    BANK_LOAN_PAYMENT: translate('cmp.txModal.counterparty.bankName'),
+    INVESTMENT: translate('cmp.txModal.counterparty.assetPlatform'),
+    DONATION: translate('cmp.txModal.counterparty.recipientName'),
+  }
+  const INVESTMENT_TYPE_LABELS: Record<InvestmentType, string> = {
+    REAL_ESTATE: translate('cmp.investmentType.realEstate'),
+    BONDS: translate('cmp.investmentType.bonds'),
+    MUTUAL_FUND: translate('cmp.investmentType.mutualFund'),
+    GOLD: translate('cmp.investmentType.gold'),
+    OTHER: translate('cmp.investmentType.other'),
+  }
   const { showSuccess } = useToast()
   const [form, setForm] = useState<TransactionRequest>(defaultForm(defaultCurrency))
   const [rootCategories, setRootCategories] = useState<Category[]>([])
@@ -344,37 +362,37 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
     e.preventDefault()
     // Manual validation: category is mandatory
     if (!selectedRootId) {
-      setValidationError('Please select a category')
+      setValidationError(translate('cmp.txModal.err.selectCategory'))
       return
     }
     // Sub-category mandatory when available
     if (subCategories.length > 0 && form.categoryId === selectedRootId) {
-      setValidationError('Please select a sub-category')
+      setValidationError(translate('cmp.txModal.err.selectSubCategory'))
       return
     }
     // Investment validation
     if (form.subType === 'INVESTMENT' && investmentMode === 'existing' && !selectedInvestmentId && existingInvestments.length > 0) {
-      setValidationError('Please select an investment or switch to "Create New"')
+      setValidationError(translate('cmp.txModal.err.selectInvestment'))
       return
     }
     // Payment mode-driven validation
     if (paymentMode === 'CARD' && !form.cardId) {
-      setValidationError('Select a card or switch the payment method'); return
+      setValidationError(translate('cmp.txModal.err.selectCardOrSwitch')); return
     }
     if (paymentMode === 'BOTH') {
-      if (!form.cardId) { setValidationError('Pick a card for the card portion'); return }
+      if (!form.cardId) { setValidationError(translate('cmp.err.pickCardForPortion')); return }
       if ((cashInput || 0) <= 0 || (cardInput || 0) <= 0) {
-        setValidationError('Enter both cash and card amounts (use Card-only or Cash-only otherwise)'); return
+        setValidationError(translate('cmp.txModal.err.enterBothAmounts')); return
       }
     }
     if ((form.amount || 0) <= 0) {
-      setValidationError('Amount must be greater than 0'); return
+      setValidationError(translate('cmp.err.amountPositive')); return
     }
 
     // Description requirement honours the selected category's flag.
     // (FOOD's "place" semantics now flow through the description label mechanism.)
     if (descriptionRequired && !(form.description && form.description.trim())) {
-      setValidationError(`Please fill in the ${descriptionLabel.toLowerCase()}`); return
+      setValidationError(translate('cmp.txModal.err.fillInField', { field: descriptionLabel.toLowerCase() })); return
     }
 
     // Counterparty rules — skip when the donation is anonymous (auto-filled below).
@@ -382,7 +400,7 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
         && !isAnonymousDonation
         && !(['LOAN_REPAYMENT','LOAN_RETURNED_TO_ME'] as TransactionSubType[]).includes(form.subType)
         && !(form.counterpartyName && form.counterpartyName.trim())) {
-      setValidationError(`${COUNTERPARTY_LABEL[form.subType] ?? 'Counterparty'} is required`); return
+      setValidationError(translate('cmp.txModal.err.fieldRequired', { field: COUNTERPARTY_LABEL[form.subType] ?? translate('cmp.txModal.counterparty.generic') })); return
     }
 
     setValidationError(null)
@@ -392,7 +410,7 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
       if (form.subType === 'LOAN_REPAYMENT' && selectedLoanId && !transaction) {
         const loan = activeLoans.find(l => l.id === selectedLoanId)
         if (loan && form.amount > loan.remainingAmount) {
-          setError(`Cannot exceed remaining balance: ${formatCurrency(loan.remainingAmount, loan.currency as Currency)}`)
+          setError(translate('cmp.txModal.err.cannotExceedRemainingBalance', { amount: formatCurrency(loan.remainingAmount, loan.currency as Currency) }))
           setSaving(false); return
         }
         await financeApi.repayLoanTaken(selectedLoanId, {
@@ -403,7 +421,7 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
       } else if (form.subType === 'LOAN_RETURNED_TO_ME' && selectedLoanGivenId && !transaction) {
         const loan = activeLoansGiven.find(l => l.id === selectedLoanGivenId)
         if (loan && form.amount > loan.pendingAmount) {
-          setError(`Cannot exceed pending amount: ${formatCurrency(loan.pendingAmount, loan.currency as Currency)}`)
+          setError(translate('cmp.txModal.err.cannotExceedPendingAmount', { amount: formatCurrency(loan.pendingAmount, loan.currency as Currency) }))
           setSaving(false); return
         }
         await financeApi.markLoanGivenReturned(selectedLoanGivenId, {
@@ -442,7 +460,36 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
         }
       }
       onSaved(); onClose()
-      showSuccess(transaction ? 'Transaction updated' : 'Transaction saved')
+      showSuccess(transaction ? translate('tx.updated') : translate('tx.saved'))
+      // Post-save summary: re-ask the server where the bucket now stands. Sent with
+      // amount 0 because the transaction is already recorded — passing the amount again
+      // would count it twice.
+      if (!transaction && form.subType) {
+        overviewApi.previewAllocation(
+          {
+            subType: form.subType,
+            amount: 0,
+            transactionDate: form.transactionDate,
+            investmentId: form.subType === 'INVESTMENT' && investmentMode === 'existing'
+              ? selectedInvestmentId : undefined,
+          },
+          form.currency,
+        )
+          .then(r => {
+            const p = r.data
+            if (!p.applicable || !p.label) return
+            showSuccess(p.bucketNotRecommended
+              ? translate('cmp.txModal.recordedUnder', { label: p.label })
+              : translate('cmp.txModal.progressSummary', {
+                  label: p.label,
+                  before: formatCurrency(Number(p.paidBefore ?? 0), form.currency),
+                  recommended: formatCurrency(Number(p.recommended ?? 0), form.currency),
+                }) + (Number(p.remainingAfter ?? 0) > 0
+                    ? translate('cmp.txModal.progressRemaining', { amount: formatCurrency(Number(p.remainingAfter), form.currency) })
+                    : translate('cmp.txModal.progressFullyCovered')))
+          })
+          .catch(() => { /* summary is a nicety; never surface its failure */ })
+      }
     } catch (err: unknown) {
       const msg = extractErrorMessage(err)
       setError(msg)
@@ -474,7 +521,7 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
 
   // Description label / requiredness flow from the most-specific selected category,
   // falling back to "Description" + required for plain transactions.
-  const descriptionLabel = activeCategory?.descriptionLabel || 'Description'
+  const descriptionLabel = activeCategory?.descriptionLabel || translate('tx.description')
   const descriptionRequired = activeCategory?.descriptionRequired ?? true
 
   // Donation anonymity — the selected sub-category (or its parent) declares it.
@@ -487,7 +534,7 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
   const splitTotal = (cashInput || 0) + (cardInput || 0)
 
   return (
-    <Modal open={open} onClose={onClose} title={transaction ? 'Edit Transaction' : 'New Transaction'}>
+    <Modal open={open} onClose={onClose} title={transaction ? translate('tx.editTransaction') : translate('tx.newTransaction')}>
       <form onSubmit={handleSubmit} className="space-y-4">
 
         {/* 1. Income / Expense */}
@@ -498,14 +545,14 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
                 form.type === t
                   ? t === 'INCOME' ? 'bg-emerald-500 text-white shadow' : 'bg-rose-500 text-white shadow'
                   : 'text-slate-500 hover:text-slate-700'}`}>
-              {t === 'INCOME' ? 'Income' : 'Expense'}
+              {t === 'INCOME' ? translate('tx.income') : translate('tx.expense')}
             </button>
           ))}
         </div>
 
         {/* 2. Sub-type (2 per row) */}
         <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1.5">Transaction Type</label>
+          <label className="block text-xs font-medium text-slate-500 mb-1.5">{translate('tx.type')}</label>
           <div className="grid grid-cols-2 gap-1.5">
             {subTypes.map(s => (
               <button key={s.value} type="button" onClick={() => switchSubType(s.value)}
@@ -535,15 +582,15 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
           {showNewCat && (
             <>
               <div className="flex items-center justify-between mb-1">
-                <label className="text-xs font-medium text-slate-500">New Category</label>
+                <label className="text-xs font-medium text-slate-500">{translate('cmp.txModal.newCategory')}</label>
                 <button type="button" onClick={() => setShowNewCat(false)} className="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-600">
-                  <X className="w-3 h-3" /> Cancel
+                  <X className="w-3 h-3" /> {translate('action.cancel')}
                 </button>
               </div>
               <div className="border border-indigo-200 bg-indigo-50 rounded-xl p-3 space-y-2">
                 <input value={newCat.name} onChange={e => setNewCat(p => ({ ...p, name: e.target.value }))}
                   className="w-full border border-slate-200 rounded-lg px-2.5 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                  placeholder="Category name" autoFocus />
+                  placeholder={translate('cmp.txModal.categoryNamePlaceholder')} autoFocus />
                 <div className="flex items-center gap-2">
                   <div className="flex flex-wrap gap-1.5 flex-1">
                     {COLORS.map(c => (
@@ -554,7 +601,7 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
                   </div>
                   <button type="button" onClick={handleCreateCategory} disabled={creatingCat || !newCat.name.trim()}
                     className="px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-1 shrink-0">
-                    {creatingCat ? <Spinner className="w-3 h-3" /> : <Plus className="w-3 h-3" />} Create
+                    {creatingCat ? <Spinner className="w-3 h-3" /> : <Plus className="w-3 h-3" />} {translate('action.create')}
                   </button>
                 </div>
               </div>
@@ -568,10 +615,10 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
               {/* Category column */}
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-medium text-slate-500">Category *</label>
+                  <label className="text-xs font-medium text-slate-500">{translate('cmp.txModal.categoryRequired')}</label>
                   <button type="button" onClick={() => setShowNewCat(true)}
                     className="flex items-center gap-0.5 text-xs text-indigo-600 hover:text-indigo-800 font-medium">
-                    <Plus className="w-3 h-3" /> New
+                    <Plus className="w-3 h-3" /> {translate('cmp.txModal.new')}
                   </button>
                 </div>
                 <select
@@ -580,8 +627,8 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
                   onChange={e => selectRoot(e.target.value ? Number(e.target.value) : undefined)}
                   className={`w-full border rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300 ${
                     validationError && !selectedRootId ? 'border-rose-400' : 'border-slate-200'}`}>
-                  <option value="">Select category *</option>
-                  {rootCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  <option value="">{translate('cmp.txModal.selectCategory')}</option>
+                  {rootCategories.map(c => <option key={c.id} value={c.id}>{categoryName(c)}</option>)}
                 </select>
               </div>
 
@@ -591,11 +638,11 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
                   <div className="flex items-center justify-between mb-1">
                     <label className="flex items-center gap-1 text-xs font-medium text-slate-500">
                       <ChevronRight className="w-3 h-3 text-slate-400" />
-                      {hasSubs ? 'Sub-category *' : 'Sub-category'}
+                      {hasSubs ? translate('cmp.txModal.subCategoryRequired') : translate('cmp.txModal.subCategory')}
                     </label>
                     <button type="button" onClick={() => { setShowNewSubCat(v => !v) }}
                       className="flex items-center gap-0.5 text-xs text-indigo-600 hover:text-indigo-800 font-medium">
-                      {showNewSubCat ? <><X className="w-3 h-3" /></> : <><Plus className="w-3 h-3" /> New</>}
+                      {showNewSubCat ? <><X className="w-3 h-3" /></> : <><Plus className="w-3 h-3" /> {translate('cmp.txModal.new')}</>}
                     </button>
                   </div>
 
@@ -604,17 +651,17 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
                     <div className="border border-emerald-200 bg-emerald-50 rounded-xl p-2.5 space-y-2">
                       <input value={newSubCat.name} onChange={e => setNewSubCat(p => ({ ...p, name: e.target.value }))}
                         className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-300"
-                        placeholder="Sub-category name" autoFocus />
+                        placeholder={translate('cmp.txModal.subCategoryNamePlaceholder')} autoFocus />
                       <input value={newSubCat.descriptionLabel ?? ''}
                         onChange={e => setNewSubCat(p => ({ ...p, descriptionLabel: e.target.value || undefined }))}
                         className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-emerald-300"
-                        placeholder='Description field label (e.g. "Doctor name") — optional' />
+                        placeholder={translate('cmp.txModal.descriptionLabelPlaceholder')} />
                       <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
                         <input type="checkbox"
                           checked={newSubCat.descriptionRequired ?? true}
                           onChange={e => setNewSubCat(p => ({ ...p, descriptionRequired: e.target.checked }))}
                           className="w-3.5 h-3.5 rounded text-emerald-600" />
-                        Description required
+                        {translate('cmp.txModal.descriptionRequiredLabel')}
                       </label>
                       <div className="flex items-center gap-1.5">
                         <div className="flex flex-wrap gap-1 flex-1">
@@ -626,7 +673,7 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
                         </div>
                         <button type="button" onClick={handleCreateSubCategory} disabled={creatingSubCat || !newSubCat.name.trim()}
                           className="px-2.5 py-1.5 bg-emerald-600 text-white text-xs font-semibold rounded-lg hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-1 shrink-0">
-                          {creatingSubCat ? <Spinner className="w-3 h-3" /> : <Plus className="w-3 h-3" />} Add
+                          {creatingSubCat ? <Spinner className="w-3 h-3" /> : <Plus className="w-3 h-3" />} {translate('action.add')}
                         </button>
                       </div>
                     </div>
@@ -637,13 +684,13 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
                       onChange={e => set('categoryId', e.target.value ? Number(e.target.value) : selectedRootId)}
                       className={`w-full border rounded-xl px-3 py-2.5 text-sm bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-300 ${
                         validationError && subCategories.length > 0 && form.categoryId === selectedRootId ? 'border-rose-400' : 'border-indigo-200'}`}>
-                      <option value="">Select sub-category *</option>
-                      {subCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      <option value="">{translate('cmp.txModal.selectSubCategory')}</option>
+                      {subCategories.map(c => <option key={c.id} value={c.id}>{categoryName(c)}</option>)}
                     </select>
                   ) : (
                     <button type="button" onClick={() => setShowNewSubCat(true)}
                       className="w-full border border-dashed border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-400 hover:text-indigo-600 hover:border-indigo-300 hover:bg-indigo-50 transition-colors">
-                      + Add sub-category
+                      + {translate('cmp.txModal.addSubCategory')}
                     </button>
                   )}
                 </div>
@@ -657,23 +704,23 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-slate-500 mb-1">
-                From <span className="text-slate-300">(optional)</span>
+                {translate('cmp.txModal.from')} <span className="text-slate-300">({translate('common.optional')})</span>
               </label>
               <input
                 value={form.fromLocation ?? ''}
                 onChange={e => set('fromLocation', e.target.value)}
-                placeholder="e.g. Kvartira"
+                placeholder={translate('cmp.txModal.fromPlaceholder')}
                 className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
               />
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-500 mb-1">
-                To <span className="text-slate-300">(optional)</span>
+                {translate('cmp.txModal.to')} <span className="text-slate-300">({translate('common.optional')})</span>
               </label>
               <input
                 value={form.toLocation ?? ''}
                 onChange={e => set('toLocation', e.target.value)}
-                placeholder="e.g. Chilonzor metro"
+                placeholder={translate('cmp.txModal.toPlaceholder')}
                 className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
               />
             </div>
@@ -684,10 +731,10 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
         {form.subType === 'LOAN_REPAYMENT' && !transaction ? (
           /* For LOAN_REPAYMENT: show active loans dropdown instead of free text */
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Select Loan to Repay</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">{translate('cmp.txModal.selectLoanToRepay')}</label>
             {activeLoans.length === 0 ? (
               <div className="border border-dashed border-slate-200 rounded-xl px-3 py-3 text-xs text-slate-400 text-center">
-                No active borrowed loans found. <br />Add a loan first from Finance → Loans tab.
+                {translate('cmp.txModal.noActiveBorrowedLoans')} <br />{translate('cmp.txModal.addLoanFirst')}
               </div>
             ) : (
               <>
@@ -699,15 +746,15 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
                     if (loan) {
                       set('amount', loan.remainingAmount)
                       set('currency', loan.currency as Currency)
-                      set('description', `Loan repayment to ${loan.lenderName}`)
+                      set('description', translate('cmp.txModal.loanRepaymentTo', { name: loan.lenderName }))
                       set('counterpartyName', loan.lenderName)
                     }
                   }}
                   className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300">
-                  <option value="">— Select a loan (or enter manually below) —</option>
+                  <option value="">{translate('cmp.txModal.selectLoanOrManual')}</option>
                   {activeLoans.map(l => (
                     <option key={l.id} value={l.id}>
-                      {l.lenderName} · Remaining: {formatCurrency(l.remainingAmount, l.currency as Currency)} · {l.status}
+                      {l.lenderName} · {translate('cmp.repay.remaining')}{formatCurrency(l.remainingAmount, l.currency as Currency)} · {l.status}
                     </option>
                   ))}
                 </select>
@@ -715,7 +762,7 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
                   const loan = activeLoans.find(l => l.id === selectedLoanId)
                   return loan ? (
                     <div className="mt-1.5 flex items-center justify-between px-3 py-1.5 bg-rose-50 border border-rose-100 rounded-lg text-xs text-rose-700">
-                      <span>Max payable: <strong>{formatCurrency(loan.remainingAmount, loan.currency as Currency)}</strong></span>
+                      <span>{translate('cmp.txModal.maxPayable')} <strong>{formatCurrency(loan.remainingAmount, loan.currency as Currency)}</strong></span>
                       <span>{loan.status}</span>
                     </div>
                   ) : null
@@ -726,10 +773,10 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
         ) : form.subType === 'LOAN_RETURNED_TO_ME' && !transaction ? (
           /* For LOAN_RETURNED_TO_ME: show active lent loans dropdown */
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Select Loan That Was Returned</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">{translate('cmp.txModal.selectLoanReturned')}</label>
             {activeLoansGiven.length === 0 ? (
               <div className="border border-dashed border-slate-200 rounded-xl px-3 py-3 text-xs text-slate-400 text-center">
-                No active lent loans found. <br />Add a loan first from Finance → Loans tab.
+                {translate('cmp.txModal.noActiveLentLoans')} <br />{translate('cmp.txModal.addLoanFirst')}
               </div>
             ) : (
               <>
@@ -741,15 +788,15 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
                     if (loan) {
                       set('amount', loan.pendingAmount)
                       set('currency', loan.currency as Currency)
-                      set('description', `Loan returned by ${loan.debtorName}`)
+                      set('description', translate('cmp.txModal.loanReturnedBy', { name: loan.debtorName }))
                       set('counterpartyName', loan.debtorName)
                     }
                   }}
                   className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300">
-                  <option value="">— Select a loan (or enter manually below) —</option>
+                  <option value="">{translate('cmp.txModal.selectLoanOrManual')}</option>
                   {activeLoansGiven.map(l => (
                     <option key={l.id} value={l.id}>
-                      {l.debtorName} · Pending: {formatCurrency(l.pendingAmount, l.currency as Currency)} · {l.status}
+                      {l.debtorName} · {translate('cmp.txModal.pending')} {formatCurrency(l.pendingAmount, l.currency as Currency)} · {l.status}
                     </option>
                   ))}
                 </select>
@@ -757,7 +804,7 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
                   const loan = activeLoansGiven.find(l => l.id === selectedLoanGivenId)
                   return loan ? (
                     <div className="mt-1.5 flex items-center justify-between px-3 py-1.5 bg-emerald-50 border border-emerald-100 rounded-lg text-xs text-emerald-700">
-                      <span>Max receivable: <strong>{formatCurrency(loan.pendingAmount, loan.currency as Currency)}</strong></span>
+                      <span>{translate('cmp.txModal.maxReceivable')} <strong>{formatCurrency(loan.pendingAmount, loan.currency as Currency)}</strong></span>
                       <span>{loan.status}</span>
                     </div>
                   ) : null
@@ -767,13 +814,13 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
           </div>
         ) : form.subType && NEEDS_COUNTERPARTY.has(form.subType) && !isAnonymousDonation ? (
           <div className="relative">
-            <label className="block text-xs font-medium text-slate-500 mb-1">{COUNTERPARTY_LABEL[form.subType] ?? 'Name'} *</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">{COUNTERPARTY_LABEL[form.subType] ?? translate('cmp.txModal.counterparty.generic')} *</label>
             <input required value={form.counterpartyName ?? ''}
               onChange={e => set('counterpartyName', e.target.value)}
               onFocus={() => { if (form.subType === 'BANK_LOAN_PAYMENT' && bankOptions.length > 0) setShowBankPopover(true) }}
               onBlur={() => setTimeout(() => setShowBankPopover(false), 150)}
               className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-              placeholder="Enter name..." autoComplete="off" />
+              placeholder={translate('cmp.txModal.enterNamePlaceholder')} autoComplete="off" />
             {form.subType === 'BANK_LOAN_PAYMENT' && showBankPopover && bankOptions.length > 0 && (
               <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden">
                 {bankOptions
@@ -788,7 +835,7 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
           </div>
         ) : isAnonymousDonation ? (
           <div className="bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-xs text-slate-500">
-            Anonymous donation — recipient details are intentionally omitted.
+            {translate('cmp.txModal.anonymousDonationNotice')}
           </div>
         ) : null}
         {form.subType === 'INVESTMENT' && (
@@ -797,22 +844,22 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
             <div className="flex bg-slate-100 rounded-xl p-1 gap-1">
               <button type="button" onClick={() => { setInvestmentMode('existing'); set('investmentId', undefined) }}
                 className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all ${investmentMode === 'existing' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-                Add to Existing
+                {translate('cmp.txModal.addToExisting')}
               </button>
               <button type="button" onClick={() => { setInvestmentMode('new'); setSelectedInvestmentId(undefined); set('investmentId', undefined) }}
                 className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all ${investmentMode === 'new' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-                Create New
+                {translate('cmp.txModal.createNew')}
               </button>
             </div>
 
             {investmentMode === 'existing' ? (
               existingInvestments.length === 0 ? (
                 <div className="border border-dashed border-slate-200 rounded-xl px-3 py-3 text-xs text-slate-400 text-center">
-                  No investments yet. Switch to "Create New" to record your first investment.
+                  {translate('cmp.txModal.noInvestmentsYet')}
                 </div>
               ) : (
                 <>
-                  <label className="block text-xs font-medium text-slate-500">Select Investment *</label>
+                  <label className="block text-xs font-medium text-slate-500">{translate('cmp.txModal.selectInvestmentRequired')}</label>
                   <select
                     value={selectedInvestmentId ?? ''}
                     onChange={e => {
@@ -823,15 +870,15 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
                       if (inv) {
                         set('currency', inv.currency as import('../../types').Currency)
                         set('counterpartyName', inv.name)
-                        if (!form.description) set('description', `Add funds to ${inv.name}`)
+                        if (!form.description) set('description', translate('cmp.txModal.addFundsTo', { name: inv.name }))
                       }
                     }}
                     className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
                   >
-                    <option value="">— Select an investment —</option>
+                    <option value="">{translate('cmp.txModal.selectAnInvestment')}</option>
                     {existingInvestments.map(i => (
                       <option key={i.id} value={i.id}>
-                        {i.name} · {i.type.replace('_', ' ')} · {formatCurrency(i.investedAmount, i.currency as import('../../types').Currency)}
+                        {i.name} · {INVESTMENT_TYPE_LABELS[i.type]} · {formatCurrency(i.investedAmount, i.currency as import('../../types').Currency)}
                       </option>
                     ))}
                   </select>
@@ -839,8 +886,8 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
                     const inv = existingInvestments.find(i => i.id === selectedInvestmentId)
                     return inv ? (
                       <div className="flex items-center justify-between px-3 py-1.5 bg-cyan-50 border border-cyan-100 rounded-lg text-xs text-cyan-700">
-                        <span>Current total: <strong>{formatCurrency(inv.investedAmount, inv.currency as import('../../types').Currency)}</strong></span>
-                        <span className="bg-cyan-100 px-2 py-0.5 rounded-full">{inv.type.replace('_', ' ')}</span>
+                        <span>{translate('cmp.txModal.currentTotal')} <strong>{formatCurrency(inv.investedAmount, inv.currency as import('../../types').Currency)}</strong></span>
+                        <span className="bg-cyan-100 px-2 py-0.5 rounded-full">{INVESTMENT_TYPE_LABELS[inv.type]}</span>
                       </div>
                     ) : null
                   })()}
@@ -849,11 +896,11 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
             ) : (
               /* Create new — show investment type */
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Investment Type</label>
+                <label className="block text-xs font-medium text-slate-500 mb-1">{translate('cmp.txModal.investmentType')}</label>
                 <select value={form.investmentType ?? 'OTHER'} onChange={e => set('investmentType', e.target.value as InvestmentType)}
                   className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300">
-                  {(['REAL_ESTATE','BONDS','MUTUAL_FUND','GOLD','OTHER'] as InvestmentType[]).map(t => (
-                    <option key={t} value={t}>{t.replace('_',' ')}</option>
+                  {(['REAL_ESTATE','BONDS','MUTUAL_FUND','GOLD','OTHER'] as InvestmentType[]).map(it => (
+                    <option key={it} value={it}>{INVESTMENT_TYPE_LABELS[it]}</option>
                   ))}
                 </select>
               </div>
@@ -873,7 +920,7 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
               onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
               required
               className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-              placeholder={`e.g. ${descriptionLabel === 'Description' ? 'Monthly salary' : descriptionLabel}`}
+              placeholder={translate('cmp.txModal.descriptionPlaceholder', { example: descriptionLabel === translate('tx.description') ? translate('cmp.txModal.descriptionExample') : descriptionLabel })}
               autoComplete="off" />
             {showSuggestions && suggestions.length > 0 && (
               <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden">
@@ -890,12 +937,12 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
 
         {/* 8. Payment method — Card only / Cash only / Both, then matching inputs. */}
         <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1">Payment method</label>
+          <label className="block text-xs font-medium text-slate-500 mb-1">{translate('cmp.field.paymentMethod')}</label>
           <div className="flex bg-slate-100 rounded-xl p-1 gap-1">
             {([
-              { value: 'CARD', label: 'Card only' },
-              { value: 'CASH', label: 'Cash only' },
-              { value: 'BOTH', label: 'Both' },
+              { value: 'CARD', label: translate('cmp.txModal.cardOnly') },
+              { value: 'CASH', label: translate('cmp.txModal.cashOnly') },
+              { value: 'BOTH', label: translate('tx.both') },
             ] as { value: PaymentMode; label: string }[]).map(opt => (
               <button key={opt.value} type="button"
                 onClick={() => setPaymentMode(opt.value)}
@@ -918,10 +965,10 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
         {paymentMode === 'CARD' && (
           <>
             <div>
-              <label className="block text-xs font-medium text-slate-500 mb-1">Card / Wallet *</label>
+              <label className="block text-xs font-medium text-slate-500 mb-1">{translate('cmp.txModal.cardWalletRequired')}</label>
               <select required value={form.cardId ?? ''} onChange={e => set('cardId', e.target.value ? Number(e.target.value) : undefined)}
                 className={`w-full border rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 ${isBalanceError ? 'border-rose-400 focus:ring-rose-300' : 'border-slate-200 focus:ring-indigo-300'}`}>
-                <option value="">— Choose a card —</option>
+                <option value="">{translate('cmp.source.chooseCard')}</option>
                 {filteredCards.map(c => (
                   <option key={c.id} value={c.id}>
                     {c.name} •••• {c.lastFourDigits} · {formatCurrency(c.currentBalance ?? 0, c.currency)}
@@ -929,11 +976,11 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
                 ))}
               </select>
               {selectedCard && form.type === 'EXPENSE' && (
-                <p className="text-xs text-slate-400 mt-1 pl-1">Available: {formatCurrency(selectedCard.currentBalance ?? 0, selectedCard.currency)}</p>
+                <p className="text-xs text-slate-400 mt-1 pl-1">{translate('cmp.txModal.available')} {formatCurrency(selectedCard.currentBalance ?? 0, selectedCard.currency)}</p>
               )}
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-500 mb-1">Amount *</label>
+              <label className="block text-xs font-medium text-slate-500 mb-1">{translate('cmp.field.amountRequired')}</label>
               <AmountInput
                 required
                 value={form.amount || 0}
@@ -951,7 +998,7 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
         {paymentMode === 'CASH' && (
           <>
             <div>
-              <label className="block text-xs font-medium text-slate-500 mb-1">Cash amount *</label>
+              <label className="block text-xs font-medium text-slate-500 mb-1">{translate('cmp.txModal.cashAmountRequired')}</label>
               <AmountInput
                 required
                 value={form.amount || 0}
@@ -965,9 +1012,9 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
             <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
               <span className="w-1.5 h-1.5 bg-amber-500 rounded-full shrink-0" />
               <span>
-                Will adjust your <strong>{defaultCurrency} cash balance</strong>
+                {translate('cmp.txModal.willAdjustCashPrefix')} <strong>{translate('cmp.txModal.willAdjustCashBold', { currency: defaultCurrency })}</strong>
                 {cashBalance !== null && (
-                  <> · current {formatCurrency(cashBalance, defaultCurrency)}</>
+                  <> · {translate('cmp.txModal.current')} {formatCurrency(cashBalance, defaultCurrency)}</>
                 )}
               </span>
             </div>
@@ -981,10 +1028,10 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
         {paymentMode === 'BOTH' && (
           <>
             <div>
-              <label className="block text-xs font-medium text-slate-500 mb-1">Card / Wallet *</label>
+              <label className="block text-xs font-medium text-slate-500 mb-1">{translate('cmp.txModal.cardWalletRequired')}</label>
               <select required value={form.cardId ?? ''} onChange={e => set('cardId', e.target.value ? Number(e.target.value) : undefined)}
                 className={`w-full border rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 ${isBalanceError ? 'border-rose-400 focus:ring-rose-300' : 'border-slate-200 focus:ring-indigo-300'}`}>
-                <option value="">— Choose a card —</option>
+                <option value="">{translate('cmp.source.chooseCard')}</option>
                 {filteredCards.map(c => (
                   <option key={c.id} value={c.id}>
                     {c.name} •••• {c.lastFourDigits} · {formatCurrency(c.currentBalance ?? 0, c.currency)}
@@ -992,12 +1039,12 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
                 ))}
               </select>
               {selectedCard && form.type === 'EXPENSE' && (
-                <p className="text-xs text-slate-400 mt-1 pl-1">Available: {formatCurrency(selectedCard.currentBalance ?? 0, selectedCard.currency)}</p>
+                <p className="text-xs text-slate-400 mt-1 pl-1">{translate('cmp.txModal.available')} {formatCurrency(selectedCard.currentBalance ?? 0, selectedCard.currency)}</p>
               )}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Cash amount *</label>
+                <label className="block text-xs font-medium text-slate-500 mb-1">{translate('cmp.txModal.cashAmountRequired')}</label>
                 <AmountInput
                   required
                   value={cashInput || 0}
@@ -1008,7 +1055,7 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Card amount *</label>
+                <label className="block text-xs font-medium text-slate-500 mb-1">{translate('cmp.txModal.cardAmountRequired')}</label>
                 <AmountInput
                   required
                   value={cardInput || 0}
@@ -1020,19 +1067,19 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
               </div>
             </div>
             <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border border-slate-100 rounded-xl text-sm">
-              <span className="text-xs text-slate-400">Total</span>
+              <span className="text-xs text-slate-400">{translate('cmp.payBucket.total')}</span>
               <span className="font-semibold text-slate-700">{formatCurrency(splitTotal, defaultCurrency)}</span>
             </div>
             <div className="text-xs text-slate-500 px-3 py-2 bg-amber-50 border border-amber-100 rounded-xl">
-              One transaction will be saved with a split badge. The cash portion adjusts your
-              <strong> {defaultCurrency} cash balance</strong>; the card portion hits the selected card.
+              {translate('cmp.txModal.splitBadgeNoticePrefix')}
+              <strong> {translate('cmp.txModal.willAdjustCashBold', { currency: defaultCurrency })}</strong>{translate('cmp.txModal.splitBadgeNoticeSuffix')}
             </div>
           </>
         )}
 
         {/* 9. Date */}
         <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1">Date *</label>
+          <label className="block text-xs font-medium text-slate-500 mb-1">{translate('cmp.field.dateRequired')}</label>
           <input required type="date" value={form.transactionDate} onChange={e => set('transactionDate', e.target.value)}
             className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300" />
         </div>
@@ -1040,55 +1087,68 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
         {/* 9b. Payment starts — when borrowed money begins counting toward the tier. */}
         {form.subType === 'LOAN_RECEIVED' && !transaction && (
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Repayments start</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">{translate('cmp.txModal.repaymentsStart')}</label>
             <input type="month"
               value={form.paymentStartDate ? form.paymentStartDate.slice(0, 7) : nextMonthStr()}
               onChange={e => set('paymentStartDate', e.target.value ? `${e.target.value}-01` : undefined)}
               className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300" />
             <p className="text-[11px] text-slate-400 mt-1">
-              Defaults to next month — the tier &amp; allocation guidance only count this loan from this month on.
+              {translate('cmp.txModal.repaymentsStartHint')}
             </p>
           </div>
         )}
 
         {/* 10. Note */}
         <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1">Note</label>
+          <label className="block text-xs font-medium text-slate-500 mb-1">{translate('tx.note')}</label>
           <textarea rows={2} value={form.note ?? ''} onChange={e => set('note', e.target.value)}
             className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none"
-            placeholder="Optional note..." />
+            placeholder={translate('cmp.txModal.notePlaceholder')} />
         </div>
 
         {form.subType && AUTO_CREATES.has(form.subType) && (
           form.subType === 'INVESTMENT' ? (
             investmentMode === 'existing' && selectedInvestmentId ? (
               <div className="bg-cyan-50 border border-cyan-100 rounded-xl px-3 py-2 text-xs text-cyan-700">
-                Funds will be added to the selected investment in Finance.
+                {translate('cmp.txModal.fundsAddedToInvestment')}
               </div>
             ) : investmentMode === 'new' ? (
               <div className="bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2 text-xs text-indigo-700">
-                A new <strong>Investment</strong> record will be created in Finance.
+                {translate('cmp.txModal.newInvestmentPrefix')} <strong>{translate('cmp.txModal.investmentWord')}</strong>{translate('cmp.txModal.newInvestmentSuffix')}
               </div>
             ) : null
           ) : (
             <div className="bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2 text-xs text-indigo-700">
-              A <strong>{subTypes.find(s => s.value === form.subType)?.label}</strong> record will also be created in Finance.
+              {translate('cmp.txModal.autoCreatePrefix')} <strong>{subTypes.find(s => s.value === form.subType)?.label}</strong> {translate('cmp.txModal.autoCreateSuffix')}
             </div>
           )
         )}
 
+        {/* What this draft transaction would do to the monthly allocation (create mode only —
+            editing an existing row would double-count it against what is already recorded). */}
+        {!transaction && (
+          <AllocationPreviewPanel
+            subType={form.subType}
+            amount={form.amount || 0}
+            transactionDate={form.transactionDate}
+            investmentId={form.subType === 'INVESTMENT' && investmentMode === 'existing'
+              ? selectedInvestmentId : undefined}
+            currency={form.currency}
+          />
+        )}
+
         {error && (
           <div className={`px-3 py-2.5 rounded-xl text-sm border ${isBalanceError ? 'bg-rose-50 border-rose-300 text-rose-700' : 'bg-rose-50 border-rose-200 text-rose-500'}`}>
-            {isBalanceError && <p className="font-semibold mb-0.5">Insufficient Balance</p>}
+            {isBalanceError && <p className="font-semibold mb-0.5">{translate('cmp.txModal.insufficientBalance')}</p>}
             {error}
           </div>
         )}
 
         <div className="flex gap-3 pt-1">
-          <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50">Cancel</button>
+          <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50">{translate('action.cancel')}</button>
           <button type="submit" disabled={saving} className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-60 flex items-center justify-center gap-2">
             {saving && <Spinner className="w-4 h-4" />}
-            {saving ? 'Saving…' : transaction ? 'Update' : 'Create'}
+            {saving ? translate('action.saving') : transaction ? translate('action.update') : translate('action.create')}
           </button>
         </div>
       </form>

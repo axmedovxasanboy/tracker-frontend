@@ -3,10 +3,12 @@ import { ArrowLeftRight, LogIn, Lock, User } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { extractErrorMessage } from '../api/client'
 import { Spinner } from '../components/ui/Spinner'
+import { useLang } from '../i18n/LanguageContext'
 
 const INPUT = 'w-full border border-slate-200 rounded-xl pl-10 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300'
 
 export function Login() {
+  const { t } = useLang()
   const { login } = useAuth()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -34,19 +36,19 @@ export function Login() {
         </div>
 
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-          <h1 className="text-lg font-bold text-slate-800">Welcome back</h1>
-          <p className="text-sm text-slate-400 mb-5">Sign in to your tracker.</p>
+          <h1 className="text-lg font-bold text-slate-800">{t('page.login.welcome')}</h1>
+          <p className="text-sm text-slate-400 mb-5">{t('page.login.subtitle')}</p>
 
           <form onSubmit={handleSubmit} className="space-y-3">
             <div className="relative">
               <User className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input autoFocus required value={username} onChange={(e) => setUsername(e.target.value)}
-                placeholder="Username" autoComplete="username" className={INPUT} />
+                placeholder={t('page.login.usernamePlaceholder')} autoComplete="username" className={INPUT} />
             </div>
             <div className="relative">
               <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input required type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-                placeholder="Password" autoComplete="current-password" className={INPUT} />
+                placeholder={t('page.shared.password')} autoComplete="current-password" className={INPUT} />
             </div>
 
             {error && (
@@ -56,7 +58,7 @@ export function Login() {
             <button type="submit" disabled={submitting}
               className="w-full py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-60 flex items-center justify-center gap-2">
               {submitting ? <Spinner className="w-4 h-4" /> : <LogIn className="w-4 h-4" />}
-              {submitting ? 'Signing in…' : 'Sign in'}
+              {submitting ? t('page.login.signingIn') : t('page.login.signIn')}
             </button>
           </form>
         </div>

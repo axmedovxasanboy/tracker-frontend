@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Modal } from '../ui/Modal'
+import { useLang } from '../../i18n/LanguageContext'
 import { Spinner } from '../ui/Spinner'
 import { AmountInput } from '../ui/AmountInput'
 import { cardsApi } from '../../api/cards'
@@ -29,13 +30,6 @@ function today() {
   return new Date().toISOString().split('T')[0]
 }
 
-const BUCKET_TITLES: Record<Bucket, string> = {
-  DONATION:    'Record a donation',
-  EMERGENCY:   'Top up your emergency fund',
-  INVESTMENTS: 'Record an investment',
-  STOCKS:      'Record a stock purchase',
-}
-
 const INVESTMENT_TYPES: InvestmentType[] = ['REAL_ESTATE', 'BONDS', 'MUTUAL_FUND', 'GOLD', 'OTHER']
 
 // The transaction sub-type each bucket books against — drives the category filter + auto-pick.
@@ -47,6 +41,20 @@ const BUCKET_SUBTYPE: Record<Bucket, TransactionSubType> = {
 }
 
 export function PayBucketModal({ open, onClose, onSaved, bucket, currency, suggestedAmount, defaultMonth }: Props) {
+  const { t, categoryName } = useLang()
+  const BUCKET_TITLES: Record<Bucket, string> = {
+    DONATION:    t('cmp.payBucket.titleDonation'),
+    EMERGENCY:   t('cmp.payBucket.titleEmergency'),
+    INVESTMENTS: t('cmp.payBucket.titleInvestments'),
+    STOCKS:      t('cmp.payBucket.titleStocks'),
+  }
+  const INVESTMENT_TYPE_LABELS: Record<InvestmentType, string> = {
+    REAL_ESTATE: t('cmp.investmentType.realEstate'),
+    BONDS: t('cmp.investmentType.bonds'),
+    MUTUAL_FUND: t('cmp.investmentType.mutualFund'),
+    GOLD: t('cmp.investmentType.gold'),
+    OTHER: t('cmp.investmentType.other'),
+  }
   const [amount, setAmount] = useState(0)
   const [date, setDate] = useState(today())
   const [description, setDescription] = useState('')
@@ -119,12 +127,12 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (amount <= 0) { setError('Amount must be greater than 0.'); return }
+    if (amount <= 0) { setError(t('cmp.err.amountPositive')); return }
     setSaving(true); setError(null)
     try {
       if (bucket === 'DONATION') {
         if (!anonymous && !recipientName.trim()) {
-          setError('Recipient name is required (or mark as anonymous).')
+          setError(t('cmp.err.recipientRequired'))
           setSaving(false); return
         }
         await financeApi.createDonation({
@@ -135,7 +143,7 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
         })
       } else if (bucket === 'EMERGENCY') {
         if (emCreatingNew) {
-          if (!name.trim()) { setError('Name your emergency fund.'); setSaving(false); return }
+          if (!name.trim()) { setError(t('cmp.err.nameFund')); setSaving(false); return }
           await financeApi.createInvestment({
             name: name.trim(), type: 'OTHER',
             investedAmount: amount, currency, purchaseDate: date,
@@ -152,7 +160,7 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
         }
       } else if (bucket === 'INVESTMENTS') {
         if (!name.trim()) {
-          setError('Investment name is required.')
+          setError(t('cmp.err.investmentNameRequired'))
           setSaving(false); return
         }
         await financeApi.createInvestment({
@@ -184,7 +192,7 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
   }
 
   const markAlreadyPaid = async () => {
-    if (amount <= 0) { setError('Amount must be greater than 0.'); return }
+    if (amount <= 0) { setError(t('cmp.err.amountPositive')); return }
     setSaving(true); setError(null)
     try {
       await financeApi.markPaid({ kind: 'BUCKET', bucket, amount, currency, month: date.slice(0, 7) })
@@ -199,49 +207,49 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
       <form onSubmit={handleSubmit} className="space-y-3">
         {/* Emergency = an investment for emergencies. Pick which one to top up, or create one. */}
         {bucket === 'EMERGENCY' && (
-          <Field label="Emergency fund">
+          <Field label={t('cmp.payBucket.emergencyFund')}>
             <select value={emTarget} onChange={e => setEmTarget(e.target.value)} className={`${INPUT} bg-white`}>
               {emInvestments.map(i => (
                 <option key={i.id} value={String(i.id)}>
                   {i.name} · {formatCurrency(i.investedAmount, i.currency)}
                 </option>
               ))}
-              <option value="new">➕ New emergency fund…</option>
+              <option value="new">{t('cmp.payBucket.newEmergencyFundOption')}</option>
             </select>
             <p className="text-[11px] text-slate-400 mt-1">
-              Your emergency fund is an investment tagged “emergency”. Top up an existing one or create a new one.
+              {t('cmp.payBucket.emergencyFundHint')}
             </p>
           </Field>
         )}
 
         {/* Amount */}
-        <Field label={`Amount * (${currency})`}>
+        <Field label={t('cmp.field.amountWithCurrency', { currency })}>
           <AmountInput required value={amount} currency={currency}
             onChange={v => setAmount(v)}
             className={INPUT} suffix={currency} />
           {suggestedAmount != null && suggestedAmount > 0 && (
             <p className="text-[11px] text-slate-400 mt-1">
-              Suggested: {formatCurrency(suggestedAmount, currency)}
+              {t('cmp.payBucket.suggested')} {formatCurrency(suggestedAmount, currency)}
               {amount !== suggestedAmount && (
                 <button type="button" onClick={() => setAmount(suggestedAmount)}
-                  className="ml-2 text-indigo-600 hover:underline">use this</button>
+                  className="ml-2 text-indigo-600 hover:underline">{t('cmp.action.useThis')}</button>
               )}
             </p>
           )}
         </Field>
 
         {/* Date */}
-        <Field label="Date *">
+        <Field label={t('cmp.field.dateRequired')}>
           <input required type="date" value={date} onChange={e => setDate(e.target.value)} className={INPUT} />
         </Field>
 
         {/* Payment source. "None" (record only) offered for investment / emergency buckets. */}
-        <Field label="Source">
+        <Field label={t('cmp.field.source')}>
           <select value={source}
             onChange={e => setSource(e.target.value)}
             className={`${INPUT} bg-white`}>
-            {allowNone && <option value="none">— None (just record, don't move money) —</option>}
-            <option value="cash">Cash</option>
+            {allowNone && <option value="none">{t('cmp.source.noneOption')}</option>}
+            <option value="cash">{t('tx.cash')}</option>
             {matchingCards.map(c => (
               <option key={c.id} value={String(c.id)}>
                 {c.name} •••• {c.lastFourDigits} · {formatCurrency(c.currentBalance, c.currency)}
@@ -250,18 +258,18 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
           </select>
           {sourceNone && (
             <p className="text-[11px] text-slate-400 mt-1">
-              No wallet will be debited and no transaction is recorded — only the {bucket === 'EMERGENCY' ? 'fund' : 'invested'} total goes up.
+              {t(bucket === 'EMERGENCY' ? 'cmp.payBucket.noWalletHintFund' : 'cmp.payBucket.noWalletHintInvested')}
             </p>
           )}
         </Field>
 
         {/* Category — auto-picked for this bucket; change it if you'd rather file it elsewhere. */}
         {categories.length > 0 && !sourceNone && (
-          <Field label="Category">
+          <Field label={t('tx.category')}>
             <select value={categoryId ?? ''}
               onChange={e => setCategoryId(e.target.value ? Number(e.target.value) : undefined)}
               className={`${INPUT} bg-white`}>
-              {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {categories.map(c => <option key={c.id} value={c.id}>{categoryName(c)}</option>)}
             </select>
           </Field>
         )}
@@ -269,44 +277,44 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
         {/* Bucket-specific fields */}
         {bucket === 'DONATION' && (
           <>
-            <Field label="Recipient">
+            <Field label={t('cmp.payBucket.recipient')}>
               <input value={recipientName} disabled={anonymous}
                 onChange={e => setRecipientName(e.target.value)}
                 className={`${INPUT} ${anonymous ? 'opacity-60' : ''}`}
-                placeholder={anonymous ? 'Anonymous' : 'Who you donated to'} />
+                placeholder={anonymous ? t('cmp.payBucket.anonymous') : t('cmp.payBucket.recipientPlaceholder')} />
             </Field>
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" checked={anonymous}
                 onChange={e => setAnonymous(e.target.checked)}
                 className="w-4 h-4 rounded text-indigo-600" />
-              <span className="text-sm text-slate-600">Anonymous</span>
+              <span className="text-sm text-slate-600">{t('cmp.payBucket.anonymous')}</span>
             </label>
           </>
         )}
 
         {/* New emergency fund needs a name. */}
         {emCreatingNew && (
-          <Field label="Fund name *">
+          <Field label={t('cmp.payBucket.fundNameRequired')}>
             <input required value={name} onChange={e => setName(e.target.value)}
-              className={INPUT} placeholder="Emergency fund, Rainy-day, etc." />
+              className={INPUT} placeholder={t('cmp.payBucket.fundNamePlaceholder')} />
           </Field>
         )}
 
         {bucket === 'INVESTMENTS' && (
           <>
-            <Field label="Name *">
+            <Field label={t('cmp.payBucket.nameRequired')}>
               <input required value={name} onChange={e => setName(e.target.value)}
-                className={INPUT} placeholder="Apple Inc., Real Estate, etc." />
+                className={INPUT} placeholder={t('cmp.payBucket.investmentNamePlaceholder')} />
             </Field>
-            <Field label="Type *">
+            <Field label={t('cmp.payBucket.typeRequired')}>
               <select value={invType} onChange={e => setInvType(e.target.value as InvestmentType)}
                 className={`${INPUT} bg-white`}>
-                {INVESTMENT_TYPES.map(t =>
-                  <option key={t} value={t}>{t.replace('_', ' ')}</option>
+                {INVESTMENT_TYPES.map(it =>
+                  <option key={it} value={it}>{INVESTMENT_TYPE_LABELS[it]}</option>
                 )}
               </select>
             </Field>
-            <Field label="Broker / Platform">
+            <Field label={t('cmp.payBucket.brokerPlatform')}>
               <input value={broker} onChange={e => setBroker(e.target.value)} className={INPUT} />
             </Field>
           </>
@@ -314,12 +322,11 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
 
         {bucket === 'STOCKS' && (
           <p className="text-[11px] text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
-            Recorded as a <span className="font-medium">Stocks</span>-category expense — you buy/hold
-            stocks in a separate app. Put the ticker in the description if you like.
+            {t('cmp.payBucket.stocksHintPrefix')} <span className="font-medium">{t('cmp.bucket.stocks')}</span>{t('cmp.payBucket.stocksHintSuffix')}
           </p>
         )}
 
-        <Field label="Description">
+        <Field label={t('tx.description')}>
           <textarea rows={2} value={description}
             onChange={e => setDescription(e.target.value)}
             className={`${INPUT} resize-none`} />
@@ -332,17 +339,17 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
         <div className="flex gap-3 pt-1">
           <button type="button" onClick={onClose}
             className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50">
-            Cancel
+            {t('action.cancel')}
           </button>
           <button type="button" onClick={markAlreadyPaid} disabled={saving}
-            title="Count this toward the bucket without recording a transaction"
+            title={t('cmp.hint.countBucketNoTx')}
             className="flex-1 py-2.5 rounded-xl border border-emerald-200 text-emerald-700 text-sm font-semibold hover:bg-emerald-50 disabled:opacity-60">
-            Already paid
+            {t('cmp.action.alreadyPaid')}
           </button>
           <button type="submit" disabled={saving}
             className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-60 flex items-center justify-center gap-2">
             {saving && <Spinner className="w-4 h-4" />}
-            {saving ? 'Saving…' : bucket === 'EMERGENCY' && !emCreatingNew ? 'Top up' : 'Record'}
+            {saving ? t('action.saving') : bucket === 'EMERGENCY' && !emCreatingNew ? t('cmp.action.topUp') : t('action.record')}
           </button>
         </div>
       </form>

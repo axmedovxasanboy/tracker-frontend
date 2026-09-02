@@ -3,6 +3,7 @@ import { Calendar, CreditCard, Wallet } from 'lucide-react'
 import { Modal } from '../ui/Modal'
 import { Spinner } from '../ui/Spinner'
 import { AmountInput } from '../ui/AmountInput'
+import { useLang } from '../../i18n/LanguageContext'
 import { cardsApi } from '../../api/cards'
 import { financeApi } from '../../api/finance'
 import { extractErrorMessage } from '../../api/client'
@@ -22,8 +23,9 @@ interface Props {
 }
 
 export function PaySubscriptionModal({ open, onClose, onSaved, subscription }: Props) {
+  const { t } = useLang()
   const defaultAmount = subscription?.amount ?? 0
-  const currency = subscription?.currency ?? 'USD'
+  const currency = subscription?.currency ?? 'UZS'
 
   const [mode, setMode] = useState<MonthlyPaymentMode>('CARD')
   const [amount, setAmount] = useState(defaultAmount)
@@ -75,11 +77,11 @@ export function PaySubscriptionModal({ open, onClose, onSaved, subscription }: P
     e.preventDefault()
     if (!subscription) return
 
-    if (amount <= 0) { setError('Amount must be greater than 0'); return }
-    if (mode === 'CARD' && !cardId) { setError('Pick a card or switch to Cash.'); return }
+    if (amount <= 0) { setError(t('cmp.err.amountPositive')); return }
+    if (mode === 'CARD' && !cardId) { setError(t('cmp.err.pickCardOrCash')); return }
     if (mode === 'BOTH') {
-      if (!cardId) { setError('Pick a card for the card portion.'); return }
-      if (cashInput <= 0 || cardInput <= 0) { setError('Both cash and card portions must be greater than 0.'); return }
+      if (!cardId) { setError(t('cmp.err.pickCardForPortion')); return }
+      if (cashInput <= 0 || cardInput <= 0) { setError(t('cmp.err.bothPortionsPositive')); return }
     }
 
     const req: MonthlyPaymentPayRequest = {
@@ -102,7 +104,7 @@ export function PaySubscriptionModal({ open, onClose, onSaved, subscription }: P
 
   const markAlreadyPaid = async () => {
     if (!subscription) return
-    if (amount <= 0) { setError('Amount must be greater than 0'); return }
+    if (amount <= 0) { setError(t('cmp.err.amountPositive')); return }
     setSaving(true); setError(null)
     try {
       await financeApi.markPaid({
@@ -118,7 +120,7 @@ export function PaySubscriptionModal({ open, onClose, onSaved, subscription }: P
   if (!subscription) return null
 
   return (
-    <Modal open={open} onClose={onClose} title={`Pay ${subscription.name}`} maxWidth="max-w-lg">
+    <Modal open={open} onClose={onClose} title={t('cmp.paySubscription.title', { name: subscription.name })} maxWidth="max-w-lg">
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Summary header */}
         <div className="flex items-center gap-3 p-3 rounded-xl bg-violet-50 border border-violet-100">
@@ -126,20 +128,20 @@ export function PaySubscriptionModal({ open, onClose, onSaved, subscription }: P
           <div className="min-w-0">
             <p className="text-sm font-semibold text-slate-800 truncate">{subscription.name}</p>
             <p className="text-xs text-slate-500">
-              Default: <span className="font-semibold">{formatCurrency(subscription.amount, currency)}</span>
-              {subscription.dueDay != null && <> · Due day {subscription.dueDay}</>}
+              {t('cmp.paySubscription.default')} <span className="font-semibold">{formatCurrency(subscription.amount, currency)}</span>
+              {subscription.dueDay != null && <> · {t('cmp.paySubscription.dueDay', { day: subscription.dueDay })}</>}
             </p>
           </div>
         </div>
 
         {/* Payment method tabs */}
         <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1">Payment method</label>
+          <label className="block text-xs font-medium text-slate-500 mb-1">{t('cmp.field.paymentMethod')}</label>
           <div className="grid grid-cols-3 gap-2">
             {([
-              { value: 'CARD', label: 'Card',  Icon: CreditCard },
-              { value: 'CASH', label: 'Cash',  Icon: Wallet },
-              { value: 'BOTH', label: 'Both',  Icon: CreditCard },
+              { value: 'CARD', label: t('tx.card'),  Icon: CreditCard },
+              { value: 'CASH', label: t('tx.cash'),  Icon: Wallet },
+              { value: 'BOTH', label: t('tx.both'),  Icon: CreditCard },
             ] as { value: MonthlyPaymentMode; label: string; Icon: typeof CreditCard }[]).map(opt => (
               <button key={opt.value} type="button" onClick={() => setMode(opt.value)}
                 className={`px-3 py-2 rounded-xl text-sm font-medium flex items-center justify-center gap-1.5 border transition-colors ${
@@ -158,10 +160,10 @@ export function PaySubscriptionModal({ open, onClose, onSaved, subscription }: P
         {mode === 'CARD' && (
           <div className="space-y-3">
             <div>
-              <label className="block text-xs font-medium text-slate-500 mb-1">Card *</label>
+              <label className="block text-xs font-medium text-slate-500 mb-1">{t('cmp.field.card')}</label>
               <select required value={cardId ?? ''} onChange={e => setCardId(e.target.value ? Number(e.target.value) : undefined)}
                 className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300">
-                <option value="">— Choose a card —</option>
+                <option value="">{t('cmp.source.chooseCard')}</option>
                 {filteredCards.map(c => (
                   <option key={c.id} value={c.id}>
                     {c.name} •••• {c.lastFourDigits} · {formatCurrency(c.currentBalance, c.currency)}
@@ -170,7 +172,7 @@ export function PaySubscriptionModal({ open, onClose, onSaved, subscription }: P
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-500 mb-1">Amount *</label>
+              <label className="block text-xs font-medium text-slate-500 mb-1">{t('cmp.field.amountRequired')}</label>
               <AmountInput required value={cardInput || 0} currency={currency}
                 onChange={v => setCardInput(v)}
                 className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
@@ -182,7 +184,7 @@ export function PaySubscriptionModal({ open, onClose, onSaved, subscription }: P
         {/* Cash mode */}
         {mode === 'CASH' && (
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Amount *</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">{t('cmp.field.amountRequired')}</label>
             <AmountInput required value={cashInput || 0} currency={currency}
               onChange={v => setCashInput(v)}
               className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
@@ -194,10 +196,10 @@ export function PaySubscriptionModal({ open, onClose, onSaved, subscription }: P
         {mode === 'BOTH' && (
           <div className="space-y-3">
             <div>
-              <label className="block text-xs font-medium text-slate-500 mb-1">Card *</label>
+              <label className="block text-xs font-medium text-slate-500 mb-1">{t('cmp.field.card')}</label>
               <select required value={cardId ?? ''} onChange={e => setCardId(e.target.value ? Number(e.target.value) : undefined)}
                 className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300">
-                <option value="">— Choose a card —</option>
+                <option value="">{t('cmp.source.chooseCard')}</option>
                 {filteredCards.map(c => (
                   <option key={c.id} value={c.id}>
                     {c.name} •••• {c.lastFourDigits} · {formatCurrency(c.currentBalance, c.currency)}
@@ -207,14 +209,14 @@ export function PaySubscriptionModal({ open, onClose, onSaved, subscription }: P
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Cash *</label>
+                <label className="block text-xs font-medium text-slate-500 mb-1">{t('cmp.field.cashRequired')}</label>
                 <AmountInput required value={cashInput || 0} currency={currency}
                   onChange={v => setCashInput(v)}
                   className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
                   suffix={currency} />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Card *</label>
+                <label className="block text-xs font-medium text-slate-500 mb-1">{t('cmp.field.card')}</label>
                 <AmountInput required value={cardInput || 0} currency={currency}
                   onChange={v => setCardInput(v)}
                   className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
@@ -222,14 +224,14 @@ export function PaySubscriptionModal({ open, onClose, onSaved, subscription }: P
               </div>
             </div>
             <p className="text-xs text-slate-500">
-              Total: <span className="font-semibold text-slate-700">{formatCurrency(amount, currency)}</span>
+              {t('cmp.paySubscription.total')} <span className="font-semibold text-slate-700">{formatCurrency(amount, currency)}</span>
             </p>
           </div>
         )}
 
         {/* Payment date */}
         <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1">Payment date *</label>
+          <label className="block text-xs font-medium text-slate-500 mb-1">{t('cmp.field.paymentDateRequired')}</label>
           <input required type="date" value={paymentDate}
             onChange={e => setPaymentDate(e.target.value)}
             className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300" />
@@ -242,8 +244,11 @@ export function PaySubscriptionModal({ open, onClose, onSaved, subscription }: P
               onChange={e => setUpdateForFuture(e.target.checked)}
               className="w-4 h-4 mt-0.5 rounded text-indigo-600" />
             <span className="text-xs text-amber-900 leading-relaxed">
-              Amount differs from the saved default ({formatCurrency(subscription.amount, currency)} → {formatCurrency(amount, currency)}).
-              Use <span className="font-semibold">{formatCurrency(amount, currency)}</span> as the default for future payments?
+              {t('cmp.paySubscription.amountDiffers', {
+                saved: formatCurrency(subscription.amount, currency),
+                entered: formatCurrency(amount, currency),
+              })}{' '}
+              {t('cmp.paySubscription.useAsDefaultPrefix')} <span className="font-semibold">{formatCurrency(amount, currency)}</span> {t('cmp.paySubscription.useAsDefaultSuffix')}
             </span>
           </label>
         )}
@@ -255,17 +260,17 @@ export function PaySubscriptionModal({ open, onClose, onSaved, subscription }: P
         <div className="flex gap-3 pt-1">
           <button type="button" onClick={onClose}
             className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50">
-            Cancel
+            {t('action.cancel')}
           </button>
           <button type="button" onClick={markAlreadyPaid} disabled={saving}
-            title="Mark this month covered without recording a transaction"
+            title={t('cmp.hint.markCoveredNoTx')}
             className="flex-1 py-2.5 rounded-xl border border-emerald-200 text-emerald-700 text-sm font-semibold hover:bg-emerald-50 disabled:opacity-60">
-            Already paid
+            {t('cmp.action.alreadyPaid')}
           </button>
           <button type="submit" disabled={saving}
             className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-60 flex items-center justify-center gap-2">
             {saving && <Spinner className="w-4 h-4" />}
-            {saving ? 'Recording…' : 'Record payment'}
+            {saving ? t('cmp.state.recording') : t('cmp.action.recordPayment')}
           </button>
         </div>
       </form>

@@ -1,5 +1,6 @@
 import { apiClient } from './client'
 import type {
+  AllocationPreviewRequest, AllocationPreviewResponse,
   AllocationLedgerResponse, AllocationRulesView,
   Bucket, BucketPayment, Currency, LevelConfigRequest,
   OverviewIncomeResponse, OverviewTierResponse,
@@ -20,4 +21,9 @@ export const overviewApi = {
     apiClient.get<AllocationRulesView>(`${base}/allocation-rules`),
   saveLevelConfig: (req: LevelConfigRequest) =>
     apiClient.put<AllocationRulesView>(`${base}/level-config`, req),
+
+  /** Read-only: what would this draft transaction do to the allocation? */
+  previewAllocation: (req: AllocationPreviewRequest, currency: string) =>
+    apiClient.post<AllocationPreviewResponse>(
+      `/overview/allocation-preview?currency=${currency}`, req, { _silent: true } as never),
 }

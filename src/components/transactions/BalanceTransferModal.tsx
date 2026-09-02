@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
-import { ArrowRight, AlertTriangle } from 'lucide-react'
+import { ArrowRight } from 'lucide-react'
 import { Modal } from '../ui/Modal'
 import { Spinner } from '../ui/Spinner'
 import { AmountInput } from '../ui/AmountInput'
+import { useLang } from '../../i18n/LanguageContext'
 import { useToast } from '../../context/ToastContext'
 import { cardsApi } from '../../api/cards'
 import { transactionsApi } from '../../api/transactions'
@@ -26,6 +27,7 @@ const emptyForm = (): BalanceTransferRequest => ({
 })
 
 export function BalanceTransferModal({ open, onClose, onSaved, preselectedFromCardId }: Props) {
+  const { t } = useLang()
   const { showSuccess } = useToast()
   const [cards, setCards] = useState<CardResponse[]>([])
   const [form, setForm] = useState<BalanceTransferRequest>(emptyForm())
@@ -56,21 +58,19 @@ export function BalanceTransferModal({ open, onClose, onSaved, preselectedFromCa
 
   const fromCard = cards.find(c => c.id === form.fromCardId)
   const toCard = cards.find(c => c.id === form.toCardId)
-  const currencyMismatch = fromCard && toCard && fromCard.currency !== toCard.currency
   const sameCard = form.fromCardId && form.toCardId && form.fromCardId === form.toCardId
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!form.fromCardId || !form.toCardId) { setError('Select both cards'); return }
-    if (form.fromCardId === form.toCardId) { setError('Source and destination cards must be different'); return }
-    if (currencyMismatch) { setError('Transfers must be between same-currency cards — use Exchange for cross-currency moves'); return }
-    if (!form.amount || form.amount <= 0) { setError('Enter a valid amount'); return }
+    if (!form.fromCardId || !form.toCardId) { setError(t('cmp.err.selectBothCards')); return }
+    if (form.fromCardId === form.toCardId) { setError(t('cmp.err.cardsMustDiffer')); return }
+    if (!form.amount || form.amount <= 0) { setError(t('cmp.err.enterValidAmount')); return }
     setSaving(true); setError(null)
     try {
       await transactionsApi.transfer(form)
       onSaved()
       onClose()
-      showSuccess(`Transferred ${form.amount} successfully`)
+      showSuccess(t('cmp.transfer.success', { amount: form.amount }))
     } catch (err: unknown) {
       setError(extractErrorMessage(err))
     } finally {
@@ -79,13 +79,13 @@ export function BalanceTransferModal({ open, onClose, onSaved, preselectedFromCa
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Transfer Balance" maxWidth="max-w-xl">
+    <Modal open={open} onClose={onClose} title={t('cmp.balanceTransfer.title')} maxWidth="max-w-xl">
       <form onSubmit={handleSubmit} className="space-y-4">
 
         {/* Card selector row */}
         <div className="flex items-center gap-3">
           <div className="flex-1">
-            <label className="block text-xs font-medium text-slate-500 mb-1">From Card *</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">{t('cmp.balanceTransfer.fromCard')}</label>
             <select
               required
               value={form.fromCardId || ''}
@@ -96,7 +96,7 @@ export function BalanceTransferModal({ open, onClose, onSaved, preselectedFromCa
               }}
               className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
             >
-              <option value="">Select card…</option>
+              <option value="">{t('cmp.balanceTransfer.selectCard')}</option>
               {cards.map(c => (
                 <option key={c.id} value={c.id}>
                   {c.name} •••• {c.lastFourDigits}
@@ -112,14 +112,14 @@ export function BalanceTransferModal({ open, onClose, onSaved, preselectedFromCa
           </div>
 
           <div className="flex-1">
-            <label className="block text-xs font-medium text-slate-500 mb-1">To Card *</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">{t('cmp.balanceTransfer.toCard')}</label>
             <select
               required
               value={form.toCardId || ''}
               onChange={e => set('toCardId', Number(e.target.value))}
               className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
             >
-              <option value="">Select card…</option>
+              <option value="">{t('cmp.balanceTransfer.selectCard')}</option>
               {cards.filter(c => c.id !== form.fromCardId).map(c => (
                 <option key={c.id} value={c.id}>
                   {c.name} •••• {c.lastFourDigits}
@@ -134,7 +134,7 @@ export function BalanceTransferModal({ open, onClose, onSaved, preselectedFromCa
           <div className="flex items-stretch gap-3">
             {fromCard && (
               <div className="flex-1 bg-rose-50 border border-rose-100 rounded-xl px-3 py-2.5">
-                <p className="text-[10px] text-rose-400 font-medium uppercase tracking-wide">From balance</p>
+                <p className="text-[10px] text-rose-400 font-medium uppercase tracking-wide">{t('cmp.balanceTransfer.fromBalance')}</p>
                 <p className="text-sm font-bold text-rose-700 mt-0.5">
                   {formatCurrency(fromCard.currentBalance, fromCard.currency)}
                 </p>
@@ -143,7 +143,7 @@ export function BalanceTransferModal({ open, onClose, onSaved, preselectedFromCa
             )}
             {toCard && (
               <div className="flex-1 bg-emerald-50 border border-emerald-100 rounded-xl px-3 py-2.5">
-                <p className="text-[10px] text-emerald-400 font-medium uppercase tracking-wide">To balance</p>
+                <p className="text-[10px] text-emerald-400 font-medium uppercase tracking-wide">{t('cmp.balanceTransfer.toBalance')}</p>
                 <p className="text-sm font-bold text-emerald-700 mt-0.5">
                   {formatCurrency(toCard.currentBalance, toCard.currency)}
                 </p>
@@ -153,27 +153,17 @@ export function BalanceTransferModal({ open, onClose, onSaved, preselectedFromCa
           </div>
         )}
 
-        {/* Currency mismatch warning */}
-        {currencyMismatch && (
-          <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
-            <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-            <p className="text-xs text-amber-700">
-              These cards have different currencies ({fromCard!.currency} → {toCard!.currency}). Cross-currency transfers aren't supported — use the Exchange feature instead.
-            </p>
-          </div>
-        )}
-
         {/* Same card error */}
         {sameCard && (
           <p className="text-xs text-rose-500 flex items-center gap-1">
             <span className="w-1.5 h-1.5 bg-rose-500 rounded-full shrink-0" />
-            Source and destination cards must be different
+            {t('cmp.err.cardsMustDiffer')}
           </p>
         )}
 
         {/* Amount */}
         <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1">Amount *</label>
+          <label className="block text-xs font-medium text-slate-500 mb-1">{t('cmp.field.amountRequired')}</label>
           <AmountInput
             required
             value={form.amount || 0}
@@ -185,14 +175,14 @@ export function BalanceTransferModal({ open, onClose, onSaved, preselectedFromCa
           />
           {fromCard && form.amount > 0 && form.amount > fromCard.currentBalance && (
             <p className="text-xs text-rose-500 mt-1 pl-1">
-              Exceeds available balance ({formatCurrency(fromCard.currentBalance, fromCard.currency)})
+              {t('cmp.balanceTransfer.exceedsBalance', { balance: formatCurrency(fromCard.currentBalance, fromCard.currency) })}
             </p>
           )}
         </div>
 
         {/* Date */}
         <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1">Date *</label>
+          <label className="block text-xs font-medium text-slate-500 mb-1">{t('cmp.field.dateRequired')}</label>
           <input
             required
             type="date"
@@ -204,19 +194,19 @@ export function BalanceTransferModal({ open, onClose, onSaved, preselectedFromCa
 
         {/* Description */}
         <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1">Description <span className="text-slate-300">(optional)</span></label>
+          <label className="block text-xs font-medium text-slate-500 mb-1">{t('tx.description')} <span className="text-slate-300">({t('common.optional')})</span></label>
           <input
             type="text"
             value={form.description ?? ''}
             onChange={e => set('description', e.target.value)}
             className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-            placeholder="e.g. Monthly savings transfer"
+            placeholder={t('cmp.balanceTransfer.descriptionPlaceholder')}
           />
         </div>
 
         {/* Info banner */}
         <div className="bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2.5 text-xs text-indigo-700">
-          Two transactions will be created: an <strong>expense</strong> on the source card and an <strong>income</strong> on the destination card. Both appear in the Transactions page.
+          {t('cmp.balanceTransfer.infoPrefix')} <strong>{t('tx.expense')}</strong> {t('cmp.balanceTransfer.infoMid')} <strong>{t('tx.income')}</strong> {t('cmp.balanceTransfer.infoSuffix')}
         </div>
 
         {error && (
@@ -229,15 +219,15 @@ export function BalanceTransferModal({ open, onClose, onSaved, preselectedFromCa
             onClick={onClose}
             className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50 transition-colors"
           >
-            Cancel
+            {t('action.cancel')}
           </button>
           <button
             type="submit"
-            disabled={saving || !!sameCard || !!currencyMismatch}
+            disabled={saving || !!sameCard}
             className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
           >
             {saving && <Spinner className="w-4 h-4" />}
-            {saving ? 'Transferring…' : 'Transfer'}
+            {saving ? t('cmp.state.transferring') : t('action.transfer')}
           </button>
         </div>
       </form>
