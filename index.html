@@ -5,12 +5,9 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Tracker — Income & Expense</title>
-    <!-- Telegram Mini App SDK — present so the app integrates when opened inside Telegram;
-         harmless (window.Telegram undefined) in a normal browser. -->
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <!-- No third-party requests: the font is self-hosted (src/index.css) and the Telegram
+         SDK is injected on demand by src/telegram.ts, only when actually opened inside
+         Telegram. Both used to be blocked by privacy extensions ("blocked:other"). -->
   </head>
   <body>
     <div id="root"></div>

@@ -1,3 +1,14 @@
+/* Self-hosted Inter (variable: one file covers 300-700). Previously loaded from
+   fonts.googleapis.com, which privacy extensions block — and which made first paint
+   depend on Google being reachable. */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/InterVariable.woff2') format('woff2');
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
