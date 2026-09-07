@@ -19,6 +19,25 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
+  /* Reserve the scrollbar track always: without it every tab swap that changes content
+     height reflows the page ~5px sideways (that is the width set below). */
+  html {
+    scrollbar-gutter: stable;
+  }
+
+  /* The one page background. Tiles are white on top of it; nothing else is tinted.
+     Keep in sync with theme.extend.colors.ground. */
+  body {
+    background: #F5F5F7;
+  }
+
+  /* The browser's default focus ring is replaced by .focus-ring on every interactive
+     control, so the two never draw on top of each other. .focus-ring draws an outline of
+     its own, so this reset never leaves a control unindicated — see the note there. */
+  :focus-visible {
+    outline: none;
+  }
+
   ::-webkit-scrollbar {
     width: 5px;
     height: 5px;
@@ -32,5 +51,55 @@
   }
   ::-webkit-scrollbar-thumb:hover {
     background: #94a3b8;
+  }
+}
+
+@layer components {
+  /* One focus contract for the whole app. focus-visible, not focus, so a mouse click
+     never draws a ring.
+
+     Two bands, deliberately, because the app has both light and dark surfaces and the UA
+     ring is reset away above. Reading outward from the control's edge:
+
+       0–2px  the ring OFFSET, #fff by default; the dark sidebar opts into slate-900 with
+              focus-visible:ring-offset-slate-900, so the band always matches its surface
+       2–4px  indigo-600 — 6.29:1 on a white tile, 5.77:1 on the #F5F5F7 ground, 5.74:1 on
+              a slate-100 tab strip, 6.06:1 on the amber offline banner
+       4–6px  #fff — invisible on every light surface, 17.85:1 on the slate-900 sidebar,
+              where indigo-600 alone would only reach 2.84:1
+
+     So whichever surface the control sits on, one of the two coloured bands clears the
+     WCAG 2.2 SC 1.4.11 3:1 floor, and the two are 6.29:1 apart from each other. The
+     previous value, indigo-300, measured 1.99:1 on white and 1.83:1 on the ground: a
+     keyboard user could not see focus anywhere except the sidebar.
+
+     The outer band is an `outline` rather than a third box-shadow so the ring keeps
+     composing with shadow-tile instead of replacing it. Note that an ancestor's
+     `overflow: hidden` clips both — ListRow switches to focus-visible:ring-inset for
+     exactly that reason. */
+  .focus-ring {
+    @apply focus-visible:ring-2 focus-visible:ring-indigo-600 focus-visible:ring-offset-2;
+  }
+  .focus-ring:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 4px;
+  }
+
+  /* html's scrollbar-gutter does not reach the real scroller, which is <main>. */
+  .app-scroll {
+    scrollbar-gutter: stable;
+  }
+}
+
+/* Honour the OS setting: the app leans on transitions and lifts everywhere, and recharts
+   animates on every data change. Unlayered so it outranks the utilities it neutralises. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
   }
 }

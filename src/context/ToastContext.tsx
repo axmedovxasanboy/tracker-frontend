@@ -1,5 +1,7 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { setErrorCallback } from '../api/client'
+import { useLang } from '../i18n/LanguageContext'
+import type { TKey } from '../i18n/LanguageContext'
 
 export type ToastType = 'error' | 'success' | 'warning' | 'info'
 
@@ -33,24 +35,38 @@ export function useToast() {
   return useContext(ToastContext)
 }
 
+/**
+ * The heading a toast gets when the caller does not pass one — which is all but one call site.
+ * Keys rather than strings: these used to be the literals 'Error' / 'Success' / 'Warning' /
+ * 'Info', the only part of a toast the language switch could not reach.
+ */
+const DEFAULTS: Record<ToastType, { titleKey: TKey; duration: number }> = {
+  error:   { titleKey: 'toast.error',   duration: 7000 },
+  success: { titleKey: 'toast.success', duration: 3500 },
+  warning: { titleKey: 'toast.warning', duration: 5000 },
+  info:    { titleKey: 'toast.info',    duration: 4000 },
+}
+
 export function ToastProvider({ children }: { children: React.ReactNode }) {
+  // Safe: App.tsx mounts LanguageProvider outside this provider.
+  const { t } = useLang()
   const [toasts, setToasts] = useState<ToastItem[]>([])
   const counter = useRef(0)
+  // `t` is a fresh function after every language switch, and `showError` is handed to the axios
+  // interceptor once (below). Reading `t` through a ref keeps all four show* callbacks free of
+  // dependencies, so the interceptor is never re-registered, while a toast raised after the
+  // switch still comes out in the new language.
+  const tRef = useRef(t)
+  useEffect(() => { tRef.current = t }, [t])
 
   const add = useCallback((type: ToastType, message: string, title?: string) => {
     const id = `toast-${++counter.current}`
-    const defaults: Record<ToastType, { title: string; duration: number }> = {
-      error:   { title: 'Error',   duration: 7000 },
-      success: { title: 'Success', duration: 3500 },
-      warning: { title: 'Warning', duration: 5000 },
-      info:    { title: 'Info',    duration: 4000 },
-    }
-    const resolved = defaults[type]
+    const { titleKey, duration } = DEFAULTS[type]
     setToasts(prev => [...prev, {
       id, type,
-      title: title ?? resolved.title,
+      title: title ?? tRef.current(titleKey),
       message,
-      duration: resolved.duration,
+      duration,
     }])
   }, [])
 
@@ -68,8 +84,13 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     setErrorCallback(showError)
   }, [showError])
 
+  const value = useMemo<ToastCtx>(
+    () => ({ toasts, showError, showSuccess, showWarning, showInfo, dismiss }),
+    [toasts, showError, showSuccess, showWarning, showInfo, dismiss],
+  )
+
   return (
-    <ToastContext.Provider value={{ toasts, showError, showSuccess, showWarning, showInfo, dismiss }}>
+    <ToastContext.Provider value={value}>
       {children}
     </ToastContext.Provider>
   )

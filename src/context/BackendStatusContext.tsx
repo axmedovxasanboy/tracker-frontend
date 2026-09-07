@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react'
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { setStatusCallbacks } from '../api/client'
 
 interface BackendStatus {
@@ -20,6 +20,29 @@ const HEALTH_URL = import.meta.env.VITE_API_BASE_URL
   : '/actuator/health'
 
 const BackendStatusContext = createContext<BackendStatusContextValue | null>(null)
+
+/**
+ * The offline→online transition, published outside React's context so `useApi` can listen to it
+ * without needing this provider as an ancestor.
+ *
+ * Coming back online used to hide the banner and nothing else: `api/client.ts` answers a failed
+ * GET with a localStorage entry up to seven days old, so the page kept rendering the outage's
+ * figures after the server returned, with no request in flight to correct them. Every mounted
+ * query re-runs on the transition instead — which is also what makes the banner's Retry button do
+ * something to the page, rather than only to the banner.
+ */
+let onlineGeneration = 0
+const onlineListeners = new Set<() => void>()
+
+export function subscribeOnlineRecovery(listener: () => void) {
+  onlineListeners.add(listener)
+  return () => { onlineListeners.delete(listener) }
+}
+
+/** A counter, so `useSyncExternalStore` sees a new snapshot on every recovery. */
+export function getOnlineGeneration() {
+  return onlineGeneration
+}
 
 export function BackendStatusProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<BackendStatus>({
@@ -62,6 +85,17 @@ export function BackendStatusProvider({ children }: { children: React.ReactNode 
       }
     }, 15000)
     return () => clearInterval(interval)
+  }, [status.isOnline])
+
+  // Bumped from an effect rather than from inside the state updaters: the success callback fires
+  // on EVERY successful request, and announcing recovery there would refetch on every response.
+  const wasOnlineRef = useRef(status.isOnline)
+  useEffect(() => {
+    if (status.isOnline && !wasOnlineRef.current) {
+      onlineGeneration++
+      onlineListeners.forEach(l => l())
+    }
+    wasOnlineRef.current = status.isOnline
   }, [status.isOnline])
 
   const forceCheck = async () => {

@@ -1,11 +1,11 @@
-import { format } from 'date-fns'
+import type { ReactNode } from 'react'
 import { ArrowUpRight, ArrowDownRight, Pencil, Trash2, CreditCard, MapPin, Route, Wallet } from 'lucide-react'
 import { Modal } from '../ui/Modal'
+import { Button } from '../ui/Button'
 import { useLang } from '../../i18n/LanguageContext'
-import { Spinner } from '../ui/Spinner'
-import { formatCurrency } from '../../utils/format'
+import { formatDate, moneyFull } from '../../utils/format'
 import { parseTransportDescription } from '../../utils/transactionDescription'
-import type { Currency, Transaction } from '../../types'
+import type { Transaction } from '../../types'
 
 interface Props {
   transaction: Transaction | null
@@ -17,7 +17,7 @@ interface Props {
 }
 
 export function TransactionDetailModal({ transaction: tx, open, onClose, onEdit, onDelete, deleting }: Props) {
-  const { t, categoryName } = useLang()
+  const { t, lang, categoryName } = useLang()
   const SUB_TYPE_LABELS: Record<string, string> = {
     REGULAR_INCOME: t('cmp.subType.regularIncome'), LOAN_RECEIVED: t('cmp.subType.loanReceived'),
     LOAN_RETURNED_TO_ME: t('cmp.subType.loanReturned'), REGULAR_EXPENSE: t('cmp.subType.regularExpense'),
@@ -26,6 +26,7 @@ export function TransactionDetailModal({ transaction: tx, open, onClose, onEdit,
   }
   if (!tx) return null
 
+  const income = tx.type === 'INCOME'
   const isTransport = tx.category?.kind === 'TRANSPORT'
   const parsed = parseTransportDescription(tx.description, isTransport)
   // Fall back to legacy columns when modern description-encoded route is absent.
@@ -37,55 +38,93 @@ export function TransactionDetailModal({ transaction: tx, open, onClose, onEdit,
   // For non-TRANSPORT we just show the raw description in its row.
   const detailNote = isTransport ? parsed.note.trim() : ''
 
+  const categoryLabel = tx.category ? categoryName(tx.category) : ''
+  const subTypeLabel = tx.subType ? (SUB_TYPE_LABELS[tx.subType] ?? tx.subType) : ''
+  /**
+   * The seeded categories are named after their sub-type ("Donation", "Investment", …), so the
+   * old Category and Transaction-type rows printed the same word twice for one fact. The type
+   * only earns a row when it says something the category does not — and "Regular expense" beside
+   * a red amount never does.
+   */
+  const showSubType = !!subTypeLabel
+    && tx.subType !== 'REGULAR_INCOME' && tx.subType !== 'REGULAR_EXPENSE'
+    && subTypeLabel.toLocaleLowerCase(lang) !== categoryLabel.toLocaleLowerCase(lang)
+
   return (
-    <Modal open={open} onClose={onClose} title={t('cmp.txDetail.title')} maxWidth="max-w-lg">
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={t('cmp.txDetail.title')}
+      maxWidth="max-w-lg"
+      footer={
+        <div className="flex gap-3">
+          <Button
+            variant="secondary"
+            icon={<Pencil className="h-4 w-4" aria-hidden="true" />}
+            label={t('action.edit')}
+            onClick={() => { onClose(); onEdit(tx) }}
+            className="flex-1"
+          />
+          <Button
+            variant="danger"
+            icon={<Trash2 className="h-4 w-4" aria-hidden="true" />}
+            label={t('action.delete')}
+            loading={deleting}
+            onClick={() => onDelete(tx.id)}
+            className="flex-1"
+          />
+        </div>
+      }
+    >
       <div className="space-y-5">
-        {/* Hero amount */}
-        <div className={`rounded-2xl p-5 flex items-center gap-4 ${
-          tx.type === 'INCOME' ? 'bg-emerald-50' : 'bg-rose-50'
-        }`}>
-          <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-            tx.type === 'INCOME' ? 'bg-emerald-500' : 'bg-rose-500'
+        {/* The amount, said once. Colour lives on the chip and the figure — the surface stays
+            white, so one saved record cannot shout louder than the page it opened from. */}
+        <div className="flex items-center gap-4">
+          <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-chip ${
+            income ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'
           }`}>
-            {tx.type === 'INCOME'
-              ? <ArrowUpRight className="w-6 h-6 text-white" />
-              : <ArrowDownRight className="w-6 h-6 text-white" />
-            }
-          </div>
-          <div>
-            <p className={`text-3xl font-bold ${tx.type === 'INCOME' ? 'text-emerald-700' : 'text-rose-700'}`}>
-              {tx.type === 'INCOME' ? '+' : '-'}{formatCurrency(tx.amount, tx.currency as Currency)}
+            {income
+              ? <ArrowUpRight className="h-6 w-6" aria-hidden="true" />
+              : <ArrowDownRight className="h-6 w-6" aria-hidden="true" />}
+          </span>
+          <div className="min-w-0">
+            <p className={`text-stat tabular-nums ${income ? 'text-income' : 'text-expense'}`}>
+              {income ? '+' : '-'}{moneyFull(tx.amount, tx.currency)}
             </p>
-            <p className="text-sm text-slate-500 mt-0.5">{heroDescription || '—'}</p>
+            <p className="mt-0.5 text-sm text-slate-600 break-words">{heroDescription || '—'}</p>
           </div>
         </div>
 
-        {/* Details grid */}
-        <div className="space-y-3">
-          <Row label={t('tx.date')}>{format(new Date(tx.transactionDate), 'dd-MMM-yyyy')}</Row>
-          <Row label={t('tx.currency')}>{tx.currency}</Row>
+        <div className="space-y-1">
+          <Row label={t('tx.date')}>{formatDate(tx.transactionDate, lang)}</Row>
 
           {tx.category && (
             <Row label={t('tx.category')}>
-              <span className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded-full" style={{ backgroundColor: tx.category.color }} />
-                {categoryName(tx.category)}
+              <span className="flex items-center justify-end gap-2">
+                <span className="h-3 w-3 rounded-full" style={{ backgroundColor: tx.category.color }} />
+                {categoryLabel}
+                {showSubType && (
+                  <span className="rounded-chip bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
+                    {subTypeLabel}
+                  </span>
+                )}
               </span>
             </Row>
           )}
 
-          {tx.subType && (
+          {/* A sub-type with no category of its own still has to be named somewhere. */}
+          {!tx.category && showSubType && (
             <Row label={t('cmp.txDetail.transactionType')}>
-              <span className="bg-indigo-100 text-indigo-700 text-xs font-medium px-2.5 py-1 rounded-full">
-                {SUB_TYPE_LABELS[tx.subType] ?? tx.subType}
+              <span className="rounded-chip bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
+                {subTypeLabel}
               </span>
             </Row>
           )}
 
           {tx.card && (
             <Row label={t('cmp.txDetail.cardWallet')}>
-              <span className="flex items-center gap-2">
-                <CreditCard className="w-4 h-4 text-slate-400" />
+              <span className="flex items-center justify-end gap-2">
+                <CreditCard className="h-4 w-4 text-slate-400" aria-hidden="true" />
                 {tx.card.name} •••• {tx.card.lastFourDigits}
               </span>
             </Row>
@@ -93,16 +132,16 @@ export function TransactionDetailModal({ transaction: tx, open, onClose, onEdit,
 
           {(tx.cashAmount ?? 0) > 0 && (
             <Row label={t('cmp.txDetail.paymentSplit')}>
-              <span className="flex items-center gap-2 text-xs">
-                <Wallet className="w-3.5 h-3.5 text-amber-500" />
-                <span className="text-amber-700 font-semibold">{formatCurrency(tx.cashAmount, tx.currency as Currency)}</span>
-                <span className="text-slate-400">{t('tx.cash').toLowerCase()}</span>
+              <span className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
+                <Wallet className="h-4 w-4 text-slate-400" aria-hidden="true" />
+                <span className="tabular-nums">{moneyFull(tx.cashAmount, tx.currency)}</span>
+                <span className="text-slate-500">{t('tx.cash').toLowerCase()}</span>
                 {tx.card && (tx.cardAmount ?? 0) > 0 && (
                   <>
-                    <span className="text-slate-300">·</span>
-                    <CreditCard className="w-3.5 h-3.5 text-indigo-500" />
-                    <span className="text-indigo-700 font-semibold">{formatCurrency(tx.cardAmount, tx.currency as Currency)}</span>
-                    <span className="text-slate-400">{t('tx.card').toLowerCase()}</span>
+                    <span className="text-slate-400">·</span>
+                    <CreditCard className="h-4 w-4 text-slate-400" aria-hidden="true" />
+                    <span className="tabular-nums">{moneyFull(tx.cardAmount, tx.currency)}</span>
+                    <span className="text-slate-500">{t('tx.card').toLowerCase()}</span>
                   </>
                 )}
               </span>
@@ -111,10 +150,10 @@ export function TransactionDetailModal({ transaction: tx, open, onClose, onEdit,
 
           {(routeFrom || routeTo) && (
             <Row label={t('cmp.txDetail.route')}>
-              <span className="flex items-center gap-1.5 text-slate-700">
-                <Route className="w-4 h-4 text-orange-400" />
+              <span className="flex items-center justify-end gap-1.5">
+                <Route className="h-4 w-4 text-slate-400" aria-hidden="true" />
                 <span>{routeFrom || '—'}</span>
-                <span className="text-slate-300">→</span>
+                <span className="text-slate-400">→</span>
                 <span>{routeTo || '—'}</span>
               </span>
             </Row>
@@ -123,48 +162,28 @@ export function TransactionDetailModal({ transaction: tx, open, onClose, onEdit,
           {/* Legacy place column — kept visible if older rows still have it. */}
           {!isTransport && tx.place && (
             <Row label={t('cmp.txDetail.place')}>
-              <span className="flex items-center gap-2">
-                <MapPin className="w-4 h-4 text-rose-400" />
+              <span className="flex items-center justify-end gap-2">
+                <MapPin className="h-4 w-4 text-slate-400" aria-hidden="true" />
                 {tx.place}
               </span>
             </Row>
           )}
 
-          {isTransport && detailNote && (
-            <Row label={t('tx.note')}><span className="text-slate-600">{detailNote}</span></Row>
-          )}
-          {!isTransport && tx.note && <Row label={t('tx.note')}><span className="text-slate-600">{tx.note}</span></Row>}
+          {isTransport && detailNote && <Row label={t('tx.note')}>{detailNote}</Row>}
+          {!isTransport && tx.note && <Row label={t('tx.note')}>{tx.note}</Row>}
 
-          <Row label={t('cmp.txDetail.created')}>{format(new Date(tx.createdAt), 'dd-MMM-yyyy HH:mm')}</Row>
-        </div>
-
-        {/* Actions */}
-        <div className="flex gap-3 pt-1 border-t border-slate-100">
-          <button
-            onClick={() => { onClose(); onEdit(tx) }}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border border-slate-200 text-slate-700 text-sm font-medium hover:bg-slate-50 transition-colors"
-          >
-            <Pencil className="w-4 h-4" /> {t('action.edit')}
-          </button>
-          <button
-            onClick={() => onDelete(tx.id)}
-            disabled={deleting}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-600 text-sm font-medium hover:bg-rose-100 transition-colors disabled:opacity-50"
-          >
-            {deleting ? <Spinner className="w-4 h-4" /> : <Trash2 className="w-4 h-4" />}
-            {t('action.delete')}
-          </button>
+          <Row label={t('cmp.txDetail.created')}>{formatDate(tx.createdAt, lang, 'time')}</Row>
         </div>
       </div>
     </Modal>
   )
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-4 py-2 border-b border-slate-50">
-      <span className="text-sm text-slate-400 shrink-0">{label}</span>
-      <span className="text-sm text-slate-700 text-right font-medium">{children}</span>
+    <div className="flex items-start justify-between gap-4 border-b border-hairline py-2 last:border-b-0">
+      <span className="shrink-0 text-sm text-slate-500">{label}</span>
+      <span className="text-right text-sm font-medium text-slate-900">{children}</span>
     </div>
   )
 }

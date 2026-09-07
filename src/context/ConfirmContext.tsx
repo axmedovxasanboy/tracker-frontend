@@ -1,11 +1,18 @@
-import React, { createContext, useCallback, useContext, useState } from 'react'
+import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react'
 import { Modal } from '../components/ui/Modal'
+import { Button } from '../components/ui/Button'
+import { useLang } from '../i18n/LanguageContext'
 
-interface ConfirmOptions {
+export interface ConfirmOptions {
+  /** Defaults to "Delete?" when `destructive`, "Are you sure?" otherwise. Already translated. */
   title?: string
+  /** The question itself, under the title. Already translated. */
   message: string
+  /** Defaults to "Delete" when `destructive`, "Confirm" otherwise. */
   confirmLabel?: string
+  /** Defaults to "Cancel". */
   cancelLabel?: string
+  /** Colours the confirm button red and switches both defaults to the delete wording. */
   destructive?: boolean
 }
 
@@ -26,63 +33,77 @@ export function useConfirm() {
 interface State {
   open: boolean
   opts: ConfirmOptions
-  resolver: Resolver | null
 }
 
 const initial: State = {
   open: false,
   opts: { message: '' },
-  resolver: null,
 }
 
 export function ConfirmProvider({ children }: { children: React.ReactNode }) {
+  // Safe: App.tsx mounts LanguageProvider outside this provider, so the dialog's own defaults
+  // follow the language switch like every other string.
+  const { t } = useLang()
   const [state, setState] = useState<State>(initial)
+  // The pending resolver is not rendered, so it stays out of state — which also lets confirm()
+  // settle a prompt that is already open without reading a stale copy of it.
+  const resolverRef = useRef<Resolver | null>(null)
+
+  const settle = useCallback((value: boolean) => {
+    const resolve = resolverRef.current
+    resolverRef.current = null
+    setState(initial)
+    resolve?.(value)
+  }, [])
 
   const confirm = useCallback((opts: ConfirmOptions) =>
     new Promise<boolean>((resolve) => {
-      setState({ open: true, opts, resolver: resolve })
+      // A second prompt raised while one is open used to drop the first resolver, leaving its
+      // caller awaiting for ever — and callers await this before closing a form or deleting a row.
+      resolverRef.current?.(false)
+      resolverRef.current = resolve
+      setState({ open: true, opts })
     }), [])
 
-  const settle = (value: boolean) => {
-    state.resolver?.(value)
-    setState(initial)
-  }
+  // Stable so the dialog's Escape/backdrop handlers are not torn down and re-registered on
+  // every render of this provider.
+  const cancel = useCallback(() => settle(false), [settle])
+  const accept = useCallback(() => settle(true), [settle])
+
+  const value = useMemo<ConfirmCtx>(() => ({ confirm }), [confirm])
 
   const { opts } = state
-  const confirmLabel = opts.confirmLabel ?? (opts.destructive ? 'Delete' : 'Confirm')
-  const cancelLabel = opts.cancelLabel ?? 'Cancel'
+  const confirmLabel = opts.confirmLabel ?? t(opts.destructive ? 'action.delete' : 'action.confirm')
+  const cancelLabel = opts.cancelLabel ?? t('action.cancel')
+  const title = opts.title ?? t(opts.destructive ? 'confirm.deleteTitle' : 'confirm.title')
 
   return (
-    <ConfirmContext.Provider value={{ confirm }}>
+    <ConfirmContext.Provider value={value}>
       {children}
       <Modal
         open={state.open}
-        onClose={() => settle(false)}
-        title={opts.title ?? (opts.destructive ? 'Delete?' : 'Confirm')}
+        onClose={cancel}
+        title={title}
         maxWidth="max-w-md"
       >
-        <div className="space-y-4">
+        <div className="space-y-5">
           <p className="text-sm text-slate-600">{opts.message}</p>
           <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={() => settle(false)}
-              className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50 transition-colors"
-            >
-              {cancelLabel}
-            </button>
-            <button
-              type="button"
-              onClick={() => settle(true)}
+            <Button
+              variant="secondary"
+              label={cancelLabel}
+              onClick={cancel}
+              className="flex-1"
+            />
+            {/* The user asked for this dialog by clicking the action, so Enter answers it — unlike
+                Sheet's unprompted discard guard, which focuses the safe side instead. */}
+            <Button
+              variant={opts.destructive ? 'danger' : 'primary'}
+              label={confirmLabel}
+              onClick={accept}
               autoFocus
-              className={`flex-1 py-2.5 rounded-xl text-white text-sm font-semibold transition-colors ${
-                opts.destructive
-                  ? 'bg-rose-600 hover:bg-rose-700'
-                  : 'bg-indigo-600 hover:bg-indigo-700'
-              }`}
-            >
-              {confirmLabel}
-            </button>
+              className="flex-1"
+            />
           </div>
         </div>
       </Modal>

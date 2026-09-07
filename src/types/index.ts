@@ -5,7 +5,8 @@ export type TransactionSubType =
   | 'BANK_LOAN_PAYMENT' | 'INVESTMENT' | 'STOCK_PURCHASE' | 'DONATION'
   | 'EMERGENCY_CONTRIBUTION'
   | 'TRANSFER_OUT' | 'TRANSFER_IN'
-export type Currency = 'UZS'
+// USD/EUR exist only as standalone cash pots — nothing converts them to UZS.
+export type Currency = 'UZS' | 'USD' | 'EUR'
 export type CategoryType = 'INCOME' | 'EXPENSE' | 'BOTH'
 export type CategoryKind = 'GENERIC' | 'FOOD' | 'TRANSPORT'
 export type CardType = 'UZCARD' | 'HUMO' | 'VISA' | 'CASH'
@@ -160,6 +161,8 @@ export interface TransactionRequest {
   counterpartyName?: string
   investmentType?: InvestmentType
   investmentId?: number
+  /** LOAN_GIVEN only: lend more to this existing borrower instead of opening a new loan. */
+  loanGivenId?: number
   /** LOAN_RECEIVED only: month (YYYY-MM-01) repayments start counting toward the tier. */
   paymentStartDate?: string
   cashAmount?: number
@@ -255,9 +258,12 @@ export interface LoanTakenResponse {
   description: string | null
   createdAt: string
   monthlyPayment: number | null
+  /** Opt-in fixed monthly repayment plan; null = default 34%-of-original charge. */
+  plannedMonthlyPayment: number | null
 }
 
 export interface LoanTakenRequest {
+  plannedMonthlyPayment?: number
   lenderName: string
   totalAmount: number
   paidAmount?: number
@@ -447,7 +453,8 @@ export interface OverviewIncomeResponse {
   stableIncome: number | null
 }
 
-export type Bucket = 'DONATION' | 'EMERGENCY' | 'INVESTMENTS' | 'STOCKS'
+// Stocks was removed as an allocation bucket — nothing allocates to it.
+export type Bucket = 'DONATION' | 'EMERGENCY' | 'INVESTMENTS'
 
 export interface AllocationLine {
   bucket: Bucket
@@ -678,8 +685,10 @@ export interface CashBalanceRequest {
 }
 
 export interface BalanceTransferRequest {
-  fromCardId: number
-  toCardId: number
+  /** null = the cash pot */
+  fromCardId: number | null
+  /** null = the cash pot */
+  toCardId: number | null
   amount: number
   description?: string
   transactionDate: string
@@ -700,7 +709,21 @@ export interface MonthSummaryResponse {
   investments: number
   stocks: number
   savings: number
+  /**
+   * Every bucket figure above, summed — and it counts "already paid" marks, on a closed month
+   * exactly as on an open one, so this page and the Plan never quote two totals for one bucket.
+   */
   taggedTotal: number
+  /**
+   * The recorded half alone: the part of `totalSpent` that actually left a wallet for a bucket.
+   * This — not `taggedTotal` — is what the close freezes and what `everydaySpend` balances against.
+   *
+   *   taggedTotal   = taggedRecorded + markedNotMoved
+   *   everydaySpend = totalSpent − taggedRecorded      (closed months)
+   */
+  taggedRecorded: number
+  /** The marks-only delta: money declared paid that never left a wallet. Reported for both. */
+  markedNotMoved: number
   /** null until the month is closed. */
   everydaySpend: number | null
   totalSpent: number | null

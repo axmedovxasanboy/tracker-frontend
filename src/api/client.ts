@@ -1,6 +1,7 @@
 import axios, { AxiosError, AxiosRequestConfig } from 'axios'
 import { saveToCache, getFromCache } from './cache'
 import { tokenStore } from './tokens'
+import { tStatic } from '../i18n/staticT'
 
 export const BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1'
 
@@ -60,15 +61,18 @@ interface BackendErrorPayload {
   errors?: Record<string, string>
 }
 
+// The two generated sentences go through `tStatic` rather than `t()`: this module is not a
+// component. Backend-supplied text (`data.errors`, `data.message`) is passed through as the
+// server wrote it — only the fallbacks are ours to translate.
 export function extractErrorMessage(err: unknown): string {
   const ax = err as AxiosError<BackendErrorPayload>
-  if (!ax?.response) return 'Network error — backend unreachable'
+  if (!ax?.response) return tStatic('error.network')
   const data = ax.response.data
   if (data?.errors && Object.keys(data.errors).length > 0) {
     return Object.values(data.errors).join('; ')
   }
   if (typeof data === 'string') return data
-  return data?.message || data?.error || `Request failed (${ax.response.status})`
+  return data?.message || data?.error || tStatic('error.requestFailed', { status: ax.response.status })
 }
 
 export function extractFieldErrors(err: unknown): Record<string, string> {
@@ -152,7 +156,9 @@ apiClient.interceptors.response.use(
     } else if (!error.config?._silent && status >= 500) {
       // Only auto-toast server-side failures (5xx). 4xx are business/validation
       // errors that components are expected to render inline next to the form.
-      onApiError?.(extractErrorMessage(error), 'Server Error')
+      // No title: ToastContext then falls back to t('toast.error'), which follows the
+      // language switch. Passing one from here pinned every 5xx toast to English.
+      onApiError?.(extractErrorMessage(error))
     }
     return Promise.reject(error)
   },

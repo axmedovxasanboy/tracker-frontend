@@ -1,13 +1,14 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Calendar, CreditCard, Wallet } from 'lucide-react'
 import { Modal } from '../ui/Modal'
-import { Spinner } from '../ui/Spinner'
+import { Button } from '../ui/Button'
+import { Field } from '../ui/Field'
 import { AmountInput } from '../ui/AmountInput'
 import { useLang } from '../../i18n/LanguageContext'
 import { cardsApi } from '../../api/cards'
 import { financeApi } from '../../api/finance'
 import { extractErrorMessage } from '../../api/client'
-import { formatCurrency, snap } from '../../utils/format'
+import { moneyFull, snap, todayLocal } from '../../utils/format'
 import type {
   CardResponse,
   MonthlyPaymentMode,
@@ -22,6 +23,14 @@ interface Props {
   subscription: MonthlyPaymentResponse | null
 }
 
+const FORM_ID = 'pay-subscription-form'
+/** Matches the 44px control every standalone page uses; the bare padding this replaced came
+ *  out 42px, so the same field differed between a dialog and a page. */
+const CONTROL = 'focus-ring w-full rounded-control border border-slate-200 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-500'
+const INPUT = `${CONTROL} h-11`
+/** `AmountInput` overlays its `suffix` at `right-3`, which `px-3` leaves no room for. */
+const MONEY_INPUT = `${INPUT} pr-14`
+
 export function PaySubscriptionModal({ open, onClose, onSaved, subscription }: Props) {
   const { t } = useLang()
   const defaultAmount = subscription?.amount ?? 0
@@ -31,7 +40,7 @@ export function PaySubscriptionModal({ open, onClose, onSaved, subscription }: P
   const [amount, setAmount] = useState(defaultAmount)
   const [cashInput, setCashInput] = useState(0)
   const [cardInput, setCardInput] = useState(defaultAmount)
-  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0])
+  const [paymentDate, setPaymentDate] = useState(todayLocal())
   const [cardId, setCardId] = useState<number | undefined>()
   const [updateForFuture, setUpdateForFuture] = useState(false)
   const [cards, setCards] = useState<CardResponse[]>([])
@@ -44,7 +53,7 @@ export function PaySubscriptionModal({ open, onClose, onSaved, subscription }: P
       setAmount(subscription.amount)
       setCashInput(0)
       setCardInput(subscription.amount)
-      setPaymentDate(new Date().toISOString().split('T')[0])
+      setPaymentDate(todayLocal())
       setCardId(undefined)
       setUpdateForFuture(false)
       setError(null)
@@ -119,160 +128,144 @@ export function PaySubscriptionModal({ open, onClose, onSaved, subscription }: P
 
   if (!subscription) return null
 
+  const cardOptions = (
+    <>
+      <option value="">{t('cmp.source.chooseCard')}</option>
+      {filteredCards.map(c => (
+        <option key={c.id} value={c.id}>
+          {c.name} •••• {c.lastFourDigits} · {moneyFull(c.currentBalance, c.currency)}
+        </option>
+      ))}
+    </>
+  )
+
   return (
-    <Modal open={open} onClose={onClose} title={t('cmp.paySubscription.title', { name: subscription.name })} maxWidth="max-w-lg">
-      <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Summary header */}
-        <div className="flex items-center gap-3 p-3 rounded-xl bg-violet-50 border border-violet-100">
-          <Calendar className="w-5 h-5 text-violet-500 shrink-0" />
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={t('cmp.paySubscription.title', { name: subscription.name })}
+      maxWidth="max-w-lg"
+      footer={
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Button label={t('action.cancel')} onClick={onClose} className="sm:flex-1" />
+          <Button label={t('cmp.action.alreadyPaid')} onClick={markAlreadyPaid} disabled={saving} className="sm:flex-1" />
+          <Button type="submit" form={FORM_ID} variant="primary" loading={saving} className="sm:flex-1"
+            label={saving ? t('cmp.state.recording') : t('cmp.action.recordPayment')} />
+        </div>
+      }
+    >
+      <form id={FORM_ID} onSubmit={handleSubmit} className="space-y-4">
+        {/* White tile, hue on the icon chip only — violet is retired from the app. */}
+        <div className="flex items-center gap-3 rounded-control border border-hairline px-3 py-2.5">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-chip bg-indigo-100 text-indigo-600">
+            <Calendar className="w-4 h-4" />
+          </span>
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-slate-800 truncate">{subscription.name}</p>
+            <p className="truncate text-sm font-semibold text-slate-900">{subscription.name}</p>
             <p className="text-xs text-slate-500">
-              {t('cmp.paySubscription.default')} <span className="font-semibold">{formatCurrency(subscription.amount, currency)}</span>
-              {subscription.dueDay != null && <> · {t('cmp.paySubscription.dueDay', { day: subscription.dueDay })}</>}
+              {t('cmp.paySubscription.default')}{' '}
+              <span className="font-semibold tabular-nums text-slate-700">{moneyFull(subscription.amount, currency)}</span>
             </p>
           </div>
         </div>
 
-        {/* Payment method tabs */}
+        {/* Payment method */}
         <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1">{t('cmp.field.paymentMethod')}</label>
+          <p className="mb-1 text-xs font-medium text-slate-600">{t('cmp.field.paymentMethod')}</p>
           <div className="grid grid-cols-3 gap-2">
             {([
-              { value: 'CARD', label: t('tx.card'),  Icon: CreditCard },
-              { value: 'CASH', label: t('tx.cash'),  Icon: Wallet },
-              { value: 'BOTH', label: t('tx.both'),  Icon: CreditCard },
+              { value: 'CARD', label: t('tx.card'), Icon: CreditCard },
+              { value: 'CASH', label: t('tx.cash'), Icon: Wallet },
+              { value: 'BOTH', label: t('tx.both'), Icon: CreditCard },
             ] as { value: MonthlyPaymentMode; label: string; Icon: typeof CreditCard }[]).map(opt => (
-              <button key={opt.value} type="button" onClick={() => setMode(opt.value)}
-                className={`px-3 py-2 rounded-xl text-sm font-medium flex items-center justify-center gap-1.5 border transition-colors ${
-                  mode === opt.value
-                    ? 'bg-indigo-600 text-white border-indigo-600'
-                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                }`}>
-                <opt.Icon className="w-4 h-4" />
-                {opt.label}
-              </button>
+              <Button
+                key={opt.value}
+                variant={mode === opt.value ? 'primary' : 'secondary'}
+                icon={<opt.Icon className="w-4 h-4" />}
+                label={opt.label}
+                onClick={() => setMode(opt.value)}
+                aria-pressed={mode === opt.value}
+              />
             ))}
           </div>
         </div>
 
-        {/* Card mode */}
         {mode === 'CARD' && (
           <div className="space-y-3">
-            <div>
-              <label className="block text-xs font-medium text-slate-500 mb-1">{t('cmp.field.card')}</label>
+            <Field id="pay-sub-card" label={t('cmp.field.card')}>
               <select required value={cardId ?? ''} onChange={e => setCardId(e.target.value ? Number(e.target.value) : undefined)}
-                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300">
-                <option value="">{t('cmp.source.chooseCard')}</option>
-                {filteredCards.map(c => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} •••• {c.lastFourDigits} · {formatCurrency(c.currentBalance, c.currency)}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-500 mb-1">{t('cmp.field.amountRequired')}</label>
+                className={INPUT}>{cardOptions}</select>
+            </Field>
+            <Field id="pay-sub-card-amount" label={t('cmp.field.amountRequired')}>
               <AmountInput required value={cardInput || 0} currency={currency}
-                onChange={v => setCardInput(v)}
-                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                suffix={currency} />
-            </div>
+                onChange={v => setCardInput(v)} className={MONEY_INPUT} suffix={currency} />
+            </Field>
           </div>
         )}
 
-        {/* Cash mode */}
         {mode === 'CASH' && (
-          <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">{t('cmp.field.amountRequired')}</label>
+          <Field id="pay-sub-cash-amount" label={t('cmp.field.amountRequired')}>
             <AmountInput required value={cashInput || 0} currency={currency}
-              onChange={v => setCashInput(v)}
-              className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-              suffix={currency} />
-          </div>
+              onChange={v => setCashInput(v)} className={MONEY_INPUT} suffix={currency} />
+          </Field>
         )}
 
-        {/* Both mode */}
         {mode === 'BOTH' && (
           <div className="space-y-3">
-            <div>
-              <label className="block text-xs font-medium text-slate-500 mb-1">{t('cmp.field.card')}</label>
+            <Field id="pay-sub-both-card" label={t('cmp.field.card')}>
               <select required value={cardId ?? ''} onChange={e => setCardId(e.target.value ? Number(e.target.value) : undefined)}
-                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300">
-                <option value="">{t('cmp.source.chooseCard')}</option>
-                {filteredCards.map(c => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} •••• {c.lastFourDigits} · {formatCurrency(c.currentBalance, c.currency)}
-                  </option>
-                ))}
-              </select>
-            </div>
+                className={INPUT}>{cardOptions}</select>
+            </Field>
             <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">{t('cmp.field.cashRequired')}</label>
+              <Field id="pay-sub-both-cash-amount" label={t('cmp.field.cashRequired')}>
                 <AmountInput required value={cashInput || 0} currency={currency}
-                  onChange={v => setCashInput(v)}
-                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                  suffix={currency} />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">{t('cmp.field.card')}</label>
+                  onChange={v => setCashInput(v)} className={MONEY_INPUT} suffix={currency} />
+              </Field>
+              <Field id="pay-sub-both-card-amount" label={t('cmp.field.card')}>
                 <AmountInput required value={cardInput || 0} currency={currency}
-                  onChange={v => setCardInput(v)}
-                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                  suffix={currency} />
-              </div>
+                  onChange={v => setCardInput(v)} className={MONEY_INPUT} suffix={currency} />
+              </Field>
             </div>
             <p className="text-xs text-slate-500">
-              {t('cmp.paySubscription.total')} <span className="font-semibold text-slate-700">{formatCurrency(amount, currency)}</span>
+              {t('cmp.paySubscription.total')}{' '}
+              <span className="font-semibold tabular-nums text-slate-900">{moneyFull(amount, currency)}</span>
             </p>
           </div>
         )}
 
-        {/* Payment date */}
-        <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1">{t('cmp.field.paymentDateRequired')}</label>
+        <Field id="pay-sub-date" label={t('cmp.field.paymentDateRequired')}>
           <input required type="date" value={paymentDate}
-            onChange={e => setPaymentDate(e.target.value)}
-            className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300" />
-        </div>
+            onChange={e => setPaymentDate(e.target.value)} className={INPUT} />
+        </Field>
 
-        {/* "Use this amount for future payments?" — only when changed */}
+        {/* The one tinted panel in this dialog: it is a genuine "are you sure?" moment, because
+            ticking it changes the bill's saved amount for every future month. */}
         {amountDiffersFromDefault && (
-          <label className="flex items-start gap-2 cursor-pointer p-3 rounded-xl bg-amber-50 border border-amber-100">
+          <label className="flex min-h-[44px] cursor-pointer items-start gap-2 rounded-control border border-amber-200 bg-amber-50 p-3">
+            {/* focus-ring and a real accent-color: the native outline is removed app-wide, and
+                ticking this rewrites the bill's saved amount for every future month, so a keyboard
+                user must be able to see they are standing on it. ring-offset matches the amber panel. */}
             <input type="checkbox" checked={updateForFuture}
               onChange={e => setUpdateForFuture(e.target.checked)}
-              className="w-4 h-4 mt-0.5 rounded text-indigo-600" />
-            <span className="text-xs text-amber-900 leading-relaxed">
+              className="focus-ring mt-0.5 h-4 w-4 rounded border-amber-300 accent-indigo-600 focus-visible:ring-offset-amber-50" />
+            <span className="text-xs leading-relaxed text-amber-900">
               {t('cmp.paySubscription.amountDiffers', {
-                saved: formatCurrency(subscription.amount, currency),
-                entered: formatCurrency(amount, currency),
+                saved: moneyFull(subscription.amount, currency),
+                entered: moneyFull(amount, currency),
               })}{' '}
-              {t('cmp.paySubscription.useAsDefaultPrefix')} <span className="font-semibold">{formatCurrency(amount, currency)}</span> {t('cmp.paySubscription.useAsDefaultSuffix')}
+              {t('cmp.paySubscription.useAsDefaultPrefix')}{' '}
+              <span className="font-semibold tabular-nums">{moneyFull(amount, currency)}</span>{' '}
+              {t('cmp.paySubscription.useAsDefaultSuffix')}
             </span>
           </label>
         )}
 
         {error && (
-          <p className="text-rose-500 text-sm bg-rose-50 border border-rose-200 px-3 py-2 rounded-lg">{error}</p>
+          <p role="alert" className="rounded-control border border-rose-200 px-3 py-2 text-sm text-expense">{error}</p>
         )}
 
-        <div className="flex gap-3 pt-1">
-          <button type="button" onClick={onClose}
-            className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50">
-            {t('action.cancel')}
-          </button>
-          <button type="button" onClick={markAlreadyPaid} disabled={saving}
-            title={t('cmp.hint.markCoveredNoTx')}
-            className="flex-1 py-2.5 rounded-xl border border-emerald-200 text-emerald-700 text-sm font-semibold hover:bg-emerald-50 disabled:opacity-60">
-            {t('cmp.action.alreadyPaid')}
-          </button>
-          <button type="submit" disabled={saving}
-            className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-60 flex items-center justify-center gap-2">
-            {saving && <Spinner className="w-4 h-4" />}
-            {saving ? t('cmp.state.recording') : t('cmp.action.recordPayment')}
-          </button>
-        </div>
+        {/* Says what the second footer button does; a `title` never reaches a touch user. */}
+        <p className="text-xs text-slate-500">{t('cmp.hint.markCoveredNoTx')}</p>
       </form>
     </Modal>
   )

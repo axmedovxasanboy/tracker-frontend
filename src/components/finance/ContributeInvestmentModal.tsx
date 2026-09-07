@@ -1,19 +1,24 @@
 import { useEffect, useState } from 'react'
 import { Modal } from '../ui/Modal'
-import { Spinner } from '../ui/Spinner'
+import { Button } from '../ui/Button'
+import { Field } from '../ui/Field'
 import { AmountInput } from '../ui/AmountInput'
 import { useLang } from '../../i18n/LanguageContext'
 import { cardsApi } from '../../api/cards'
 import { financeApi } from '../../api/finance'
 import { extractErrorMessage } from '../../api/client'
-import { formatCurrency } from '../../utils/format'
+import { moneyFull, todayLocal } from '../../utils/format'
 import type { CardResponse, InvestmentResponse } from '../../types'
 
-const INPUT = 'w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300'
-
-function today() {
-  return new Date().toISOString().split('T')[0]
-}
+const FORM_ID = 'contribute-investment-form'
+/** Matches the 44px control every standalone page uses; the bare padding this replaced came
+ *  out 42px, so the same field differed between a dialog and a page. */
+const CONTROL = 'focus-ring w-full rounded-control border border-slate-200 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-500'
+const INPUT = `${CONTROL} h-11`
+/** `AmountInput` overlays its `suffix` at `right-3`, which `px-3` leaves no room for. */
+const MONEY_INPUT = `${INPUT} pr-14`
+/** A textarea sizes from `rows`, so it takes padding where an input takes a height. */
+const TEXTAREA = `${CONTROL} py-2.5`
 
 interface Props {
   open: boolean
@@ -26,7 +31,7 @@ interface Props {
 export function ContributeInvestmentModal({ open, onClose, onSaved, investment }: Props) {
   const { t } = useLang()
   const [amount, setAmount] = useState(0)
-  const [date, setDate] = useState(today())
+  const [date, setDate] = useState(todayLocal())
   const [description, setDescription] = useState('')
   // Source: 'cash' | 'none' (record only, no wallet) | a card id as a string.
   const [source, setSource] = useState<string>('cash')
@@ -36,7 +41,7 @@ export function ContributeInvestmentModal({ open, onClose, onSaved, investment }
 
   useEffect(() => {
     if (!open) return
-    setAmount(0); setDate(today()); setDescription(''); setSource('cash'); setError(null)
+    setAmount(0); setDate(todayLocal()); setDescription(''); setSource('cash'); setError(null)
     cardsApi.getAll().then(r => setCards(r.data)).catch(() => {})
   }, [open])
 
@@ -55,6 +60,8 @@ export function ContributeInvestmentModal({ open, onClose, onSaved, investment }
         noWallet: source === 'none',
         description: description.trim() || undefined,
       })
+      // No toast here: InvestmentsPage's `onGoalSaved` already confirms the write, and two
+      // banners for one action is worse than a generic one.
       onSaved(); onClose()
     } catch (err) {
       setError(extractErrorMessage(err))
@@ -62,67 +69,55 @@ export function ContributeInvestmentModal({ open, onClose, onSaved, investment }
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={t('cmp.contributeInvestment.title', { name: investment.name })} maxWidth="max-w-lg">
-      <form onSubmit={handleSubmit} className="space-y-3">
-        <Field label={t('cmp.field.amountWithCurrency', { currency })}>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={t('cmp.contributeInvestment.title', { name: investment.name })}
+      maxWidth="max-w-lg"
+      footer={
+        <div className="flex gap-3">
+          <Button label={t('action.cancel')} onClick={onClose} className="flex-1" />
+          <Button type="submit" form={FORM_ID} variant="primary" loading={saving} className="flex-1"
+            label={saving ? t('action.saving') : t('cmp.contributeInvestment.submit')} />
+        </div>
+      }
+    >
+      <form id={FORM_ID} onSubmit={handleSubmit} className="space-y-3">
+        <Field id="contrib-amount" label={t('cmp.field.amountWithCurrency', { currency })}>
           <AmountInput required value={amount} currency={currency}
-            onChange={v => setAmount(v)} className={INPUT} suffix={currency} />
+            onChange={v => setAmount(v)} className={MONEY_INPUT} suffix={currency} />
         </Field>
 
-        <Field label={t('cmp.field.dateRequired')}>
+        <Field id="contrib-date" label={t('cmp.field.dateRequired')}>
           <input required type="date" value={date} onChange={e => setDate(e.target.value)} className={INPUT} />
         </Field>
 
-        <Field label={t('cmp.field.source')}>
-          <select value={source}
-            onChange={e => setSource(e.target.value)}
-            className={`${INPUT} bg-white`}>
+        <Field
+          id="contrib-source"
+          label={t('cmp.field.source')}
+          help={source === 'none' ? t('cmp.contributeInvestment.noWalletHint') : undefined}
+        >
+          <select value={source} onChange={e => setSource(e.target.value)} className={INPUT}>
             <option value="none">{t('cmp.source.noneOption')}</option>
             <option value="cash">{t('tx.cash')}</option>
             {matchingCards.map(c => (
               <option key={c.id} value={String(c.id)}>
-                {c.name} •••• {c.lastFourDigits} · {formatCurrency(c.currentBalance, c.currency)}
+                {c.name} •••• {c.lastFourDigits} · {moneyFull(c.currentBalance, c.currency)}
               </option>
             ))}
           </select>
-          {source === 'none' && (
-            <p className="text-[11px] text-slate-400 mt-1">
-              {t('cmp.contributeInvestment.noWalletHint')}
-            </p>
-          )}
         </Field>
 
-        <Field label={t('tx.description')}>
+        <Field id="contrib-desc" label={t('tx.description')}>
           <textarea rows={2} value={description}
             onChange={e => setDescription(e.target.value)}
-            className={`${INPUT} resize-none`} />
+            className={`${TEXTAREA} resize-none`} />
         </Field>
 
         {error && (
-          <p className="text-rose-500 text-sm bg-rose-50 border border-rose-200 px-3 py-2 rounded-lg">{error}</p>
+          <p role="alert" className="rounded-control border border-rose-200 px-3 py-2 text-sm text-expense">{error}</p>
         )}
-
-        <div className="flex gap-3 pt-1">
-          <button type="button" onClick={onClose}
-            className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50">
-            {t('action.cancel')}
-          </button>
-          <button type="submit" disabled={saving}
-            className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-60 flex items-center justify-center gap-2">
-            {saving && <Spinner className="w-4 h-4" />}
-            {saving ? t('action.saving') : t('cmp.contributeInvestment.submit')}
-          </button>
-        </div>
       </form>
     </Modal>
-  )
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <label className="block text-xs font-medium text-slate-500 mb-1">{label}</label>
-      {children}
-    </div>
   )
 }

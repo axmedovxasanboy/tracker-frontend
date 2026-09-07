@@ -32,6 +32,9 @@ export const financeApi = {
   getLoansTaken: () => apiClient.get<LoanTakenResponse[]>(`${base}/loans-taken`),
   createLoanTaken: (d: LoanTakenRequest) => apiClient.post<LoanTakenResponse>(`${base}/loans-taken`, d),
   updateLoanTaken: (id: number, d: LoanTakenRequest) => apiClient.put<LoanTakenResponse>(`${base}/loans-taken/${id}`, d),
+  /** Change only the monthly repayment plan; null clears it back to the default rule. */
+  setLoanTakenPlan: (id: number, plannedMonthlyPayment: number | null) =>
+    apiClient.put<LoanTakenResponse>(`${base}/loans-taken/${id}/plan`, { plannedMonthlyPayment }),
   deleteLoanTaken: (id: number) => apiClient.delete(`${base}/loans-taken/${id}`),
 
   // Bank Loans
@@ -80,8 +83,17 @@ export const financeApi = {
     apiClient.post<LoanGivenResponse>(`${base}/loans-given/${id}/mark-returned`, d),
 
   // "Already paid" — mark satisfied for the month with no transaction / money movement.
+  //
+  // A mark is the only "paid" figure with no transaction behind it, so it is also the only one
+  // the user cannot find in any history list. That is how a mistyped amount silently inflates
+  // Paid on Home and Plan for good, which is why the list and the undo belong here beside it.
   markPaid: (d: MarkPaidRequest) =>
     apiClient.post<MarkPaidResponse>(`${base}/mark-paid`, d),
+  /** @param month YYYY-MM; omit for the current month. */
+  listMarks: (month?: string) =>
+    apiClient.get<MarkPaidResponse[]>(`${base}/mark-paid`, { params: { month: month ?? '' } }),
+  /** Undo a mark. Reverses the paidAmount bump for PERSONAL_LOAN / DEBT; refused once the month is closed. */
+  deleteMark: (id: number) => apiClient.delete(`${base}/mark-paid/${id}`),
 
   // Payment history per loan/debt — newest first by transactionDate.
   getLoanTakenRepayments: (id: number) =>
