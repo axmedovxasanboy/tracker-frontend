@@ -22,7 +22,6 @@ import { Tile, TileGrid } from '../components/ui/Tile'
 import { useApi } from '../hooks/useApi'
 import { useSettings } from '../context/SettingsContext'
 import { useToast } from '../context/ToastContext'
-import { parseTransportDescription } from '../utils/transactionDescription'
 import { useConfirm } from '../context/ConfirmContext'
 import { transactionsApi } from '../api/transactions'
 import { categoriesApi } from '../api/categories'
@@ -455,17 +454,11 @@ function Row({ tx, deleting, categoryName, t, onOpen, onEdit, onDelete }: {
   onEdit: () => void
   onDelete: () => void
 }) {
-  const isTransport = tx.category?.kind === 'TRANSPORT'
-  const parsed = parseTransportDescription(tx.description, isTransport)
-  const routeFrom = parsed.from ?? tx.fromLocation ?? undefined
-  const routeTo = parsed.to ?? tx.toLocation ?? undefined
-  const route = routeFrom || routeTo ? `${routeFrom || '—'} → ${routeTo || '—'}` : ''
-  const title = isTransport
-    ? (parsed.note.trim() || route || tx.description)
-    : tx.description
-  const detail = isTransport && route && parsed.note.trim()
-    ? route
-    : (tx.note || tx.place || '')
+  // The description is the title, whatever the category: the backend names a row after its
+  // counterparty (the borrower of a loan given, a donation's recipient) when nothing was typed,
+  // and the category is already on the row as its badge.
+  const title = tx.description
+  const detail = tx.note || ''
   // Split: a single transaction that paid partly in cash and partly via a card.
   const isSplit = (tx.cashAmount ?? 0) > 0 && (tx.cardAmount ?? 0) > 0 && !!tx.card
   const income = tx.type === 'INCOME'

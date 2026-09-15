@@ -8,7 +8,6 @@ export type TransactionSubType =
 // USD/EUR exist only as standalone cash pots — nothing converts them to UZS.
 export type Currency = 'UZS' | 'USD' | 'EUR'
 export type CategoryType = 'INCOME' | 'EXPENSE' | 'BOTH'
-export type CategoryKind = 'GENERIC' | 'FOOD' | 'TRANSPORT'
 export type CardType = 'UZCARD' | 'HUMO' | 'VISA' | 'CASH'
 export type RecordStatus = 'PENDING' | 'PARTIALLY_PAID' | 'PAID' | 'OVERDUE'
 export type BankLoanStatus = 'ACTIVE' | 'PAID_OFF' | 'DEFAULTED'
@@ -23,7 +22,6 @@ export interface Category {
   color: string
   icon: string
   applicableSubType: TransactionSubType | null
-  kind: CategoryKind
   descriptionLabel: string | null
   descriptionRequired: boolean
   anonymizes: boolean
@@ -85,9 +83,6 @@ export interface Transaction {
   note: string | null
   subType: TransactionSubType | null
   investmentId: number | null
-  place: string | null
-  fromLocation: string | null
-  toLocation: string | null
   transferPairId: number | null
   repaidLoanTakenId: number | null
   repaidLoanGivenId: number | null
@@ -166,9 +161,6 @@ export interface TransactionRequest {
   /** LOAN_RECEIVED only: month (YYYY-MM-01) repayments start counting toward the tier. */
   paymentStartDate?: string
   cashAmount?: number
-  place?: string
-  fromLocation?: string
-  toLocation?: string
 }
 
 export interface CategoryRequest {
@@ -179,7 +171,6 @@ export interface CategoryRequest {
   icon?: string
   applicableSubType?: TransactionSubType
   parentId?: number
-  kind?: CategoryKind
   descriptionLabel?: string | null
   descriptionRequired?: boolean
   anonymizes?: boolean
@@ -726,6 +717,11 @@ export interface MonthSummaryResponse {
   markedNotMoved: number
   /** null until the month is closed. */
   everydaySpend: number | null
+  /**
+   * Open months only (null once closed): net everyday spending the wallet check-ins have booked
+   * so far. Optional so an older backend that does not report it simply shows nothing.
+   */
+  everydaySoFar?: number | null
   totalSpent: number | null
   leftover: number | null
 }
@@ -755,6 +751,47 @@ export interface MonthClosePreviewResponse {
   savings: number
   taggedTotal: number
   spendableNow: number
+}
+
+/**
+ * Whether a wallet check-in can be recorded today and what to tell the owner either way. The
+ * rules are the server's (WalletCheckInService), so the web app and the bot cannot disagree.
+ */
+export interface WalletCheckInStatus {
+  date: string
+  month: string
+  allowed: boolean
+  /** MONTH_ENDING — the next one would fall in next month, so the close takes over.
+   *  MONTH_CLOSED — the month is locked. */
+  blockedCode: 'MONTH_ENDING' | 'MONTH_CLOSED' | null
+  blockedReason: string | null
+  daysUntilMonthEnd: number
+  nextMonthStart: string
+  lastReconciledOn: string | null
+  daysSinceLastReconciled: number | null
+  intervalDays: number
+  due: boolean
+  /** When the next one is suggested; null when the month close will come first. */
+  nextDueOn: string | null
+  everydaySoFar: number
+  checkInsThisMonth: number
+  /** Every wallet with the balance the app computes for it as of `date`. */
+  wallets: MonthPreviewWallet[]
+}
+
+export interface WalletCheckInRequest {
+  /** The owner's local day — the server's clock is UTC. */
+  date: string
+  wallets: MonthCloseWalletEntry[]
+}
+
+export interface WalletCheckInResult {
+  id: number
+  date: string
+  /** Net everyday spending this check-in booked: untracked spending minus any surplus found. */
+  everydayRecorded: number
+  everydaySoFar: number
+  nextDueOn: string | null
 }
 
 export interface MonthCloseWalletEntry {

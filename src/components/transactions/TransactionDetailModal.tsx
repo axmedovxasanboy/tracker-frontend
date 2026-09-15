@@ -1,10 +1,9 @@
 import type { ReactNode } from 'react'
-import { ArrowUpRight, ArrowDownRight, Pencil, Trash2, CreditCard, MapPin, Route, Wallet } from 'lucide-react'
+import { ArrowUpRight, ArrowDownRight, Pencil, Trash2, CreditCard, Wallet } from 'lucide-react'
 import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
 import { useLang } from '../../i18n/LanguageContext'
 import { formatDate, moneyFull } from '../../utils/format'
-import { parseTransportDescription } from '../../utils/transactionDescription'
 import type { Transaction } from '../../types'
 
 interface Props {
@@ -27,16 +26,6 @@ export function TransactionDetailModal({ transaction: tx, open, onClose, onEdit,
   if (!tx) return null
 
   const income = tx.type === 'INCOME'
-  const isTransport = tx.category?.kind === 'TRANSPORT'
-  const parsed = parseTransportDescription(tx.description, isTransport)
-  // Fall back to legacy columns when modern description-encoded route is absent.
-  const routeFrom = parsed.from ?? tx.fromLocation ?? undefined
-  const routeTo = parsed.to ?? tx.toLocation ?? undefined
-  const heroDescription = isTransport && (routeFrom || routeTo)
-    ? (parsed.note.trim() || `${routeFrom ?? '—'} → ${routeTo ?? '—'}`)
-    : tx.description
-  // For non-TRANSPORT we just show the raw description in its row.
-  const detailNote = isTransport ? parsed.note.trim() : ''
 
   const categoryLabel = tx.category ? categoryName(tx.category) : ''
   const subTypeLabel = tx.subType ? (SUB_TYPE_LABELS[tx.subType] ?? tx.subType) : ''
@@ -91,7 +80,7 @@ export function TransactionDetailModal({ transaction: tx, open, onClose, onEdit,
             <p className={`text-stat tabular-nums ${income ? 'text-income' : 'text-expense'}`}>
               {income ? '+' : '-'}{moneyFull(tx.amount, tx.currency)}
             </p>
-            <p className="mt-0.5 text-sm text-slate-600 break-words">{heroDescription || '—'}</p>
+            <p className="mt-0.5 text-sm text-slate-600 break-words">{tx.description || '—'}</p>
           </div>
         </div>
 
@@ -148,29 +137,7 @@ export function TransactionDetailModal({ transaction: tx, open, onClose, onEdit,
             </Row>
           )}
 
-          {(routeFrom || routeTo) && (
-            <Row label={t('cmp.txDetail.route')}>
-              <span className="flex items-center justify-end gap-1.5">
-                <Route className="h-4 w-4 text-slate-400" aria-hidden="true" />
-                <span>{routeFrom || '—'}</span>
-                <span className="text-slate-400">→</span>
-                <span>{routeTo || '—'}</span>
-              </span>
-            </Row>
-          )}
-
-          {/* Legacy place column — kept visible if older rows still have it. */}
-          {!isTransport && tx.place && (
-            <Row label={t('cmp.txDetail.place')}>
-              <span className="flex items-center justify-end gap-2">
-                <MapPin className="h-4 w-4 text-slate-400" aria-hidden="true" />
-                {tx.place}
-              </span>
-            </Row>
-          )}
-
-          {isTransport && detailNote && <Row label={t('tx.note')}>{detailNote}</Row>}
-          {!isTransport && tx.note && <Row label={t('tx.note')}>{tx.note}</Row>}
+          {tx.note && <Row label={t('tx.note')}>{tx.note}</Row>}
 
           <Row label={t('cmp.txDetail.created')}>{formatDate(tx.createdAt, lang, 'time')}</Row>
         </div>

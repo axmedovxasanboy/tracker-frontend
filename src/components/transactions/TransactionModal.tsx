@@ -17,10 +17,6 @@ import { cashBalancesApi } from '../../api/cashBalances'
 import { extractErrorMessage } from '../../api/client'
 import { moneyFull, todayLocal } from '../../utils/format'
 import { AmountInput } from '../ui/AmountInput'
-import {
-  parseTransportDescription as parseRoute,
-  composeTransportDescription as composeRoute,
-} from '../../utils/transactionDescription'
 import type {
   CardResponse, Category, CategoryRequest, CategoryType,
   Currency, InvestmentType, LoanTakenResponse, Transaction, TransactionRequest,
@@ -340,24 +336,16 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
       .catch(() => {})
     setSelectedLoanGivenId(undefined)
     if (transaction) {
-      // Parse description back into route + user note when the picked category
-      // is TRANSPORT-kind. Format: "From >>> To\n<user note>"
-      const parsed = parseRoute(
-        transaction.description,
-        transaction.category?.kind === 'TRANSPORT',
-      )
       const f: TransactionRequest = {
         type: transaction.type, amount: transaction.amount,
         // Currency follows the global selector — no per-tx override anymore.
         currency: defaultCurrency,
         categoryId: transaction.category?.id, cardId: transaction.card?.id,
-        description: parsed.note,
+        description: transaction.description ?? '',
         transactionDate: transaction.transactionDate,
         note: transaction.note ?? '',
         subType: transaction.subType ?? (transaction.type === 'INCOME' ? 'REGULAR_INCOME' : 'REGULAR_EXPENSE'),
         cashAmount: transaction.cashAmount ?? 0,
-        fromLocation: parsed.from ?? transaction.fromLocation ?? undefined,
-        toLocation: parsed.to ?? transaction.toLocation ?? undefined,
         // A top-up is only a top-up while it still names the record it topped up. Posting these
         // back as undefined makes the backend read the edit as "moved to a different fund /
         // borrower": it reverses the contribution out of the original and opens a duplicate.
@@ -476,7 +464,15 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
         : undefined
     if (!name) return
     counterpartySeeded.current = true
-    setForm(prev => (prev.counterpartyName ? prev : { ...prev, counterpartyName: name }))
+    setForm(prev => ({
+      ...prev,
+      counterpartyName: prev.counterpartyName || name,
+      // A description that is nothing but this name was written by the server — a row saved with
+      // Description blank is named after its counterparty. Left in the field it would stop
+      // following the name, so moving the loan to another borrower would keep the old one's name
+      // as its title. Cleared, it previews as "will be saved as …" and tracks the field above.
+      description: (prev.description ?? '').trim() === name.trim() ? '' : prev.description,
+    }))
   }, [open, transaction, allLoansGiven, existingInvestments])
 
   /**
@@ -512,8 +508,7 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
     const st: TransactionSubType = t === 'INCOME' ? 'REGULAR_INCOME' : 'REGULAR_EXPENSE'
     setTouched(true)
     setForm(prev => ({ ...prev, type: t, subType: st, categoryId: undefined, investmentId: undefined, loanGivenId: undefined,
-      // Reset kind-specific extras on type switch so stale FOOD/TRANSPORT data doesn't leak.
-      fromLocation: undefined, toLocation: undefined, currency: defaultCurrency,
+      currency: defaultCurrency,
       // The amount itself survives the switch, so the cash half of it has to survive too:
       // zeroing it here left a cash transaction posting cashAmount 0 with no card attached,
       // and the effect that owns this field only re-runs when the payment method changes.
@@ -645,7 +640,6 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
     }
 
     // Description requirement honours the selected category's flag.
-    // (FOOD's "place" semantics now flow through the description label mechanism.)
     if (descriptionRequired && !(form.description && form.description.trim())) {
       fail('description', translate('cmp.txModal.err.fillInField', { field: descriptionLabel.toLowerCase() })); return
     }
@@ -684,19 +678,19 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
           cardId: form.cardId, categoryId: form.categoryId,
         })
       } else {
-        // For TRANSPORT-kind categories, compose from/to into the description field.
-        // No more separate from_location/to_location columns from the UI's POV.
-        const composedDescription = showRouteFields
-          ? composeRoute(form.fromLocation, form.toLocation, form.description)
-          : (form.description ?? '')
         // Effective payload — auto-fill anonymous donor name so backend never sees blank.
         // For BOTH mode the useEffect already populated form.amount = cash+card and
         // form.cashAmount = cashInput, so we save a single row.
         const payload: TransactionRequest = {
           ...form,
           currency: defaultCurrency,
-          description: composedDescription,
-          counterpartyName: isAnonymousDonation ? 'Anonymous' : form.counterpartyName,
+          description: form.description ?? '',
+          // Only for a sub-type that has a counterparty. Neither the direction nor the sub-type
+          // switch clears this field, and the backend now names a row left without a description
+          // after its counterparty — so a borrower typed for a Lent entry and then abandoned
+          // would otherwise become the title of the regular expense it turned into.
+          counterpartyName: !hasCounterparty ? undefined
+            : isAnonymousDonation ? 'Anonymous' : form.counterpartyName,
           // Payment-start only applies to a NEW Loan Received (drives when the borrowed
           // money starts counting toward the tier). On edit we leave it untouched so the
           // backend keeps the stored month; edit it from Finance → Loan Borrowed.
@@ -704,10 +698,6 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
             ? (form.paymentStartDate || `${nextMonthStr()}-01`)
             : undefined,
           loanGivenId: form.subType === 'LOAN_GIVEN' ? form.loanGivenId : undefined,
-          // Legacy structured columns no longer populated from the modal.
-          place: undefined,
-          fromLocation: undefined,
-          toLocation: undefined,
         }
         if (transaction) {
           await transactionsApi.update(transaction.id, payload)
@@ -784,11 +774,7 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
   // selected sub-category value for the select
   const subCatValue = (form.categoryId && form.categoryId !== selectedRootId) ? form.categoryId : ''
 
-  // Derive the selected root category's kind so kind-specific fields appear/disappear.
-  // FOOD no longer needs a special field — it relies on a category's descriptionLabel.
   const selectedRoot = rootCategories.find(c => c.id === selectedRootId)
-  const selectedRootKind = selectedRoot?.kind ?? 'GENERIC'
-  const showRouteFields = selectedRootKind === 'TRANSPORT'
 
   // The most-specific selected category — sub-category if picked, else root.
   const activeCategory: Category | undefined =
@@ -804,19 +790,28 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
   const descriptionLabel = activeCategory?.descriptionLabel || translate('tx.description')
   const descriptionRequired = activeCategory?.descriptionRequired ?? false
 
-  // What the server will write when Description is left blank — shown so the default is a
-  // choice rather than a surprise. TRANSPORT composes its own line from From/To instead.
-  const derivedDescription = !activeCategory || showRouteFields
-    ? ''
-    : selectedRoot && activeCategory.id !== selectedRoot.id
-      ? `${categoryName(selectedRoot)} — ${categoryName(activeCategory)}`
-      : categoryName(activeCategory)
-
   // Donation anonymity — the selected sub-category (or its parent) declares it.
   const isAnonymousDonation =
     form.subType === 'DONATION' &&
     (Boolean(activeCategory?.anonymizes) ||
       (activeCategory?.parentId != null && Boolean(selectedRoot?.anonymizes)))
+
+  const hasCounterparty = !!form.subType && NEEDS_COUNTERPARTY.has(form.subType)
+
+  // What the server will write when Description is left blank — shown so the default is a
+  // choice rather than a surprise. It mirrors TransactionService.resolveDescription: the
+  // counterparty first (the borrower, the lender, the recipient), then the category. An anonymous
+  // donation keeps the category, because "Anonymous" as a title says less than the category does.
+  const counterpartyTitle = hasCounterparty && !isAnonymousDonation
+    ? (form.counterpartyName ?? '').trim()
+    : ''
+  const derivedDescription = counterpartyTitle && counterpartyTitle.toLowerCase() !== 'anonymous'
+    ? counterpartyTitle
+    : !activeCategory
+      ? ''
+      : selectedRoot && activeCategory.id !== selectedRoot.id
+        ? `${categoryName(selectedRoot)} — ${categoryName(activeCategory)}`
+        : categoryName(activeCategory)
 
   // Total when the user types separate cash + card amounts under "Both".
   const splitTotal = (cashInput || 0) + (cardInput || 0)
@@ -1325,20 +1320,6 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
                 ))}
               </div>
             </div>
-
-            {/* (b) Kind-specific extras — TRANSPORT shows from/to (FOOD uses descriptionLabel). */}
-            {selectedRootId && showRouteFields && (
-              <div className="grid grid-cols-2 gap-3">
-                <Field id="tx-from" label={translate('cmp.txModal.from')} help={translate('common.optional')}>
-                  <input value={form.fromLocation ?? ''} onChange={e => set('fromLocation', e.target.value)}
-                    placeholder={translate('cmp.txModal.fromPlaceholder')} className={CONTROL} />
-                </Field>
-                <Field id="tx-to" label={translate('cmp.txModal.to')} help={translate('common.optional')}>
-                  <input value={form.toLocation ?? ''} onChange={e => set('toLocation', e.target.value)}
-                    placeholder={translate('cmp.txModal.toPlaceholder')} className={CONTROL} />
-                </Field>
-              </div>
-            )}
 
             {/* Counterparty / Loan selector */}
             {form.subType === 'LOAN_REPAYMENT' && !transaction ? (

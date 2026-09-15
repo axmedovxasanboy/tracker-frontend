@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
 import {
-  CalendarCheck, CalendarClock, ChevronDown, ChevronRight, Coins, Lock, PiggyBank,
+  CalendarCheck, CalendarClock, ChevronDown, ChevronRight, Coins, Lock, PiggyBank, Scale,
   TrendingUp, Wallet,
 } from 'lucide-react'
 import { useApi } from '../hooks/useApi'
 import { monthsApi } from '../api/months'
-import { formatMonth, money, moneyExact, moneyFull, monthLocal } from '../utils/format'
+import { formatDate, formatMonth, money, moneyExact, moneyFull, monthLocal, todayLocal } from '../utils/format'
 import { PageHeader } from '../components/ui/PageHeader'
 import { Tile, TileGrid } from '../components/ui/Tile'
 import { StatTile } from '../components/ui/StatTile'
@@ -19,9 +19,10 @@ import { InfoDot } from '../components/ui/InfoDot'
 import { ExplainModal } from '../components/ui/ExplainModal'
 import type { ExplainRow } from '../components/ui/ExplainModal'
 import { CloseMonthModal } from '../components/months/CloseMonthModal'
+import { CheckInModal } from '../components/months/CheckInModal'
 import { useLang } from '../i18n/LanguageContext'
 import type { TKey } from '../i18n/LanguageContext'
-import type { Currency, MonthCloseResponse, MonthSummaryResponse } from '../types'
+import type { Currency, MonthCloseResponse, MonthSummaryResponse, WalletCheckInStatus } from '../types'
 
 interface Props { currency: Currency }
 
@@ -62,6 +63,7 @@ export function Months({ currency }: Props) {
   const { t, lang } = useLang()
   const [month, setMonth] = useState(monthLocal())
   const [closeOpen, setCloseOpen] = useState(false)
+  const [checkInOpen, setCheckInOpen] = useState(false)
   const [showHistory, setShowHistory] = useState(true)
   const [info, setInfo] = useState<InfoKey | null>(null)
 
@@ -73,6 +75,11 @@ export function Months({ currency }: Props) {
    */
   const preview = useApi(() => monthsApi.getPreview(month, currency), [month, currency])
   const history = useApi(() => monthsApi.getClosed(), [])
+  /**
+   * Always today's status, whichever month is on screen: a check-in is only ever about today's
+   * wallets. The tile renders only while the current month is the one being viewed.
+   */
+  const checkIn = useApi(() => monthsApi.getCheckIn(todayLocal()), [])
 
   const s = summary.data as MonthSummaryResponse | null
   const now = monthLocal()
@@ -120,8 +127,12 @@ export function Months({ currency }: Props) {
   const exact = (v: number | null) =>
     v != null ? t('ui.exactValue', { value: moneyExact(v, currency) }) : t('page.months.knownOnceClosed')
 
+  // A check-in moves the computed wallet balances, and so the open month's Left and Spent.
+  const onCheckedIn = () => { checkIn.refetch(); summary.refetch(); preview.refetch() }
+
   const onSaved = () => {
     history.refetch()
+    checkIn.refetch()
     // Landing on the next month is the payoff of closing: its "Started with" is the figure that
     // was just frozen. Staying put would show the user the month they can no longer change.
     const next = shiftMonth(month, 1)
@@ -254,6 +265,17 @@ export function Months({ currency }: Props) {
                 onGoToMonth={setMonth}
               />
 
+              {month === now && !s.closed && (
+                <CheckInTile
+                  status={checkIn.data}
+                  loading={checkIn.loading}
+                  error={checkIn.error}
+                  onRetry={checkIn.refetch}
+                  onOpen={() => setCheckInOpen(true)}
+                  currency={currency}
+                />
+              )}
+
               <WhereItWent
                 summary={s}
                 currency={currency}
@@ -291,6 +313,8 @@ export function Months({ currency }: Props) {
 
       <CloseMonthModal open={closeOpen} onClose={() => setCloseOpen(false)}
         onSaved={onSaved} month={month} currency={currency} />
+      <CheckInModal open={checkInOpen} onClose={() => setCheckInOpen(false)}
+        onSaved={onCheckedIn} currency={currency} />
     </div>
   )
 }
@@ -418,6 +442,103 @@ function StatusShell({ icon, iconClass, pill, line, caption, action }: {
       <p className="mt-2 text-sm font-medium text-slate-900">{line}</p>
       <p className="mt-1 text-sm text-slate-500">{caption}</p>
       {action && <div className="mt-3">{action}</div>}
+    </Tile>
+  )
+}
+
+// ── Wallet check-in ──────────────────────────────────────────────────────────
+
+/**
+ * The every-few-days reconciliation. A slim full-width row rather than a figure: it is something
+ * the owner does, not something they read, and it only exists on the month that is still running.
+ *
+ * Its button is deliberately not the filled kind — the page's one primary action is the header's.
+ * "Due" is carried by the pill instead.
+ */
+function CheckInTile({ status, loading, error, onRetry, onOpen, currency }: {
+  status: WalletCheckInStatus | null
+  loading: boolean
+  error: string | null
+  onRetry: () => void
+  onOpen: () => void
+  currency: Currency
+}) {
+  const { t, lang } = useLang()
+
+  if (!status) {
+    if (error) {
+      return <ErrorTile compact className="md:col-span-6 xl:col-span-12" message={error} onRetry={onRetry} />
+    }
+    return loading ? <Skeleton variant="row" count={1} className="md:col-span-6 xl:col-span-12" /> : null
+  }
+
+  const monthName = formatMonth(status.month, lang)
+  const reopens = formatDate(status.nextMonthStart, lang)
+  const d = status.daysSinceLastReconciled
+
+  let line: string
+  if (!status.allowed) {
+    line = status.blockedCode !== 'MONTH_ENDING'
+      ? status.blockedReason ?? ''
+      : status.daysUntilMonthEnd <= 0
+        ? t('page.months.checkIn.endsToday', { month: monthName, date: reopens })
+        : status.daysUntilMonthEnd === 1
+          ? t('page.months.checkIn.endsInDay', { month: monthName, date: reopens })
+          : t('page.months.checkIn.endsInDays', { month: monthName, days: status.daysUntilMonthEnd, date: reopens })
+  } else if (d == null) {
+    line = t('page.months.checkIn.never')
+  } else if (status.due) {
+    line = t('page.months.checkIn.due', { days: d })
+  } else {
+    const checked = d === 0 ? t('page.months.checkIn.checkedToday')
+      : d === 1 ? t('page.months.checkIn.checkedYesterday')
+      : t('page.months.checkIn.checkedDaysAgo', { days: d })
+    const next = status.nextDueOn
+      ? t('page.months.checkIn.nextOn', { date: formatDate(status.nextDueOn, lang) })
+      : t('page.months.checkIn.nextIsClose')
+    line = `${checked} ${next}`
+  }
+
+  const soFar = status.everydaySoFar
+  const found = soFar > 0
+    ? t('page.months.checkIn.soFar', { amount: moneyFull(soFar, currency) })
+    : soFar < 0
+      ? t('page.months.checkIn.soFarSurplus', { amount: moneyFull(-soFar, currency) })
+      : null
+
+  return (
+    <Tile span={12} as="section">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-chip ${
+            status.due ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-500'
+          }`}>
+            <Scale className="h-4 w-4" aria-hidden="true" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-label uppercase text-slate-500">{t('page.months.checkIn.title')}</p>
+              {status.due && (
+                <span className={`inline-flex items-center rounded-chip px-2 py-0.5 text-xs font-semibold ${STATUS_PILL.attention}`}>
+                  {t('page.months.checkIn.duePill')}
+                </span>
+              )}
+            </div>
+            <p className="mt-1 text-sm font-medium text-slate-900">{line}</p>
+            <p className="mt-0.5 text-sm text-slate-500">
+              {found ?? t('page.months.checkIn.every', { days: status.intervalDays })}
+            </p>
+          </div>
+        </div>
+        {status.allowed && (
+          <Button
+            label={status.due ? t('page.months.checkIn.action') : t('page.months.checkIn.actionEarly')}
+            icon={<Scale className="w-4 h-4" aria-hidden="true" />}
+            onClick={onOpen}
+            className="shrink-0 sm:w-auto w-full"
+          />
+        )}
+      </div>
     </Tile>
   )
 }

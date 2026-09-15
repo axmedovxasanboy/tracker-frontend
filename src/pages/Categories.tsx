@@ -237,7 +237,6 @@ export function Categories() {
     {
       name: c.name,
       nameUz: c.nameUz ?? '', type: c.type, color: c.color, icon: c.icon,
-      kind: c.kind,
       applicableSubType: c.applicableSubType ?? undefined,
       parentId: c.parentId ?? undefined,
       descriptionLabel: c.descriptionLabel ?? undefined,

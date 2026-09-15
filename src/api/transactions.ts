@@ -55,11 +55,6 @@ export const transactionsApi = {
   getSuggestions: (q: string, categoryId?: number) =>
     apiClient.get<string[]>('/transactions/suggestions', { params: { q, categoryId } }),
 
-  getPlaceSuggestions: (categoryId?: number, q?: string) =>
-    apiClient.get<string[]>('/transactions/places', {
-      params: { categoryId, q: q ?? '' },
-    }),
-
   transfer: (data: BalanceTransferRequest) =>
     apiClient.post<Transaction[]>('/transactions/transfer', data),
 
