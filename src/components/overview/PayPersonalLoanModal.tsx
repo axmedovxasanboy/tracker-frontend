@@ -31,22 +31,29 @@ type Pickable = {
   total: number
   remaining: number
   monthly: number | null
+  /** The loan's own monthly repayment plan; null for a debt or a loan without one. */
+  plan: number | null
   currency: Currency
 }
 
 const PAYDOWN_RATE = 0.34
 
+const hasPlan = (p: Pickable): boolean => p.plan != null && p.plan > 0
+
 // Both money borrowed from a person (loan-taken) and debts are "debt" → paid at 34% of the
-// ORIGINAL total, capped at the residual (final month). Only bank loans have a monthly installment
-// (paid via PayBankInstallmentModal, not this one).
+// ORIGINAL total, capped at the residual (final month). A loan on a repayment plan is asked for at
+// its plan amount instead — the Plan page's "Set aside" row — so that is what it pre-fills with.
+// Only bank loans have a monthly installment (paid via PayBankInstallmentModal, not this one).
 function suggestedFor(p: Pickable): number {
-  return snap(Math.min(p.total * PAYDOWN_RATE, p.remaining))
+  const base = hasPlan(p) ? (p.plan as number) : p.total * PAYDOWN_RATE
+  return snap(Math.min(base, p.remaining))
 }
 
 export function PayPersonalLoanModal({ open, onClose, onSaved, defaultMonth }: Props) {
   const { t } = useLang()
   const { showSuccess } = useToast()
-  const suggestLabel = (): string => t('cmp.payPersonalLoan.suggestLabel')
+  const suggestLabel = (p: Pickable): string =>
+    hasPlan(p) ? t('cmp.payPersonalLoan.planLabel') : t('cmp.payPersonalLoan.suggestLabel')
   const loansTaken = useApi(() => financeApi.getLoansTaken(), [])
   const debts = useApi(() => financeApi.getDebts(), [])
   const [selected, setSelected] = useState<Pickable | null>(null)
@@ -91,6 +98,7 @@ export function PayPersonalLoanModal({ open, onClose, onSaved, defaultMonth }: P
         total: l.totalAmount,
         remaining: l.remainingAmount,
         monthly: l.monthlyPayment,
+        plan: l.plannedMonthlyPayment ?? null,
         currency: l.currency,
       }))
       .filter(p => p.remaining > 0),
@@ -102,6 +110,7 @@ export function PayPersonalLoanModal({ open, onClose, onSaved, defaultMonth }: P
         total: d.totalAmount,
         remaining: d.remainingAmount,
         monthly: null,
+        plan: null,
         currency: d.currency,
       }))
       .filter(p => p.remaining > 0),
@@ -263,7 +272,7 @@ export function PayPersonalLoanModal({ open, onClose, onSaved, defaultMonth }: P
                         </p>
                       </div>
                       <div className="shrink-0 text-right whitespace-nowrap">
-                        <p className="text-xs text-slate-500">{suggestLabel()}</p>
+                        <p className="text-xs text-slate-500">{suggestLabel(p)}</p>
                         <p className="text-sm font-semibold text-slate-900 tabular-nums">{money(suggested, p.currency)}</p>
                       </div>
                     </button>
@@ -276,7 +285,7 @@ export function PayPersonalLoanModal({ open, onClose, onSaved, defaultMonth }: P
               <>
                 <Field id="ploan-amount" required label={t('cmp.field.amountRequired')}
                   help={t('cmp.payPersonalLoan.suggestedHint', {
-                    label: suggestLabel().toLowerCase(),
+                    label: suggestLabel(selected).toLowerCase(),
                     amount: moneyFull(suggestedFor(selected), selected.currency),
                     cap: moneyFull(selected.remaining, selected.currency),
                   })}>

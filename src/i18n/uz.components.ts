@@ -238,10 +238,11 @@ export const uz_components: Partial<Record<keyof typeof en_components, string>> 
   // ── PayPersonalLoanModal ──────────────────────────────────────────────────
   'cmp.payPersonalLoan.title': 'Qarzlaringizni toʻlang (jamining 34%)',
   'cmp.payPersonalLoan.noLoans': 'Qolgan qoldigʻi bor shaxsiy qarz yoʻq.',
-  'cmp.payPersonalLoan.pickHint': 'Qarzni tanlang — summa uning jamining 34% bilan avtomatik toʻldiriladi (qolgan qoldiq bilan chegaralangan)',
+  'cmp.payPersonalLoan.pickHint': 'Qarzni tanlang — summa uning oylik rejasi yoki jamining 34% bilan avtomatik toʻldiriladi (qolgan qoldiq bilan chegaralangan)',
   'cmp.payPersonalLoan.borrowed': 'Olingan',
   'cmp.payPersonalLoan.debt': 'Qarz',
   'cmp.payPersonalLoan.suggestLabel': 'jamining 34%',
+  'cmp.payPersonalLoan.planLabel': 'Oylik reja',
   'cmp.payPersonalLoan.suggestedHint': 'Tavsiya etilgan {label}: {amount} · Chegara (qolgan): {cap}',
   'cmp.payPersonalLoan.recordedToast': 'Qoʻshildi · {name} {amount}',
 

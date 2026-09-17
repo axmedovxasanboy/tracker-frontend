@@ -241,10 +241,11 @@ export const en_components = {
   // ── overview/PayPersonalLoanModal ─────────────────────────────────────────────────────────
   'cmp.payPersonalLoan.title': 'Pay your debts (34% of total)',
   'cmp.payPersonalLoan.noLoans': 'No personal loans with a remaining balance.',
-  'cmp.payPersonalLoan.pickHint': 'Pick a debt — the amount pre-fills with 34% of its total (capped at remaining)',
+  'cmp.payPersonalLoan.pickHint': 'Pick a debt — the amount pre-fills with its monthly plan, or 34% of its total (capped at remaining)',
   'cmp.payPersonalLoan.borrowed': 'Borrowed',
   'cmp.payPersonalLoan.debt': 'Debt',
   'cmp.payPersonalLoan.suggestLabel': '34% of total',
+  'cmp.payPersonalLoan.planLabel': 'Monthly plan',
   'cmp.payPersonalLoan.suggestedHint': 'Suggested {label}: {amount} · Cap (remaining): {cap}',
   'cmp.payPersonalLoan.recordedToast': 'Added · {name} {amount}',
 
