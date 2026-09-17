@@ -320,7 +320,7 @@ export const en_pages = {
   'page.categories.descRequiredLabel': 'Required when adding a transaction',
   'page.categories.anonDonationLabel': 'Anonymous donation (auto-fills recipient as "Anonymous")',
   'page.categories.bonusIncomeLabel': 'Counts as bonus income',
-  'page.categories.bonusIncomeHint': 'Income here (e.g. a holiday bonus or 13th salary) raises that month\'s target by your level\'s share of it. Flagging a parent covers all its sub-categories.',
+  'page.categories.bonusIncomeHint': 'Income here (e.g. a holiday bonus or 13th salary) raises that month’s targets by your level’s share of it. Your level itself still comes from your stable income. Flagging a parent covers all its sub-categories.',
 
   // ── Cards ───────────────────────────────────────────────────────────────
   'page.cards.updatedToast': 'Card updated',
@@ -611,6 +611,7 @@ export const en_pages = {
   'page.overview.leftMoneyLabel': 'After bills',
   'page.overview.leftMoneyHint': 'Income − monthly bills · sets your level',
   'page.overview.debtPaymentsLabel': 'Debt payments',
+  'page.overview.bonusIncomeLabel': 'Bonus this month',
   'page.overview.debtRatioHint': '{pct}% of stable income · sets your level',
   'page.overview.debtMathHint': 'How the debt figure is built',
   'page.overview.tier1Label': 'Survival',
@@ -665,6 +666,7 @@ export const en_pages = {
   'page.overview.notRecommended': 'no target this month',
   'page.overview.gavePct': 'gave {pct}%',
   'page.overview.levelBaseLabel': 'Level {level} · base {amount}',
+  'page.overview.inclBonus': 'incl. {amount} bonus',
   'page.overview.thisMonthTag': 'this month',
   'page.overview.bucketDonation': 'Donation',
   'page.overview.bucketEmergency': 'Emergency fund',
@@ -708,6 +710,7 @@ export const en_pages = {
   'page.plan.stepIncomeFormula': 'The monthly pay you set in Settings.',
   'page.plan.stepAfterBillsFormula': 'Stable income minus monthly bills ({bills}).',
   'page.plan.stepAfterDebtFormula': 'After bills minus this month’s debt payments ({debt}).',
+  'page.plan.stepAfterDebtBonusFormula': 'After bills minus this month’s debt payments ({debt}), plus this month’s bonus income ({bonus}).',
   'page.plan.minPercentCaption': 'at least {pct}% of what is left to allocate',
   'page.plan.carriedBadge': 'Carried {amount}',
   'page.plan.historyButton': 'History',

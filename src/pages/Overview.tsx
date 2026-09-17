@@ -484,6 +484,10 @@ function PlanPanel({
   const writesBlocked = dormant
   const writesBlockedReason = translate('page.overview.trackingNotStarted')
 
+  // Income in a bonus-flagged category this month. It is already inside `allocationBase`, so every
+  // place that shows how that figure is built has to name it, or the arithmetic stops adding up.
+  const bonus = t.bonusIncome ?? 0
+
   // The hero chain, as three steps with the arithmetic that produced each one.
   const chain: { key: TierInfoKey; label: string; value: number; formula: string }[] = [
     {
@@ -504,9 +508,14 @@ function PlanPanel({
       key: 'base',
       label: translate('page.overview.leftBalanceLabel'),
       value: t.allocationBase,
-      formula: translate('page.plan.stepAfterDebtFormula', {
-        debt: money(t.debtPayments, currency),
-      }),
+      formula: bonus > 0
+        ? translate('page.plan.stepAfterDebtBonusFormula', {
+            debt: money(t.debtPayments, currency),
+            bonus: money(bonus, currency),
+          })
+        : translate('page.plan.stepAfterDebtFormula', {
+            debt: money(t.debtPayments, currency),
+          }),
     },
   ]
 
@@ -777,6 +786,9 @@ function PlanPanel({
                         level: mo.subLevel ?? mo.level ?? '—',
                         amount: money(mo.allocationBase, currency),
                       })}
+                      {mo.bonus > 0 && (
+                        <> · {translate('page.overview.inclBonus', { amount: money(mo.bonus, currency) })}</>
+                      )}
                     </p>
                   </div>
                   <div className="mt-1 space-y-0.5">
@@ -893,6 +905,9 @@ function PlanPanel({
               { label: translate('page.overview.stableIncomeLabel'), value: moneyExact(t.income, currency) },
               { label: translate('page.overview.mandatoryLabel'), value: `− ${moneyExact(t.mandatorySubscriptions, currency)}` },
               { label: translate('page.overview.debtPaymentsLabel'), value: `− ${moneyExact(t.debtPayments, currency)}` },
+              ...(bonus > 0
+                ? [{ label: translate('page.overview.bonusIncomeLabel'), value: `+ ${moneyExact(bonus, currency)}` }]
+                : []),
               { label: translate('page.overview.leftBalanceLabel'), value: moneyExact(t.allocationBase, currency), strong: true },
             ] : undefined
           }

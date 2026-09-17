@@ -22,8 +22,8 @@ interface Props {
   onSaved: () => void
   /**
    * What the percentages are actually multiplied by — `tier.allocationBase`, i.e. stable income
-   * minus monthly bills minus this month's debt payments (OverviewService.java:167, applied at
-   * :1059). The dialog used to multiply each percentage by the LEVEL BAND on left money instead,
+   * minus monthly bills minus this month's debt payments, plus this month's bonus income
+   * (OverviewService.getTier). The dialog used to multiply each percentage by the LEVEL BAND on left money instead,
    * so its example amounts could never match the bucket tiles. Null while the tier is unknown,
    * in which case no amount is offered at all rather than a wrong one.
    */

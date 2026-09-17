@@ -512,9 +512,12 @@ export interface OverviewTierResponse {
   income: number
   mandatorySubscriptions: number
   leftMoney: number
-  // "Left balance" = leftMoney − debtPayments (stable income − mandatory subscriptions − monthly
-  // debt charge). The bucket allocation percentages apply to THIS. The tier level uses leftMoney.
+  // What the bucket percentages apply to: the left balance, max(0, leftMoney − debtPayments), plus
+  // `bonusIncome`. The tier level uses leftMoney and never sees the bonus.
   allocationBase: number
+  // This month's income in bonus-flagged categories — already inside allocationBase. Optional so a
+  // cached response from an older backend still type-checks; treat a missing value as 0.
+  bonusIncome?: number
   debtPayments: number
   debtBreakdown: {
     bankLoans: number

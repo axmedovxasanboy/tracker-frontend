@@ -317,7 +317,7 @@ export const uz_pages: Partial<Record<keyof typeof en_pages, string>> = {
   'page.categories.descRequiredLabel': 'Tranzaksiya qoʻshishda majburiy',
   'page.categories.anonDonationLabel': 'Anonim xayriya (qabul qiluvchini avtomatik "Anonim" deb belgilaydi)',
   'page.categories.bonusIncomeLabel': 'Bonus daromad sifatida hisoblanadi',
-  'page.categories.bonusIncomeHint': 'Bu yerdagi daromad (masalan, bayram bonusi yoki 13-oylik) shu oyning maqsadini darajangizga tegishli ulush miqdorida oshiradi. Ota-kategoriyani belgilash barcha ichki kategoriyalarini ham qamrab oladi.',
+  'page.categories.bonusIncomeHint': 'Bu yerdagi daromad (masalan, bayram bonusi yoki 13-oylik) shu oyning maqsadlarini darajangizga tegishli ulush miqdorida oshiradi. Darajangiz esa baribir barqaror daromadingizdan hisoblanadi. Ota-kategoriyani belgilash barcha ichki kategoriyalarini ham qamrab oladi.',
 
   // ── Cards ───────────────────────────────────────────────────────────────
   'page.cards.updatedToast': 'Karta yangilandi',
@@ -608,6 +608,7 @@ export const uz_pages: Partial<Record<keyof typeof en_pages, string>> = {
   'page.overview.leftMoneyLabel': 'Toʻlovlardan keyin',
   'page.overview.leftMoneyHint': 'Daromad − oylik toʻlovlar · darajangizni belgilaydi',
   'page.overview.debtPaymentsLabel': 'Qarz toʻlovlari',
+  'page.overview.bonusIncomeLabel': 'Shu oydagi bonus',
   'page.overview.debtRatioHint': 'barqaror daromadning {pct}% · darajangizni belgilaydi',
   'page.overview.debtMathHint': 'Qarz raqami qanday yigʻiladi',
   'page.overview.tier1Label': 'Omon qolish',
@@ -662,6 +663,7 @@ export const uz_pages: Partial<Record<keyof typeof en_pages, string>> = {
   'page.overview.notRecommended': 'bu oy maqsad yoʻq',
   'page.overview.gavePct': '{pct}% berildi',
   'page.overview.levelBaseLabel': 'Daraja {level} · baza {amount}',
+  'page.overview.inclBonus': '{amount} bonus bilan',
   'page.overview.thisMonthTag': 'shu oy',
   'page.overview.bucketDonation': 'Xayriya',
   'page.overview.bucketEmergency': 'Favqulodda jamgʻarma',
@@ -702,6 +704,7 @@ export const uz_pages: Partial<Record<keyof typeof en_pages, string>> = {
   'page.plan.stepIncomeFormula': 'Sozlamalarda kiritgan oylik daromadingiz.',
   'page.plan.stepAfterBillsFormula': 'Barqaror daromad minus oylik toʻlovlar ({bills}).',
   'page.plan.stepAfterDebtFormula': 'Toʻlovlardan keyingi qoldiq minus shu oyning qarz toʻlovlari ({debt}).',
+  'page.plan.stepAfterDebtBonusFormula': 'Toʻlovlardan keyingi qoldiq minus shu oyning qarz toʻlovlari ({debt}), plus shu oyning bonus daromadi ({bonus}).',
   'page.plan.minPercentCaption': 'taqsimlash uchun qolganning kamida {pct}%',
   'page.plan.carriedBadge': 'Oldingi oylardan {amount}',
   'page.plan.historyButton': 'Tarix',

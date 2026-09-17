@@ -850,7 +850,7 @@ export function Categories() {
                   )}
                 </div>
 
-                {/* Bonus income tops up the month's allocation target. */}
+                {/* Bonus income raises that month's targets by the level's share of it (never the level). */}
                 {(form.type === 'INCOME' || form.type === 'BOTH') && (
                   <div className="space-y-2">
                     <p className="text-label uppercase text-slate-500">{t('page.categories.allocationHeading')}</p>
