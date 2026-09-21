@@ -29,10 +29,11 @@ const CASH = 'cash'
 const SALARY = /salary|maosh|oylik|ish haqi/i
 
 /**
- * "Money came in" in four fields — amount, wallet, category, date — instead of the full
- * transaction dialog. The advisor never asks about the salary; recording it is how "coming"
- * becomes "you have". The category matters for one reason: a bonus-flagged one raises this
- * month's set-aside targets by its share, and a salary one does not.
+ * "Money came in" in five fields — amount, what for, category, wallet, date — in the same order
+ * as the full Add form, minus the two questions it has already answered (income; Regular income).
+ * The advisor never asks about the salary; recording it is how "coming" becomes "you have". The
+ * category matters for one reason: a bonus-flagged one raises this month's set-aside targets by
+ * its share, and a salary one does not.
  */
 export function QuickIncomeModal({ open, onClose, onSaved }: Props) {
   const { t, categoryName } = useLang()
@@ -104,10 +105,24 @@ export function QuickIncomeModal({ open, onClose, onSaved }: Props) {
         </div>
       }
     >
+      {/* Same order as the full Add form: amount, what for, category, where, date. This dialog has
+          already answered "income" and assumes Regular income, which is what makes it the
+          shortcut; anything else goes through the full form. */}
       <form id={FORM_ID} onSubmit={handleSubmit} className="space-y-4">
         <Field id="quick-income-amount" label={t('cmp.field.amountRequired')}>
           <AmountInput id="quick-income-amount" required autoFocus value={amount || 0} currency="UZS"
             onChange={setAmount} className={MONEY_INPUT} suffix="UZS" />
+        </Field>
+        <Field id="quick-income-note" label={t('cmp.txModal.label.whatFor')}>
+          <input id="quick-income-note" value={note} maxLength={255}
+            onChange={e => setNote(e.target.value)} className={INPUT} />
+        </Field>
+        <Field id="quick-income-category" label={t('cmp.quickIncome.category')} help={t('cmp.quickIncome.categoryHelp')}>
+          <select id="quick-income-category" value={categoryId ?? ''}
+            onChange={e => setCategoryId(e.target.value ? Number(e.target.value) : undefined)} className={INPUT}>
+            <option value="">{t('cmp.quickIncome.noCategory')}</option>
+            {categoryOptions.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+          </select>
         </Field>
         <Field id="quick-income-wallet" label={t('cmp.quickIncome.into')}>
           <select id="quick-income-wallet" value={wallet} onChange={e => setWallet(e.target.value)} className={INPUT}>
@@ -119,23 +134,10 @@ export function QuickIncomeModal({ open, onClose, onSaved }: Props) {
             <option value={CASH}>{t('tx.cash')}</option>
           </select>
         </Field>
-        <Field id="quick-income-category" label={t('cmp.quickIncome.category')} help={t('cmp.quickIncome.categoryHelp')}>
-          <select id="quick-income-category" value={categoryId ?? ''}
-            onChange={e => setCategoryId(e.target.value ? Number(e.target.value) : undefined)} className={INPUT}>
-            <option value="">{t('cmp.quickIncome.noCategory')}</option>
-            {categoryOptions.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
-          </select>
+        <Field id="quick-income-date" label={t('cmp.field.dateRequired')}>
+          <input id="quick-income-date" required type="date" value={date}
+            onChange={e => setDate(e.target.value)} className={INPUT} />
         </Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field id="quick-income-date" label={t('cmp.field.dateRequired')}>
-            <input id="quick-income-date" required type="date" value={date}
-              onChange={e => setDate(e.target.value)} className={INPUT} />
-          </Field>
-          <Field id="quick-income-note" label={t('cmp.quickIncome.note')}>
-            <input id="quick-income-note" value={note} maxLength={255}
-              onChange={e => setNote(e.target.value)} className={INPUT} />
-          </Field>
-        </div>
         {error && <p role="alert" className="text-sm text-expense">{error}</p>}
       </form>
     </Modal>

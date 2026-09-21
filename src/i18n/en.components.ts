@@ -435,7 +435,6 @@ export const en_components = {
   'cmp.txModal.insufficientBalance': 'Insufficient balance',
 
   // Quick-path form: the disclosure, the empty-wallet escape hatch and the dirty guard.
-  'cmp.txModal.moreOptions': 'More options',
   'cmp.txModal.noCardsYet': 'No cards yet — add one',
   'cmp.txModal.noCardsTile': 'No cards yet — add one',
   'cmp.txModal.noCardsHint': 'Add a card first, or pay with cash',
@@ -454,6 +453,7 @@ export const en_components = {
   'cmp.txModal.label.cardAmount': 'Card amount',
   'cmp.txModal.label.investment': 'Investment',
   'cmp.txModal.label.direction': 'Money in or out',
+  'cmp.txModal.label.whatFor': 'What for',
   'cmp.txModal.paidWithCash': 'Cash',
   'cmp.txModal.cashBalanceCaption': 'Cash balance now {amount}',
   'cmp.txModal.change': 'Change',
@@ -659,6 +659,5 @@ export const en_components = {
   'cmp.quickIncome.categoryHelp': 'Pick a bonus category for a bonus — it raises this month’s set-asides by its share.',
   'cmp.quickIncome.noCategory': 'No category',
   'cmp.quickIncome.bonusTag': 'bonus',
-  'cmp.quickIncome.note': 'Note',
   'cmp.quickIncome.saved': 'Recorded {amount} of income.',
 } as const

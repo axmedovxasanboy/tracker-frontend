@@ -430,7 +430,6 @@ export const uz_components: Partial<Record<keyof typeof en_components, string>> 
   'cmp.txModal.insufficientBalance': 'Mablagʻ yetarli emas',
 
   // Tezkor shakl: qoʻshimcha boʻlim, hamyon yoʻqligidan chiqish yoʻli va bekor qilish ogohlantirishi.
-  'cmp.txModal.moreOptions': 'Qoʻshimcha sozlamalar',
   'cmp.txModal.noCardsYet': 'Hali karta yoʻq — bittasini qoʻshing',
   'cmp.txModal.noCardsTile': 'Hali karta yoʻq — bittasini qoʻshing',
   'cmp.txModal.noCardsHint': 'Avval karta qoʻshing yoki naqd pul bilan toʻlang',
@@ -448,6 +447,7 @@ export const uz_components: Partial<Record<keyof typeof en_components, string>> 
   'cmp.txModal.label.cardAmount': 'Karta summasi',
   'cmp.txModal.label.investment': 'Investitsiya',
   'cmp.txModal.label.direction': 'Kirim yoki chiqim',
+  'cmp.txModal.label.whatFor': 'Nima uchun',
   'cmp.txModal.paidWithCash': 'Naqd pul',
   'cmp.txModal.cashBalanceCaption': 'Hozirgi naqd qoldiq {amount}',
   'cmp.txModal.change': 'Oʻzgartirish',
@@ -647,6 +647,5 @@ export const uz_components: Partial<Record<keyof typeof en_components, string>> 
   'cmp.quickIncome.categoryHelp': 'Bonus uchun bonus kategoriyasini tanlang — u shu oygi ajratmalarni oʻz ulushicha oshiradi.',
   'cmp.quickIncome.noCategory': 'Kategoriyasiz',
   'cmp.quickIncome.bonusTag': 'bonus',
-  'cmp.quickIncome.note': 'Izoh',
   'cmp.quickIncome.saved': '{amount} daromad yozildi.',
 }

@@ -76,10 +76,6 @@ type ErrorField =
   | 'category' | 'subCategory' | 'investment' | 'card' | 'amount' | 'split'
   | 'description' | 'counterparty' | 'date'
 
-/** Fields that live behind the disclosure — a message there is invisible until it is open. */
-const HIDDEN_BEHIND_MORE: ReadonlySet<ErrorField> =
-  new Set<ErrorField>(['description', 'counterparty', 'split', 'investment'])
-
 const defaultForm = (currency: Currency): TransactionRequest => ({
   type: 'EXPENSE', amount: 0, currency, description: '',
   transactionDate: todayLocal(), subType: 'REGULAR_EXPENSE',
@@ -209,7 +205,6 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
   const [cardsFailed, setCardsFailed] = useState(false)
 
   // Everything past Amount / Category / Card / Date lives behind this.
-  const [moreOpen, setMoreOpen] = useState(false)
   // Set by the user's own edits only. The auto-select effects write to `form` on their own, so
   // comparing snapshots would report an untouched form as dirty the moment a category loads.
   const [touched, setTouched] = useState(false)
@@ -358,9 +353,6 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
       setSelectedRootId(rootId)
       loadRoots(transaction.type === 'INCOME' ? 'INCOME' : 'EXPENSE', f.subType)
       if (rootId) loadSubs(rootId)
-      // Everything about an existing row is already filled in; hiding half of it behind a
-      // disclosure would mean the edit form silently omits what the user came to change.
-      setMoreOpen(true)
     } else {
       // New transaction — optionally pre-target a card (per-card quick-add on the Cards page).
       const type = presetType ?? 'EXPENSE'
@@ -368,9 +360,6 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
       setForm({ ...defaultForm(defaultCurrency), type, subType, cardId: preselectCardId })
       setSelectedRootId(undefined); setSubCategories([])
       loadRoots(type, subType)
-      // "+ Add income" / "+ Add expense" know what they are; the bare "+ Add other" button
-      // exists precisely to reach the special types, so it opens expanded.
-      setMoreOpen(!presetType)
     }
     setError(null); setIsBalanceError(false); setValidationError(null); setInvalidField(null)
     setShowNewCat(false); setShowNewSubCat(false); setSuggestions([])
@@ -491,11 +480,11 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
     setForm(prev => ({ ...prev, [key]: value }))
   }
 
-  /** Point the message at its own control, and open the disclosure if that is where it lives. */
+  /** Point the message at its own control. Every control is on screen, in a fixed order, so
+      there is no longer a panel to open first. */
   const fail = (field: ErrorField, message: string) => {
     setInvalidField(field)
     setValidationError(message)
-    if (HIDDEN_BEHIND_MORE.has(field)) setMoreOpen(true)
   }
   const fieldError = (field: ErrorField) => (invalidField === field ? validationError ?? undefined : undefined)
 
@@ -787,7 +776,7 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
   // is now OPTIONAL: the column is null on every seeded category, the wire contract has no
   // @NotBlank, and the backend already synthesises "Parent — Category" when it is blank — so
   // `?? true` was making the user type a sentence the server was about to overwrite anyway.
-  const descriptionLabel = activeCategory?.descriptionLabel || translate('tx.description')
+  const descriptionLabel = activeCategory?.descriptionLabel || translate('cmp.txModal.label.whatFor')
   const descriptionRequired = activeCategory?.descriptionRequired ?? false
 
   // Donation anonymity — the selected sub-category (or its parent) declares it.
@@ -818,22 +807,6 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
 
   const isSpecialSubType = !!form.subType
     && form.subType !== 'REGULAR_INCOME' && form.subType !== 'REGULAR_EXPENSE'
-  // A special type needs its counterparty, its picker and its notice; BOTH needs its two split
-  // inputs; an opted-in category needs its Description. All of those are `required`, so the
-  // panel is pinned open rather than hiding a control the user cannot satisfy.
-  const moreForced = !!transaction || isSpecialSubType || paymentMode === 'BOTH' || descriptionRequired
-  const showMore = moreOpen || moreForced
-
-  const paymentModeLabel = paymentMode === 'CARD'
-    ? translate('cmp.txModal.cardOnly')
-    : paymentMode === 'CASH' ? translate('cmp.txModal.cashOnly') : translate('tx.both')
-  // What is folded away, and only that: the direction moved to the top of the form, where it is
-  // on screen whether this panel is open or shut, so repeating it here would spend the one line
-  // of summary on the one thing the user can already see.
-  const collapsedSummary = [
-    subTypes.find(s => s.value === form.subType)?.label,
-    paymentModeLabel,
-  ].filter(Boolean).join(' · ')
 
   // The category the sub-type chose on the user's behalf. Locked so the two facts stay one fact,
   // with a way out — a Donation may legitimately be filed under a custom child category.
@@ -902,7 +875,377 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
           </div>
         </div>
 
-        {/* 2. Amount — the thing the user came here to type. One instance, mounted for the life
+        {/* 2. Type. Second, because it decides which blocks below exist at all — who the money
+            went to, which loan is being repaid, whether a finance record is created with it. */}
+        <div>
+          <p className="mb-1.5 text-xs font-medium text-slate-600">{translate('tx.type')}</p>
+          <div className="grid grid-cols-2 gap-1.5" role="group" aria-label={translate('tx.type')}>
+            {subTypes.map(s => (
+              <button key={s.value} type="button" onClick={() => switchSubType(s.value)}
+                aria-pressed={form.subType === s.value}
+                className={`focus-ring flex cursor-pointer items-start gap-2 rounded-control border px-2.5 py-2 text-left transition-colors ${
+                  form.subType === s.value ? 'border-indigo-500' : 'border-slate-200 hover:border-slate-300'}`}>
+                <span className={`mt-1 h-3 w-3 shrink-0 rounded-full border-2 ${
+                  form.subType === s.value ? 'border-indigo-500 bg-indigo-500' : 'border-slate-300'}`} />
+                <span className="min-w-0">
+                  <span className={`block text-xs font-semibold leading-tight ${
+                    form.subType === s.value ? 'text-indigo-700' : 'text-slate-700'}`}>{s.label}</span>
+                  <span className="mt-0.5 block text-[11px] leading-tight text-slate-500">{s.hint}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 3. Whatever the chosen type needs: the counterparty, the loan being repaid, the
+            investment being topped up, the month a repayment plan starts. */}
+        {form.subType === 'LOAN_REPAYMENT' && !transaction ? (
+          <div>
+            {activeLoans.length === 0
+              ? <p className="mb-1 text-xs font-medium text-slate-600">{translate('cmp.txModal.selectLoanToRepay')}</p>
+              : <label htmlFor="tx-loan" className="mb-1 block text-xs font-medium text-slate-600">{translate('cmp.txModal.selectLoanToRepay')}</label>}
+            {activeLoans.length === 0 ? (
+              <p className="rounded-control border border-dashed border-slate-300 px-3 py-3 text-center text-xs text-slate-500">
+                {translate('cmp.txModal.noActiveBorrowedLoans')} <br />{translate('cmp.txModal.addLoanFirst')}
+              </p>
+            ) : (
+              <>
+                <select id="tx-loan" value={selectedLoanId ?? ''}
+                  onChange={e => {
+                    const id = e.target.value ? Number(e.target.value) : undefined
+                    setSelectedLoanId(id)
+                    const loan = activeLoans.find(l => l.id === id)
+                    if (loan) {
+                      set('amount', loan.remainingAmount)
+                      set('currency', loan.currency as Currency)
+                      set('description', translate('cmp.txModal.loanRepaymentTo', { name: loan.lenderName }))
+                      set('counterpartyName', loan.lenderName)
+                    }
+                  }}
+                  className={CONTROL}>
+                  <option value="">{translate('cmp.txModal.selectLoanOrManual')}</option>
+                  {activeLoans.map(l => (
+                    <option key={l.id} value={l.id}>
+                      {l.lenderName} · {translate('cmp.repay.remaining')}{moneyFull(l.remainingAmount, l.currency as Currency)} · {l.status}
+                    </option>
+                  ))}
+                </select>
+                {selectedLoanId && (() => {
+                  const loan = activeLoans.find(l => l.id === selectedLoanId)
+                  return loan ? (
+                    <p className="mt-1.5 text-xs text-slate-500">
+                      {translate('cmp.txModal.maxPayable')}{' '}
+                      <span className="font-semibold tabular-nums text-slate-900">
+                        {moneyFull(loan.remainingAmount, loan.currency as Currency)}
+                      </span>
+                      <span className="ml-2 inline-flex rounded-chip bg-slate-100 px-1.5 py-0.5 font-medium text-slate-600">
+                        {loan.status}
+                      </span>
+                    </p>
+                  ) : null
+                })()}
+              </>
+            )}
+          </div>
+        ) : form.subType === 'LOAN_RETURNED_TO_ME' && !transaction ? (
+          <div>
+            {activeLoansGiven.length === 0
+              ? <p className="mb-1 text-xs font-medium text-slate-600">{translate('cmp.txModal.selectLoanReturned')}</p>
+              : <label htmlFor="tx-loan-given" className="mb-1 block text-xs font-medium text-slate-600">{translate('cmp.txModal.selectLoanReturned')}</label>}
+            {activeLoansGiven.length === 0 ? (
+              <p className="rounded-control border border-dashed border-slate-300 px-3 py-3 text-center text-xs text-slate-500">
+                {translate('cmp.txModal.noActiveLentLoans')} <br />{translate('cmp.txModal.addLoanFirst')}
+              </p>
+            ) : (
+              <>
+                <select id="tx-loan-given" value={selectedLoanGivenId ?? ''}
+                  onChange={e => {
+                    const id = e.target.value ? Number(e.target.value) : undefined
+                    setSelectedLoanGivenId(id)
+                    const loan = activeLoansGiven.find(l => l.id === id)
+                    if (loan) {
+                      set('amount', loan.pendingAmount)
+                      set('currency', loan.currency as Currency)
+                      set('description', translate('cmp.txModal.loanReturnedBy', { name: loan.debtorName }))
+                      set('counterpartyName', loan.debtorName)
+                    }
+                  }}
+                  className={CONTROL}>
+                  <option value="">{translate('cmp.txModal.selectLoanOrManual')}</option>
+                  {activeLoansGiven.map(l => (
+                    <option key={l.id} value={l.id}>
+                      {l.debtorName} · {translate('cmp.txModal.pending')} {moneyFull(l.pendingAmount, l.currency as Currency)} · {l.status}
+                    </option>
+                  ))}
+                </select>
+                {selectedLoanGivenId && (() => {
+                  const loan = activeLoansGiven.find(l => l.id === selectedLoanGivenId)
+                  return loan ? (
+                    <p className="mt-1.5 text-xs text-slate-500">
+                      {translate('cmp.txModal.maxReceivable')}{' '}
+                      <span className="font-semibold tabular-nums text-slate-900">
+                        {moneyFull(loan.pendingAmount, loan.currency as Currency)}
+                      </span>
+                      <span className="ml-2 inline-flex rounded-chip bg-slate-100 px-1.5 py-0.5 font-medium text-slate-600">
+                        {loan.status}
+                      </span>
+                    </p>
+                  ) : null
+                })()}
+              </>
+            )}
+          </div>
+        ) : form.subType && NEEDS_COUNTERPARTY.has(form.subType) && !isAnonymousDonation ? (
+          <div className="relative">
+            <Field
+              id="tx-counterparty"
+              label={COUNTERPARTY_LABEL[form.subType] ?? translate('cmp.txModal.counterparty.generic')}
+              required
+              error={fieldError('counterparty')}
+            >
+              <input required ref={counterpartyRef} value={form.counterpartyName ?? ''}
+                onChange={e => {
+                  set('counterpartyName', e.target.value)
+                  // Typing away from the picked borrower means "someone new" again.
+                  if (form.subType === 'LOAN_GIVEN' && form.loanGivenId) {
+                    const linked = allLoansGiven.find(l => l.id === form.loanGivenId)
+                    if (!linked || linked.debtorName !== e.target.value) set('loanGivenId', undefined)
+                  }
+                  if (form.subType === 'LOAN_GIVEN') setShowBorrowerPopover(true)
+                }}
+                onFocus={() => {
+                  if (restoringFocus.current) { restoringFocus.current = false; return }
+                  if (form.subType === 'BANK_LOAN_PAYMENT' && bankOptions.length > 0) setShowBankPopover(true)
+                  if (form.subType === 'LOAN_GIVEN' && allLoansGiven.length > 0) setShowBorrowerPopover(true)
+                }}
+                // Tabbing from the input into the list is a blur of the input, so close only
+                // when focus actually left the list too — a bare timer used to unmount the
+                // options 150 ms after a keyboard user reached them.
+                onBlur={e => {
+                  const next = e.relatedTarget as Node | null
+                  if (next && (borrowerPopoverRef.current?.contains(next)
+                    || bankPopoverRef.current?.contains(next))) return
+                  setShowBankPopover(false); setShowBorrowerPopover(false)
+                }}
+                // Escape dismisses the list, not the whole sheet. Sheet listens on `document`,
+                // which the event only reaches after React's root, so stopping it here wins.
+                onKeyDown={e => {
+                  if (e.key !== 'Escape' || !(showBorrowerPopover || showBankPopover)) return
+                  e.stopPropagation()
+                  setShowBankPopover(false); setShowBorrowerPopover(false)
+                }}
+                className={fieldError('counterparty') ? CONTROL_INVALID : CONTROL}
+                placeholder={translate('cmp.txModal.enterNamePlaceholder')} autoComplete="off" />
+            </Field>
+            {form.subType === 'LOAN_GIVEN' && showBorrowerPopover && allLoansGiven.length > 0 && (
+              <div
+                ref={borrowerPopoverRef}
+                onBlur={e => {
+                  if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setShowBorrowerPopover(false)
+                }}
+                onKeyDown={e => {
+                  if (e.key !== 'Escape') return
+                  e.stopPropagation()
+                  setShowBorrowerPopover(false)
+                  returnFocus(counterpartyRef.current)
+                }}
+                className="absolute left-0 right-0 top-full z-10 mt-1 max-h-56 overflow-y-auto rounded-control border border-slate-200 bg-white shadow-tile-hover">
+                <p className="bg-slate-50 px-3 py-1.5 text-label uppercase text-slate-500">
+                  {translate('cmp.txModal.existingBorrowers')}
+                </p>
+                {allLoansGiven
+                  .filter(l => !form.counterpartyName
+                    || l.debtorName.toLowerCase().includes(form.counterpartyName.toLowerCase()))
+                  .map(l => (
+                    <button key={l.id} type="button"
+                      // Enter and Space on a <button> dispatch click, never mousedown, so the
+                      // handler lives on onClick. onMouseDown only suppresses the pointer's
+                      // blur, which would otherwise close the list before the click lands.
+                      onMouseDown={e => e.preventDefault()}
+                      onClick={() => {
+                        set('counterpartyName', l.debtorName)
+                        set('loanGivenId', l.id)
+                        setShowBorrowerPopover(false)
+                        returnFocus(counterpartyRef.current)
+                      }}
+                      className={`${POPOVER_ITEM} flex items-center justify-between gap-2`}>
+                      <span className="truncate">{l.debtorName}</span>
+                      <span className="shrink-0 text-xs tabular-nums text-slate-500">
+                        {moneyFull(l.pendingAmount, l.currency as Currency)}
+                      </span>
+                    </button>
+                  ))}
+              </div>
+            )}
+            {form.subType === 'LOAN_GIVEN' && (() => {
+              const linked = allLoansGiven.find(l => l.id === form.loanGivenId)
+              return linked ? (
+                <p className="mt-1.5 flex items-center justify-between gap-2 text-xs text-slate-500">
+                  <span>
+                    {translate('cmp.txModal.toppingUp', { name: linked.debtorName })} · {translate('cmp.txModal.outstandingNow')}{' '}
+                    <span className="font-semibold tabular-nums text-slate-900">
+                      {moneyFull(linked.pendingAmount, linked.currency as Currency)}
+                    </span>
+                  </span>
+                  <button type="button" onClick={() => set('loanGivenId', undefined)}
+                    className="focus-ring shrink-0 cursor-pointer text-indigo-600 underline hover:no-underline">
+                    {translate('cmp.txModal.newLoanInstead')}
+                  </button>
+                </p>
+              ) : allLoansGiven.length > 0 ? (
+                <p className="mt-1.5 text-xs text-slate-500">{translate('cmp.txModal.newBorrowerHint')}</p>
+              ) : null
+            })()}
+            {form.subType === 'BANK_LOAN_PAYMENT' && showBankPopover && bankOptions.length > 0 && (
+              <div
+                ref={bankPopoverRef}
+                onBlur={e => {
+                  if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setShowBankPopover(false)
+                }}
+                onKeyDown={e => {
+                  if (e.key !== 'Escape') return
+                  e.stopPropagation()
+                  setShowBankPopover(false)
+                  returnFocus(counterpartyRef.current)
+                }}
+                className="absolute left-0 right-0 top-full z-10 mt-1 overflow-hidden rounded-control border border-slate-200 bg-white shadow-tile-hover">
+                {bankOptions
+                  .filter(b => !form.counterpartyName || b.toLowerCase().includes(form.counterpartyName.toLowerCase()))
+                  .map(b => (
+                    <button key={b} type="button"
+                      onMouseDown={e => e.preventDefault()}
+                      onClick={() => {
+                        set('counterpartyName', b)
+                        setShowBankPopover(false)
+                        returnFocus(counterpartyRef.current)
+                      }}
+                      className={POPOVER_ITEM}>{b}</button>
+                  ))}
+              </div>
+            )}
+          </div>
+        ) : isAnonymousDonation ? (
+          <p className="text-xs text-slate-500">{translate('cmp.txModal.anonymousDonationNotice')}</p>
+        ) : null}
+
+        {/* Investment: top up an existing one, or create a new record. */}
+        {form.subType === 'INVESTMENT' && (
+          <div className="space-y-2">
+            <div className={SEGMENT_TRACK} role="group" aria-label={translate('cmp.txModal.label.investment')}>
+              <button type="button"
+                // Mirrors the picker rather than clearing it: the two are one fact, and a
+                // second press on the tab you are already on used to blank the posted id
+                // while the select still showed the fund — which is what makes the save
+                // reverse the contribution and open a duplicate record.
+                onClick={() => { setTouched(true); setInvestmentMode('existing'); set('investmentId', selectedInvestmentId) }}
+                aria-pressed={investmentMode === 'existing'}
+                className={`${SEGMENT_BASE} ${investmentMode === 'existing' ? 'bg-white text-slate-900 shadow-tile' : 'text-slate-600 hover:text-slate-900'}`}>
+                {translate('cmp.txModal.addToExisting')}
+              </button>
+              <button type="button"
+                onClick={() => { setTouched(true); setInvestmentMode('new'); setSelectedInvestmentId(undefined); set('investmentId', undefined) }}
+                aria-pressed={investmentMode === 'new'}
+                className={`${SEGMENT_BASE} ${investmentMode === 'new' ? 'bg-white text-slate-900 shadow-tile' : 'text-slate-600 hover:text-slate-900'}`}>
+                {translate('cmp.txModal.createNew')}
+              </button>
+            </div>
+
+            {investmentMode === 'existing' ? (
+              existingInvestments.length === 0 ? (
+                <p className="rounded-control border border-dashed border-slate-300 px-3 py-3 text-center text-xs text-slate-500">
+                  {translate('cmp.txModal.noInvestmentsYet')}
+                </p>
+              ) : (
+                <>
+                  <Field
+                    id="tx-investment"
+                    label={translate('cmp.txModal.label.investment')}
+                    required
+                    error={fieldError('investment')}
+                  >
+                    <select
+                      value={selectedInvestmentId ?? ''}
+                      onChange={e => {
+                        const id = e.target.value ? Number(e.target.value) : undefined
+                        setSelectedInvestmentId(id)
+                        set('investmentId', id)
+                        const inv = existingInvestments.find(i => i.id === id)
+                        if (inv) {
+                          set('currency', inv.currency as Currency)
+                          set('counterpartyName', inv.name)
+                          if (!form.description) set('description', translate('cmp.txModal.addFundsTo', { name: inv.name }))
+                        }
+                      }}
+                      className={fieldError('investment') ? CONTROL_INVALID : CONTROL}
+                    >
+                      <option value="">{translate('cmp.txModal.selectAnInvestment')}</option>
+                      {existingInvestments.map(i => (
+                        <option key={i.id} value={i.id}>
+                          {i.name} · {INVESTMENT_TYPE_LABELS[i.type]} · {moneyFull(i.investedAmount, i.currency as Currency)}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  {selectedInvestmentId && (() => {
+                    const inv = existingInvestments.find(i => i.id === selectedInvestmentId)
+                    return inv ? (
+                      <p className="text-xs text-slate-500">
+                        {translate('cmp.txModal.currentTotal')}{' '}
+                        <span className="font-semibold tabular-nums text-slate-900">
+                          {moneyFull(inv.investedAmount, inv.currency as Currency)}
+                        </span>
+                        <span className="ml-2 inline-flex rounded-chip bg-slate-100 px-1.5 py-0.5 font-medium text-slate-600">
+                          {INVESTMENT_TYPE_LABELS[inv.type]}
+                        </span>
+                      </p>
+                    ) : null
+                  })()}
+                </>
+              )
+            ) : (
+              <Field id="tx-investment-type" label={translate('cmp.txModal.investmentType')}>
+                <select value={form.investmentType ?? 'OTHER'}
+                  onChange={e => set('investmentType', e.target.value as InvestmentType)}
+                  className={CONTROL}>
+                  {(['REAL_ESTATE','BONDS','MUTUAL_FUND','GOLD','OTHER'] as InvestmentType[]).map(it => (
+                    <option key={it} value={it}>{INVESTMENT_TYPE_LABELS[it]}</option>
+                  ))}
+                </select>
+              </Field>
+            )}
+          </div>
+        )}
+
+        {/* Payment starts — when borrowed money begins counting toward the plan. */}
+        {form.subType === 'LOAN_RECEIVED' && !transaction && (
+          <Field
+            id="tx-payment-start"
+            label={translate('cmp.txModal.repaymentsStart')}
+            help={translate('cmp.txModal.repaymentsStartHint')}
+          >
+            <input type="month"
+              value={form.paymentStartDate ? form.paymentStartDate.slice(0, 7) : nextMonthStr()}
+              onChange={e => set('paymentStartDate', e.target.value ? `${e.target.value}-01` : undefined)}
+              className={CONTROL} />
+          </Field>
+        )}
+
+        {form.subType && AUTO_CREATES.has(form.subType) && (
+          <p className="flex items-start gap-2 text-xs text-slate-500">
+            <Info className="mt-px h-3.5 w-3.5 shrink-0 text-slate-400" />
+            <span>
+              {form.subType === 'INVESTMENT'
+                ? investmentMode === 'existing' && selectedInvestmentId
+                  ? translate('cmp.txModal.fundsAddedToInvestment')
+                  : investmentMode === 'new'
+                    ? <>{translate('cmp.txModal.newInvestmentPrefix')} <strong className="font-semibold text-slate-700">{translate('cmp.txModal.investmentWord')}</strong>{translate('cmp.txModal.newInvestmentSuffix')}</>
+                    : null
+                : <>{translate('cmp.txModal.autoCreatePrefix')} <strong className="font-semibold text-slate-700">{subTypes.find(s => s.value === form.subType)?.label}</strong> {translate('cmp.txModal.autoCreateSuffix')}</>}
+            </span>
+          </p>
+        )}
+
+        {/* 4. Amount — the thing the user came here to type. One instance, mounted for the life
             of the form, so switching payment method never loses a half-typed figure. */}
         <Field
           id="tx-amount"
@@ -944,7 +1287,7 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
           <p className="-mt-2 text-xs text-slate-500">{translate('cmp.txModal.amountKeptOnSwitch')}</p>
         )}
 
-        {/* 3. What this draft transaction would do to the monthly allocation (create mode only —
+        {/* 5. What this draft transaction would do to the monthly allocation (create mode only —
             editing an existing row would double-count it against what is already recorded). */}
         {!transaction && (
           <AllocationPreviewPanel
@@ -957,7 +1300,76 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
           />
         )}
 
-        {/* 4. Category + Sub-category — same row once a root is picked. */}
+        {/* 6. What for. Optional: left blank, the server writes the counterparty or the
+            category, and the hint under the field says which before you leave it empty. */}
+        <div className="relative">
+          <Field
+            id="tx-description"
+            label={descriptionLabel}
+            required={descriptionRequired}
+            error={fieldError('description')}
+          >
+            <input ref={descriptionRef} value={form.description ?? ''} onChange={e => handleDescriptionChange(e.target.value)}
+              onFocus={() => {
+                if (restoringFocus.current) { restoringFocus.current = false; return }
+                if (suggestions.length > 0) setShowSuggestions(true)
+              }}
+              // Same rule as the counterparty lists: only close once focus has left the
+              // options too, so tabbing into them does not unmount them.
+              onBlur={e => {
+                const next = e.relatedTarget as Node | null
+                if (next && suggestionsPopoverRef.current?.contains(next)) return
+                setShowSuggestions(false)
+              }}
+              onKeyDown={e => {
+                if (e.key !== 'Escape' || !showSuggestions) return
+                e.stopPropagation()
+                setShowSuggestions(false)
+              }}
+              required={descriptionRequired}
+              className={fieldError('description') ? CONTROL_INVALID : CONTROL}
+              placeholder={translate('cmp.txModal.descriptionPlaceholder', {
+                example: descriptionLabel === translate('cmp.txModal.label.whatFor')
+                  ? translate(form.type === 'INCOME'
+                      ? 'cmp.txModal.descriptionExampleIncome'
+                      : 'cmp.txModal.descriptionExampleExpense')
+                  : descriptionLabel,
+              })}
+              autoComplete="off" />
+          </Field>
+          {!(form.description ?? '').trim() && derivedDescription && !fieldError('description') && (
+            <p className="mt-1 text-xs text-slate-500">
+              {translate('cmp.txModal.descriptionDerived', { text: derivedDescription })}
+            </p>
+          )}
+          {showSuggestions && suggestions.length > 0 && (
+            <div
+              ref={suggestionsPopoverRef}
+              onBlur={e => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setShowSuggestions(false)
+              }}
+              onKeyDown={e => {
+                if (e.key !== 'Escape') return
+                e.stopPropagation()
+                setShowSuggestions(false)
+                returnFocus(descriptionRef.current)
+              }}
+              className="absolute left-0 right-0 top-full z-10 mt-1 overflow-hidden rounded-control border border-slate-200 bg-white shadow-tile-hover">
+              {suggestions.map(s => (
+                <button key={s} type="button"
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => {
+                    set('description', s)
+                    setSuggestions([]); setShowSuggestions(false)
+                    returnFocus(descriptionRef.current)
+                  }}
+                  className={POPOVER_ITEM}>{s}</button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 7. Category + Sub-category — same row once a root is picked. */}
         <div>
           {showNewCat && (
             <>
@@ -1191,8 +1603,102 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
           )}
         </div>
 
-        {/* 5. Where the money moves. The payment METHOD lives in More options; this field always
-            names the actual source, so the quick path never hides which wallet is hit. */}
+        {/* 8. How it was paid — card only unless you say otherwise — and the two inputs a
+            split needs. The wallet it comes out of is the block right below. */}
+        <div>
+          <p className="mb-1 text-xs font-medium text-slate-600">{translate('cmp.field.paymentMethod')}</p>
+          <div className={SEGMENT_TRACK} role="group" aria-label={translate('cmp.field.paymentMethod')}>
+            {([
+              { value: 'CARD', label: translate('cmp.txModal.cardOnly') },
+              { value: 'CASH', label: translate('cmp.txModal.cashOnly') },
+              { value: 'BOTH', label: translate('tx.both') },
+            ] as { value: PaymentMode; label: string }[]).map(opt => {
+              const needsCard = opt.value !== 'CASH'
+              const blockedByWallet = noUsableCards && needsCard
+              const blockedByLoanPath = atomicLoanPath && opt.value === 'BOTH'
+              const blocked = blockedByWallet || blockedByLoanPath
+              return (
+                <button key={opt.value} type="button"
+                  disabled={blocked}
+                  aria-pressed={paymentMode === opt.value}
+                  title={blockedByWallet
+                    ? translate('cmp.txModal.noCardsHint')
+                    : blockedByLoanPath ? translate('cmp.txModal.bothNotForLoanPath') : undefined}
+                  onClick={() => { setTouched(true); setPaymentMode(opt.value) }}
+                  className={`${SEGMENT_BASE} ${
+                    paymentMode === opt.value
+                      ? 'bg-white text-slate-900 shadow-tile'
+                      : 'text-slate-600 hover:text-slate-900'}`}>
+                  {opt.label}
+                </button>
+              )
+            })}
+          </div>
+          {noUsableCards && (
+            <p className="mt-1 text-xs text-slate-500">{translate('cmp.txModal.noCardsHint')}</p>
+          )}
+          {!noUsableCards && atomicLoanPath && (
+            <p className="mt-1 text-xs text-slate-500">{translate('cmp.txModal.bothNotForLoanPath')}</p>
+          )}
+          {paymentMode === 'CASH' && (
+            <p className="mt-1 text-xs text-slate-500">
+              {translate('cmp.txModal.willAdjustCashPrefix')}{' '}
+              <span className="font-medium text-slate-600">{translate('cmp.txModal.willAdjustCashBold', { currency: defaultCurrency })}</span>
+              {cashBalance !== null && (
+                <> · {translate('cmp.txModal.current')} <span className="tabular-nums">{moneyFull(cashBalance, defaultCurrency)}</span></>
+              )}
+            </p>
+          )}
+        </div>
+
+        {paymentMode === 'BOTH' && (
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              <Field
+                id="tx-cash-amount"
+                label={translate('cmp.txModal.label.cashAmount')}
+                required
+                error={fieldError('split')}
+              >
+                <AmountInput
+                  required
+                  value={cashInput || 0}
+                  currency={defaultCurrency}
+                  onChange={v => { setTouched(true); setCashInput(v) }}
+                  className={`${fieldError('split') ? CONTROL_INVALID : CONTROL} pr-14 tabular-nums`}
+                  placeholder="0"
+                  suffix={defaultCurrency}
+                />
+              </Field>
+              <Field
+                id="tx-card-amount"
+                label={translate('cmp.txModal.label.cardAmount')}
+                required
+              >
+                <AmountInput
+                  required
+                  value={cardInput || 0}
+                  currency={defaultCurrency}
+                  onChange={v => { setTouched(true); setCardInput(v) }}
+                  className={`${fieldError('split') ? CONTROL_INVALID : CONTROL} pr-14 tabular-nums`}
+                  placeholder="0"
+                  suffix={defaultCurrency}
+                />
+              </Field>
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-control border border-slate-200 px-3 py-2">
+              <span className="text-xs text-slate-500">{translate('cmp.payBucket.total')}</span>
+              <span className="text-sm font-semibold tabular-nums text-slate-900">{moneyFull(splitTotal, defaultCurrency)}</span>
+            </div>
+            <p className="text-xs text-slate-500">
+              {translate('cmp.txModal.splitBadgeNoticePrefix')}
+              <span className="font-medium text-slate-600"> {translate('cmp.txModal.willAdjustCashBold', { currency: defaultCurrency })}</span>
+              {translate('cmp.txModal.splitBadgeNoticeSuffix')}
+            </p>
+          </>
+        )}
+
+        {/* …and the wallet itself, directly under the method that decides which one it can be. */}
         {paymentMode === 'CASH' ? (
           <div>
             <p className="mb-1 text-xs font-medium text-slate-600">{translate('cmp.txModal.label.card')}</p>
@@ -1203,12 +1709,6 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
                 </span>
                 {translate('cmp.txModal.paidWithCash')}
               </span>
-              <Button
-                size="sm"
-                variant="ghost"
-                label={translate('cmp.txModal.change')}
-                onClick={() => setMoreOpen(true)}
-              />
             </div>
             {cashBalance !== null && (
               <p className="mt-1 text-xs tabular-nums text-slate-500">
@@ -1263,582 +1763,19 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
           </p>
         )}
 
-        {/* 6. Date — defaults to today on the viewer's clock, not UTC. */}
+        {/* 9. Date — defaults to today on the viewer's clock, not UTC. */}
         <Field id="tx-date" label={translate('cmp.txModal.label.date')} required error={fieldError('date')}>
           <input required type="date" value={form.transactionDate}
             onChange={e => set('transactionDate', e.target.value)}
             className={fieldError('date') ? CONTROL_INVALID : CONTROL} />
         </Field>
 
-        {/* 7. More options. Unmounted, never CSS-hidden: it holds `required` controls, and Chrome
-            refuses to submit a form containing a required control it cannot focus — with no
-            visible message at all. `moreForced` keeps it open whenever it holds something the
-            user must fill in. */}
-        {!moreForced && (
-          <button
-            type="button"
-            onClick={() => setMoreOpen(o => !o)}
-            aria-expanded={showMore}
-            // Only while the panel exists: the section is unmounted when collapsed, and pointing
-            // aria-controls at an id that is not in the document is worse than omitting it.
-            aria-controls={showMore ? 'tx-more' : undefined}
-            className="focus-ring flex w-full cursor-pointer items-center justify-between gap-2 rounded-control border border-slate-200 px-3 py-2.5 transition-colors hover:bg-slate-50">
-            <span className="text-sm font-medium text-slate-700">{translate('cmp.txModal.moreOptions')}</span>
-            <span className="flex min-w-0 items-center gap-2 text-xs text-slate-500">
-              <span className="truncate">{collapsedSummary}</span>
-              <ChevronDown className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${showMore ? 'rotate-180' : ''}`} />
-            </span>
-          </button>
-        )}
-
-        {/* Forced open, so no toggle — but the section still needs a name, or the quick path just
-            runs on into six more controls with nothing marking where it ended. */}
-        {moreForced && (
-          <p className="pt-1 text-label uppercase text-slate-500">{translate('cmp.txModal.moreOptions')}</p>
-        )}
-
-        {showMore && (
-          <div id="tx-more" className="space-y-4">
-
-            {/* (a) Sub-type. The direction it belongs to is settled at the top of the form. */}
-            <div>
-              <p className="mb-1.5 text-xs font-medium text-slate-600">{translate('tx.type')}</p>
-              <div className="grid grid-cols-2 gap-1.5" role="group" aria-label={translate('tx.type')}>
-                {subTypes.map(s => (
-                  <button key={s.value} type="button" onClick={() => switchSubType(s.value)}
-                    aria-pressed={form.subType === s.value}
-                    className={`focus-ring flex cursor-pointer items-start gap-2 rounded-control border px-2.5 py-2 text-left transition-colors ${
-                      form.subType === s.value ? 'border-indigo-500' : 'border-slate-200 hover:border-slate-300'}`}>
-                    <span className={`mt-1 h-3 w-3 shrink-0 rounded-full border-2 ${
-                      form.subType === s.value ? 'border-indigo-500 bg-indigo-500' : 'border-slate-300'}`} />
-                    <span className="min-w-0">
-                      <span className={`block text-xs font-semibold leading-tight ${
-                        form.subType === s.value ? 'text-indigo-700' : 'text-slate-700'}`}>{s.label}</span>
-                      <span className="mt-0.5 block text-[11px] leading-tight text-slate-500">{s.hint}</span>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Counterparty / Loan selector */}
-            {form.subType === 'LOAN_REPAYMENT' && !transaction ? (
-              <div>
-                {activeLoans.length === 0
-                  ? <p className="mb-1 text-xs font-medium text-slate-600">{translate('cmp.txModal.selectLoanToRepay')}</p>
-                  : <label htmlFor="tx-loan" className="mb-1 block text-xs font-medium text-slate-600">{translate('cmp.txModal.selectLoanToRepay')}</label>}
-                {activeLoans.length === 0 ? (
-                  <p className="rounded-control border border-dashed border-slate-300 px-3 py-3 text-center text-xs text-slate-500">
-                    {translate('cmp.txModal.noActiveBorrowedLoans')} <br />{translate('cmp.txModal.addLoanFirst')}
-                  </p>
-                ) : (
-                  <>
-                    <select id="tx-loan" value={selectedLoanId ?? ''}
-                      onChange={e => {
-                        const id = e.target.value ? Number(e.target.value) : undefined
-                        setSelectedLoanId(id)
-                        const loan = activeLoans.find(l => l.id === id)
-                        if (loan) {
-                          set('amount', loan.remainingAmount)
-                          set('currency', loan.currency as Currency)
-                          set('description', translate('cmp.txModal.loanRepaymentTo', { name: loan.lenderName }))
-                          set('counterpartyName', loan.lenderName)
-                        }
-                      }}
-                      className={CONTROL}>
-                      <option value="">{translate('cmp.txModal.selectLoanOrManual')}</option>
-                      {activeLoans.map(l => (
-                        <option key={l.id} value={l.id}>
-                          {l.lenderName} · {translate('cmp.repay.remaining')}{moneyFull(l.remainingAmount, l.currency as Currency)} · {l.status}
-                        </option>
-                      ))}
-                    </select>
-                    {selectedLoanId && (() => {
-                      const loan = activeLoans.find(l => l.id === selectedLoanId)
-                      return loan ? (
-                        <p className="mt-1.5 text-xs text-slate-500">
-                          {translate('cmp.txModal.maxPayable')}{' '}
-                          <span className="font-semibold tabular-nums text-slate-900">
-                            {moneyFull(loan.remainingAmount, loan.currency as Currency)}
-                          </span>
-                          <span className="ml-2 inline-flex rounded-chip bg-slate-100 px-1.5 py-0.5 font-medium text-slate-600">
-                            {loan.status}
-                          </span>
-                        </p>
-                      ) : null
-                    })()}
-                  </>
-                )}
-              </div>
-            ) : form.subType === 'LOAN_RETURNED_TO_ME' && !transaction ? (
-              <div>
-                {activeLoansGiven.length === 0
-                  ? <p className="mb-1 text-xs font-medium text-slate-600">{translate('cmp.txModal.selectLoanReturned')}</p>
-                  : <label htmlFor="tx-loan-given" className="mb-1 block text-xs font-medium text-slate-600">{translate('cmp.txModal.selectLoanReturned')}</label>}
-                {activeLoansGiven.length === 0 ? (
-                  <p className="rounded-control border border-dashed border-slate-300 px-3 py-3 text-center text-xs text-slate-500">
-                    {translate('cmp.txModal.noActiveLentLoans')} <br />{translate('cmp.txModal.addLoanFirst')}
-                  </p>
-                ) : (
-                  <>
-                    <select id="tx-loan-given" value={selectedLoanGivenId ?? ''}
-                      onChange={e => {
-                        const id = e.target.value ? Number(e.target.value) : undefined
-                        setSelectedLoanGivenId(id)
-                        const loan = activeLoansGiven.find(l => l.id === id)
-                        if (loan) {
-                          set('amount', loan.pendingAmount)
-                          set('currency', loan.currency as Currency)
-                          set('description', translate('cmp.txModal.loanReturnedBy', { name: loan.debtorName }))
-                          set('counterpartyName', loan.debtorName)
-                        }
-                      }}
-                      className={CONTROL}>
-                      <option value="">{translate('cmp.txModal.selectLoanOrManual')}</option>
-                      {activeLoansGiven.map(l => (
-                        <option key={l.id} value={l.id}>
-                          {l.debtorName} · {translate('cmp.txModal.pending')} {moneyFull(l.pendingAmount, l.currency as Currency)} · {l.status}
-                        </option>
-                      ))}
-                    </select>
-                    {selectedLoanGivenId && (() => {
-                      const loan = activeLoansGiven.find(l => l.id === selectedLoanGivenId)
-                      return loan ? (
-                        <p className="mt-1.5 text-xs text-slate-500">
-                          {translate('cmp.txModal.maxReceivable')}{' '}
-                          <span className="font-semibold tabular-nums text-slate-900">
-                            {moneyFull(loan.pendingAmount, loan.currency as Currency)}
-                          </span>
-                          <span className="ml-2 inline-flex rounded-chip bg-slate-100 px-1.5 py-0.5 font-medium text-slate-600">
-                            {loan.status}
-                          </span>
-                        </p>
-                      ) : null
-                    })()}
-                  </>
-                )}
-              </div>
-            ) : form.subType && NEEDS_COUNTERPARTY.has(form.subType) && !isAnonymousDonation ? (
-              <div className="relative">
-                <Field
-                  id="tx-counterparty"
-                  label={COUNTERPARTY_LABEL[form.subType] ?? translate('cmp.txModal.counterparty.generic')}
-                  required
-                  error={fieldError('counterparty')}
-                >
-                  <input required ref={counterpartyRef} value={form.counterpartyName ?? ''}
-                    onChange={e => {
-                      set('counterpartyName', e.target.value)
-                      // Typing away from the picked borrower means "someone new" again.
-                      if (form.subType === 'LOAN_GIVEN' && form.loanGivenId) {
-                        const linked = allLoansGiven.find(l => l.id === form.loanGivenId)
-                        if (!linked || linked.debtorName !== e.target.value) set('loanGivenId', undefined)
-                      }
-                      if (form.subType === 'LOAN_GIVEN') setShowBorrowerPopover(true)
-                    }}
-                    onFocus={() => {
-                      if (restoringFocus.current) { restoringFocus.current = false; return }
-                      if (form.subType === 'BANK_LOAN_PAYMENT' && bankOptions.length > 0) setShowBankPopover(true)
-                      if (form.subType === 'LOAN_GIVEN' && allLoansGiven.length > 0) setShowBorrowerPopover(true)
-                    }}
-                    // Tabbing from the input into the list is a blur of the input, so close only
-                    // when focus actually left the list too — a bare timer used to unmount the
-                    // options 150 ms after a keyboard user reached them.
-                    onBlur={e => {
-                      const next = e.relatedTarget as Node | null
-                      if (next && (borrowerPopoverRef.current?.contains(next)
-                        || bankPopoverRef.current?.contains(next))) return
-                      setShowBankPopover(false); setShowBorrowerPopover(false)
-                    }}
-                    // Escape dismisses the list, not the whole sheet. Sheet listens on `document`,
-                    // which the event only reaches after React's root, so stopping it here wins.
-                    onKeyDown={e => {
-                      if (e.key !== 'Escape' || !(showBorrowerPopover || showBankPopover)) return
-                      e.stopPropagation()
-                      setShowBankPopover(false); setShowBorrowerPopover(false)
-                    }}
-                    className={fieldError('counterparty') ? CONTROL_INVALID : CONTROL}
-                    placeholder={translate('cmp.txModal.enterNamePlaceholder')} autoComplete="off" />
-                </Field>
-                {form.subType === 'LOAN_GIVEN' && showBorrowerPopover && allLoansGiven.length > 0 && (
-                  <div
-                    ref={borrowerPopoverRef}
-                    onBlur={e => {
-                      if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setShowBorrowerPopover(false)
-                    }}
-                    onKeyDown={e => {
-                      if (e.key !== 'Escape') return
-                      e.stopPropagation()
-                      setShowBorrowerPopover(false)
-                      returnFocus(counterpartyRef.current)
-                    }}
-                    className="absolute left-0 right-0 top-full z-10 mt-1 max-h-56 overflow-y-auto rounded-control border border-slate-200 bg-white shadow-tile-hover">
-                    <p className="bg-slate-50 px-3 py-1.5 text-label uppercase text-slate-500">
-                      {translate('cmp.txModal.existingBorrowers')}
-                    </p>
-                    {allLoansGiven
-                      .filter(l => !form.counterpartyName
-                        || l.debtorName.toLowerCase().includes(form.counterpartyName.toLowerCase()))
-                      .map(l => (
-                        <button key={l.id} type="button"
-                          // Enter and Space on a <button> dispatch click, never mousedown, so the
-                          // handler lives on onClick. onMouseDown only suppresses the pointer's
-                          // blur, which would otherwise close the list before the click lands.
-                          onMouseDown={e => e.preventDefault()}
-                          onClick={() => {
-                            set('counterpartyName', l.debtorName)
-                            set('loanGivenId', l.id)
-                            setShowBorrowerPopover(false)
-                            returnFocus(counterpartyRef.current)
-                          }}
-                          className={`${POPOVER_ITEM} flex items-center justify-between gap-2`}>
-                          <span className="truncate">{l.debtorName}</span>
-                          <span className="shrink-0 text-xs tabular-nums text-slate-500">
-                            {moneyFull(l.pendingAmount, l.currency as Currency)}
-                          </span>
-                        </button>
-                      ))}
-                  </div>
-                )}
-                {form.subType === 'LOAN_GIVEN' && (() => {
-                  const linked = allLoansGiven.find(l => l.id === form.loanGivenId)
-                  return linked ? (
-                    <p className="mt-1.5 flex items-center justify-between gap-2 text-xs text-slate-500">
-                      <span>
-                        {translate('cmp.txModal.toppingUp', { name: linked.debtorName })} · {translate('cmp.txModal.outstandingNow')}{' '}
-                        <span className="font-semibold tabular-nums text-slate-900">
-                          {moneyFull(linked.pendingAmount, linked.currency as Currency)}
-                        </span>
-                      </span>
-                      <button type="button" onClick={() => set('loanGivenId', undefined)}
-                        className="focus-ring shrink-0 cursor-pointer text-indigo-600 underline hover:no-underline">
-                        {translate('cmp.txModal.newLoanInstead')}
-                      </button>
-                    </p>
-                  ) : allLoansGiven.length > 0 ? (
-                    <p className="mt-1.5 text-xs text-slate-500">{translate('cmp.txModal.newBorrowerHint')}</p>
-                  ) : null
-                })()}
-                {form.subType === 'BANK_LOAN_PAYMENT' && showBankPopover && bankOptions.length > 0 && (
-                  <div
-                    ref={bankPopoverRef}
-                    onBlur={e => {
-                      if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setShowBankPopover(false)
-                    }}
-                    onKeyDown={e => {
-                      if (e.key !== 'Escape') return
-                      e.stopPropagation()
-                      setShowBankPopover(false)
-                      returnFocus(counterpartyRef.current)
-                    }}
-                    className="absolute left-0 right-0 top-full z-10 mt-1 overflow-hidden rounded-control border border-slate-200 bg-white shadow-tile-hover">
-                    {bankOptions
-                      .filter(b => !form.counterpartyName || b.toLowerCase().includes(form.counterpartyName.toLowerCase()))
-                      .map(b => (
-                        <button key={b} type="button"
-                          onMouseDown={e => e.preventDefault()}
-                          onClick={() => {
-                            set('counterpartyName', b)
-                            setShowBankPopover(false)
-                            returnFocus(counterpartyRef.current)
-                          }}
-                          className={POPOVER_ITEM}>{b}</button>
-                      ))}
-                  </div>
-                )}
-              </div>
-            ) : isAnonymousDonation ? (
-              <p className="text-xs text-slate-500">{translate('cmp.txModal.anonymousDonationNotice')}</p>
-            ) : null}
-
-            {/* Investment: top up an existing one, or create a new record. */}
-            {form.subType === 'INVESTMENT' && (
-              <div className="space-y-2">
-                <div className={SEGMENT_TRACK} role="group" aria-label={translate('cmp.txModal.label.investment')}>
-                  <button type="button"
-                    // Mirrors the picker rather than clearing it: the two are one fact, and a
-                    // second press on the tab you are already on used to blank the posted id
-                    // while the select still showed the fund — which is what makes the save
-                    // reverse the contribution and open a duplicate record.
-                    onClick={() => { setTouched(true); setInvestmentMode('existing'); set('investmentId', selectedInvestmentId) }}
-                    aria-pressed={investmentMode === 'existing'}
-                    className={`${SEGMENT_BASE} ${investmentMode === 'existing' ? 'bg-white text-slate-900 shadow-tile' : 'text-slate-600 hover:text-slate-900'}`}>
-                    {translate('cmp.txModal.addToExisting')}
-                  </button>
-                  <button type="button"
-                    onClick={() => { setTouched(true); setInvestmentMode('new'); setSelectedInvestmentId(undefined); set('investmentId', undefined) }}
-                    aria-pressed={investmentMode === 'new'}
-                    className={`${SEGMENT_BASE} ${investmentMode === 'new' ? 'bg-white text-slate-900 shadow-tile' : 'text-slate-600 hover:text-slate-900'}`}>
-                    {translate('cmp.txModal.createNew')}
-                  </button>
-                </div>
-
-                {investmentMode === 'existing' ? (
-                  existingInvestments.length === 0 ? (
-                    <p className="rounded-control border border-dashed border-slate-300 px-3 py-3 text-center text-xs text-slate-500">
-                      {translate('cmp.txModal.noInvestmentsYet')}
-                    </p>
-                  ) : (
-                    <>
-                      <Field
-                        id="tx-investment"
-                        label={translate('cmp.txModal.label.investment')}
-                        required
-                        error={fieldError('investment')}
-                      >
-                        <select
-                          value={selectedInvestmentId ?? ''}
-                          onChange={e => {
-                            const id = e.target.value ? Number(e.target.value) : undefined
-                            setSelectedInvestmentId(id)
-                            set('investmentId', id)
-                            const inv = existingInvestments.find(i => i.id === id)
-                            if (inv) {
-                              set('currency', inv.currency as Currency)
-                              set('counterpartyName', inv.name)
-                              if (!form.description) set('description', translate('cmp.txModal.addFundsTo', { name: inv.name }))
-                            }
-                          }}
-                          className={fieldError('investment') ? CONTROL_INVALID : CONTROL}
-                        >
-                          <option value="">{translate('cmp.txModal.selectAnInvestment')}</option>
-                          {existingInvestments.map(i => (
-                            <option key={i.id} value={i.id}>
-                              {i.name} · {INVESTMENT_TYPE_LABELS[i.type]} · {moneyFull(i.investedAmount, i.currency as Currency)}
-                            </option>
-                          ))}
-                        </select>
-                      </Field>
-                      {selectedInvestmentId && (() => {
-                        const inv = existingInvestments.find(i => i.id === selectedInvestmentId)
-                        return inv ? (
-                          <p className="text-xs text-slate-500">
-                            {translate('cmp.txModal.currentTotal')}{' '}
-                            <span className="font-semibold tabular-nums text-slate-900">
-                              {moneyFull(inv.investedAmount, inv.currency as Currency)}
-                            </span>
-                            <span className="ml-2 inline-flex rounded-chip bg-slate-100 px-1.5 py-0.5 font-medium text-slate-600">
-                              {INVESTMENT_TYPE_LABELS[inv.type]}
-                            </span>
-                          </p>
-                        ) : null
-                      })()}
-                    </>
-                  )
-                ) : (
-                  <Field id="tx-investment-type" label={translate('cmp.txModal.investmentType')}>
-                    <select value={form.investmentType ?? 'OTHER'}
-                      onChange={e => set('investmentType', e.target.value as InvestmentType)}
-                      className={CONTROL}>
-                      {(['REAL_ESTATE','BONDS','MUTUAL_FUND','GOLD','OTHER'] as InvestmentType[]).map(it => (
-                        <option key={it} value={it}>{INVESTMENT_TYPE_LABELS[it]}</option>
-                      ))}
-                    </select>
-                  </Field>
-                )}
-              </div>
-            )}
-
-            {/* Payment starts — when borrowed money begins counting toward the plan. */}
-            {form.subType === 'LOAN_RECEIVED' && !transaction && (
-              <Field
-                id="tx-payment-start"
-                label={translate('cmp.txModal.repaymentsStart')}
-                help={translate('cmp.txModal.repaymentsStartHint')}
-              >
-                <input type="month"
-                  value={form.paymentStartDate ? form.paymentStartDate.slice(0, 7) : nextMonthStr()}
-                  onChange={e => set('paymentStartDate', e.target.value ? `${e.target.value}-01` : undefined)}
-                  className={CONTROL} />
-              </Field>
-            )}
-
-            {form.subType && AUTO_CREATES.has(form.subType) && (
-              <p className="flex items-start gap-2 text-xs text-slate-500">
-                <Info className="mt-px h-3.5 w-3.5 shrink-0 text-slate-400" />
-                <span>
-                  {form.subType === 'INVESTMENT'
-                    ? investmentMode === 'existing' && selectedInvestmentId
-                      ? translate('cmp.txModal.fundsAddedToInvestment')
-                      : investmentMode === 'new'
-                        ? <>{translate('cmp.txModal.newInvestmentPrefix')} <strong className="font-semibold text-slate-700">{translate('cmp.txModal.investmentWord')}</strong>{translate('cmp.txModal.newInvestmentSuffix')}</>
-                        : null
-                    : <>{translate('cmp.txModal.autoCreatePrefix')} <strong className="font-semibold text-slate-700">{subTypes.find(s => s.value === form.subType)?.label}</strong> {translate('cmp.txModal.autoCreateSuffix')}</>}
-                </span>
-              </p>
-            )}
-
-            {/* (c) Payment method + the inputs only a split needs. */}
-            <div>
-              <p className="mb-1 text-xs font-medium text-slate-600">{translate('cmp.field.paymentMethod')}</p>
-              <div className={SEGMENT_TRACK} role="group" aria-label={translate('cmp.field.paymentMethod')}>
-                {([
-                  { value: 'CARD', label: translate('cmp.txModal.cardOnly') },
-                  { value: 'CASH', label: translate('cmp.txModal.cashOnly') },
-                  { value: 'BOTH', label: translate('tx.both') },
-                ] as { value: PaymentMode; label: string }[]).map(opt => {
-                  const needsCard = opt.value !== 'CASH'
-                  const blockedByWallet = noUsableCards && needsCard
-                  const blockedByLoanPath = atomicLoanPath && opt.value === 'BOTH'
-                  const blocked = blockedByWallet || blockedByLoanPath
-                  return (
-                    <button key={opt.value} type="button"
-                      disabled={blocked}
-                      aria-pressed={paymentMode === opt.value}
-                      title={blockedByWallet
-                        ? translate('cmp.txModal.noCardsHint')
-                        : blockedByLoanPath ? translate('cmp.txModal.bothNotForLoanPath') : undefined}
-                      onClick={() => { setTouched(true); setPaymentMode(opt.value) }}
-                      className={`${SEGMENT_BASE} ${
-                        paymentMode === opt.value
-                          ? 'bg-white text-slate-900 shadow-tile'
-                          : 'text-slate-600 hover:text-slate-900'}`}>
-                      {opt.label}
-                    </button>
-                  )
-                })}
-              </div>
-              {noUsableCards && (
-                <p className="mt-1 text-xs text-slate-500">{translate('cmp.txModal.noCardsHint')}</p>
-              )}
-              {!noUsableCards && atomicLoanPath && (
-                <p className="mt-1 text-xs text-slate-500">{translate('cmp.txModal.bothNotForLoanPath')}</p>
-              )}
-              {paymentMode === 'CASH' && (
-                <p className="mt-1 text-xs text-slate-500">
-                  {translate('cmp.txModal.willAdjustCashPrefix')}{' '}
-                  <span className="font-medium text-slate-600">{translate('cmp.txModal.willAdjustCashBold', { currency: defaultCurrency })}</span>
-                  {cashBalance !== null && (
-                    <> · {translate('cmp.txModal.current')} <span className="tabular-nums">{moneyFull(cashBalance, defaultCurrency)}</span></>
-                  )}
-                </p>
-              )}
-            </div>
-
-            {paymentMode === 'BOTH' && (
-              <>
-                <div className="grid grid-cols-2 gap-3">
-                  <Field
-                    id="tx-cash-amount"
-                    label={translate('cmp.txModal.label.cashAmount')}
-                    required
-                    error={fieldError('split')}
-                  >
-                    <AmountInput
-                      required
-                      value={cashInput || 0}
-                      currency={defaultCurrency}
-                      onChange={v => { setTouched(true); setCashInput(v) }}
-                      className={`${fieldError('split') ? CONTROL_INVALID : CONTROL} pr-14 tabular-nums`}
-                      placeholder="0"
-                      suffix={defaultCurrency}
-                    />
-                  </Field>
-                  <Field
-                    id="tx-card-amount"
-                    label={translate('cmp.txModal.label.cardAmount')}
-                    required
-                  >
-                    <AmountInput
-                      required
-                      value={cardInput || 0}
-                      currency={defaultCurrency}
-                      onChange={v => { setTouched(true); setCardInput(v) }}
-                      className={`${fieldError('split') ? CONTROL_INVALID : CONTROL} pr-14 tabular-nums`}
-                      placeholder="0"
-                      suffix={defaultCurrency}
-                    />
-                  </Field>
-                </div>
-                <div className="flex items-center justify-between gap-3 rounded-control border border-slate-200 px-3 py-2">
-                  <span className="text-xs text-slate-500">{translate('cmp.payBucket.total')}</span>
-                  <span className="text-sm font-semibold tabular-nums text-slate-900">{moneyFull(splitTotal, defaultCurrency)}</span>
-                </div>
-                <p className="text-xs text-slate-500">
-                  {translate('cmp.txModal.splitBadgeNoticePrefix')}
-                  <span className="font-medium text-slate-600"> {translate('cmp.txModal.willAdjustCashBold', { currency: defaultCurrency })}</span>
-                  {translate('cmp.txModal.splitBadgeNoticeSuffix')}
-                </p>
-              </>
-            )}
-
-            {/* (d) Description — optional by default; the server fills in a sensible one. */}
-            <div className="relative">
-              <Field
-                id="tx-description"
-                label={descriptionLabel}
-                required={descriptionRequired}
-                error={fieldError('description')}
-              >
-                <input ref={descriptionRef} value={form.description ?? ''} onChange={e => handleDescriptionChange(e.target.value)}
-                  onFocus={() => {
-                    if (restoringFocus.current) { restoringFocus.current = false; return }
-                    if (suggestions.length > 0) setShowSuggestions(true)
-                  }}
-                  // Same rule as the counterparty lists: only close once focus has left the
-                  // options too, so tabbing into them does not unmount them.
-                  onBlur={e => {
-                    const next = e.relatedTarget as Node | null
-                    if (next && suggestionsPopoverRef.current?.contains(next)) return
-                    setShowSuggestions(false)
-                  }}
-                  onKeyDown={e => {
-                    if (e.key !== 'Escape' || !showSuggestions) return
-                    e.stopPropagation()
-                    setShowSuggestions(false)
-                  }}
-                  required={descriptionRequired}
-                  className={fieldError('description') ? CONTROL_INVALID : CONTROL}
-                  placeholder={translate('cmp.txModal.descriptionPlaceholder', {
-                    example: descriptionLabel === translate('tx.description')
-                      ? translate(form.type === 'INCOME'
-                          ? 'cmp.txModal.descriptionExampleIncome'
-                          : 'cmp.txModal.descriptionExampleExpense')
-                      : descriptionLabel,
-                  })}
-                  autoComplete="off" />
-              </Field>
-              {!(form.description ?? '').trim() && derivedDescription && !fieldError('description') && (
-                <p className="mt-1 text-xs text-slate-500">
-                  {translate('cmp.txModal.descriptionDerived', { text: derivedDescription })}
-                </p>
-              )}
-              {showSuggestions && suggestions.length > 0 && (
-                <div
-                  ref={suggestionsPopoverRef}
-                  onBlur={e => {
-                    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setShowSuggestions(false)
-                  }}
-                  onKeyDown={e => {
-                    if (e.key !== 'Escape') return
-                    e.stopPropagation()
-                    setShowSuggestions(false)
-                    returnFocus(descriptionRef.current)
-                  }}
-                  className="absolute left-0 right-0 top-full z-10 mt-1 overflow-hidden rounded-control border border-slate-200 bg-white shadow-tile-hover">
-                  {suggestions.map(s => (
-                    <button key={s} type="button"
-                      onMouseDown={e => e.preventDefault()}
-                      onClick={() => {
-                        set('description', s)
-                        setSuggestions([]); setShowSuggestions(false)
-                        returnFocus(descriptionRef.current)
-                      }}
-                      className={POPOVER_ITEM}>{s}</button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* (e) Note */}
-            <Field id="tx-note" label={translate('tx.note')}>
-              <textarea rows={2} value={form.note ?? ''} onChange={e => set('note', e.target.value)}
-                className={TEXTAREA}
-                placeholder={translate('cmp.txModal.notePlaceholder')} />
-            </Field>
-          </div>
-        )}
-
+        {/* 10. Notes. The one free-text field that is never used as the transaction's title. */}
+        <Field id="tx-note" label={translate('tx.note')}>
+          <textarea rows={2} value={form.note ?? ''} onChange={e => set('note', e.target.value)}
+            className={TEXTAREA}
+            placeholder={translate('cmp.txModal.notePlaceholder')} />
+        </Field>
         {/* The one tinted alert on this form: the server said no. */}
         {error && (
           <div className="rounded-control border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-700" role="alert">
