@@ -875,8 +875,8 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
           </div>
         </div>
 
-        {/* 2. Type. Second, because it decides which blocks below exist at all — who the money
-            went to, which loan is being repaid, whether a finance record is created with it. */}
+        {/* 2. Type. Second, because it decides which blocks below exist at all — which categories
+            are offered, who the money went to, whether a finance record is created with it. */}
         <div>
           <p className="mb-1.5 text-xs font-medium text-slate-600">{translate('tx.type')}</p>
           <div className="grid grid-cols-2 gap-1.5" role="group" aria-label={translate('tx.type')}>
@@ -897,7 +897,241 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
           </div>
         </div>
 
-        {/* 3. Whatever the chosen type needs: the counterparty, the loan being repaid, the
+        {/* 3. Category + Sub-category — same row once a root is picked. */}
+        <div>
+          {showNewCat && (
+            <>
+              <div className="mb-1 flex items-center justify-between">
+                <label htmlFor="tx-new-category" className="text-xs font-medium text-slate-600">
+                  {translate('cmp.txModal.newCategory')}
+                </label>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon={<X className="h-3.5 w-3.5" />}
+                  label={translate('action.cancel')}
+                  onClick={() => { setShowNewCat(false); setNewCatError(null) }}
+                />
+              </div>
+              <div className="space-y-2 rounded-control border border-slate-200 p-3">
+                <input id="tx-new-category" value={newCat.name}
+                  onChange={e => setNewCat(p => ({ ...p, name: e.target.value }))}
+                  className={CONTROL}
+                  placeholder={translate('cmp.txModal.categoryNamePlaceholder')} autoFocus />
+                <div className="flex items-center gap-2">
+                  {/* The dot stays 24px; the button around it is a 44px touch target. Growing
+                      the dot itself would turn twelve swatches into a wall of colour. */}
+                  <div className="flex flex-1 flex-wrap">
+                    {COLORS.map(c => (
+                      <button key={c} type="button" onClick={() => setNewCat(p => ({ ...p, color: c }))}
+                        aria-label={c}
+                        title={c}
+                        aria-pressed={newCat.color === c}
+                        className="focus-ring group flex h-11 w-11 cursor-pointer items-center justify-center rounded-control">
+                        <span aria-hidden="true"
+                          className={`h-6 w-6 rounded-full transition-transform ${
+                            newCat.color === c ? 'scale-110 ring-2 ring-slate-400 ring-offset-1' : 'group-hover:scale-110'}`}
+                          style={{ backgroundColor: c }} />
+                      </button>
+                    ))}
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    icon={<Plus className="h-3.5 w-3.5" />}
+                    loading={creatingCat}
+                    disabled={!newCat.name.trim()}
+                    onClick={handleCreateCategory}
+                    label={translate('action.create')}
+                  />
+                </div>
+                {newCatError && (
+                  <p role="alert" className="text-sm text-expense">{newCatError}</p>
+                )}
+              </div>
+            </>
+          )}
+
+          {!showNewCat && (
+            <div className={`grid gap-2 ${selectedRootId ? 'grid-cols-2' : 'grid-cols-1'}`}>
+              {/* Category column */}
+              <div className="min-w-0">
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  {/* A <label> only while the select it names exists; the locked state has a chip
+                      instead of a control, and htmlFor pointing at nothing is worse than a span. */}
+                  {lockedRoot ? (
+                    <span className="text-xs font-medium text-slate-600">
+                      {translate('cmp.txModal.label.category')}
+                      <span aria-hidden="true" className="text-expense"> *</span>
+                    </span>
+                  ) : (
+                    <label htmlFor="tx-category" className="text-xs font-medium text-slate-600">
+                      {translate('cmp.txModal.label.category')}
+                      <span aria-hidden="true" className="text-expense"> *</span>
+                    </label>
+                  )}
+                  {!categoryLocked && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      icon={<Plus className="h-3.5 w-3.5" />}
+                      label={translate('cmp.txModal.new')}
+                      onClick={() => { setShowNewCat(true); setNewCatError(null) }}
+                    />
+                  )}
+                </div>
+
+                {lockedRoot ? (
+                  <>
+                    <div className="flex h-11 items-center justify-between gap-2 rounded-control border border-slate-200 pl-3 pr-1">
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: lockedRoot.color }} />
+                        <span className="truncate text-sm text-slate-900">{categoryName(lockedRoot)}</span>
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        label={translate('cmp.txModal.change')}
+                        onClick={() => setCategoryUnlocked(true)}
+                      />
+                    </div>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {translate('cmp.txModal.categorySwitchedForType', { name: categoryName(lockedRoot) })}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <select
+                      id="tx-category"
+                      aria-required="true"
+                      aria-invalid={fieldError('category') ? true : undefined}
+                      value={selectedRootId ?? ''}
+                      onChange={e => selectRoot(e.target.value ? Number(e.target.value) : undefined)}
+                      className={fieldError('category') ? CONTROL_INVALID : CONTROL}>
+                      <option value="">{translate('cmp.txModal.selectCategory')}</option>
+                      {rootCategories.map(c => <option key={c.id} value={c.id}>{categoryName(c)}</option>)}
+                    </select>
+                    {fieldError('category') && (
+                      <p role="alert" className="mt-1 text-xs text-expense">{fieldError('category')}</p>
+                    )}
+                    {!fieldError('category') && categoryCleared && !selectedRootId && (
+                      <p className="mt-1 text-xs text-slate-500">
+                        {translate(categoryCleared === 'direction'
+                          ? 'cmp.txModal.categoryClearedByDirection'
+                          : 'cmp.txModal.categoryClearedByType')}
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {/* Sub-category column — visible as soon as a root is selected. */}
+              {selectedRootId && (
+                <div className="min-w-0">
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    {/* Bound only when the sub-category select is the control on show — the
+                        inline creator and the dashed "add" button are not it. */}
+                    {hasSubs && !showNewSubCat ? (
+                      <label htmlFor="tx-subcategory" className="flex items-center gap-1 text-xs font-medium text-slate-600">
+                        <ChevronRight className="h-3 w-3 text-slate-400" />
+                        {translate('cmp.txModal.label.subCategory')}
+                        <span aria-hidden="true" className="text-expense">*</span>
+                      </label>
+                    ) : (
+                      <span className="flex items-center gap-1 text-xs font-medium text-slate-600">
+                        <ChevronRight className="h-3 w-3 text-slate-400" />
+                        {translate('cmp.txModal.label.subCategory')}
+                      </span>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      icon={showNewSubCat ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+                      iconOnly={showNewSubCat}
+                      label={showNewSubCat ? translate('action.cancel') : translate('cmp.txModal.new')}
+                      onClick={() => { setShowNewSubCat(v => !v); setNewSubCatError(null) }}
+                    />
+                  </div>
+
+                  {showNewSubCat ? (
+                    /* Inline sub-category creation — also captures custom description label/required. */
+                    <div className="space-y-2 rounded-control border border-slate-200 p-2.5">
+                      <input value={newSubCat.name} onChange={e => setNewSubCat(p => ({ ...p, name: e.target.value }))}
+                        className={CONTROL}
+                        aria-label={translate('cmp.txModal.subCategoryNamePlaceholder')}
+                        placeholder={translate('cmp.txModal.subCategoryNamePlaceholder')} autoFocus />
+                      <input value={newSubCat.descriptionLabel ?? ''}
+                        onChange={e => setNewSubCat(p => ({ ...p, descriptionLabel: e.target.value || undefined }))}
+                        className={CONTROL}
+                        aria-label={translate('cmp.txModal.descriptionLabelPlaceholder')}
+                        placeholder={translate('cmp.txModal.descriptionLabelPlaceholder')} />
+                      <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-600">
+                        <input type="checkbox"
+                          checked={newSubCat.descriptionRequired ?? true}
+                          onChange={e => setNewSubCat(p => ({ ...p, descriptionRequired: e.target.checked }))}
+                          className="focus-ring h-4 w-4 rounded text-indigo-600" />
+                        {translate('cmp.txModal.descriptionRequiredLabel')}
+                      </label>
+                      <div className="flex items-center gap-1.5">
+                        {/* 20px dots 4px apart were unhittable on a phone — same 44px target as
+                            the root-category picker above, dot size unchanged. */}
+                        <div className="flex flex-1 flex-wrap">
+                          {COLORS.map(c => (
+                            <button key={c} type="button" onClick={() => setNewSubCat(p => ({ ...p, color: c }))}
+                              aria-label={c}
+                              title={c}
+                              aria-pressed={newSubCat.color === c}
+                              className="focus-ring group flex h-11 w-11 cursor-pointer items-center justify-center rounded-control">
+                              <span aria-hidden="true"
+                                className={`h-5 w-5 rounded-full transition-transform ${
+                                  newSubCat.color === c ? 'scale-110 ring-2 ring-slate-400 ring-offset-1' : 'group-hover:scale-110'}`}
+                                style={{ backgroundColor: c }} />
+                            </button>
+                          ))}
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          icon={<Plus className="h-3.5 w-3.5" />}
+                          loading={creatingSubCat}
+                          disabled={!newSubCat.name.trim()}
+                          onClick={handleCreateSubCategory}
+                          label={translate('action.add')}
+                        />
+                      </div>
+                      {newSubCatError && (
+                        <p role="alert" className="text-sm text-expense">{newSubCatError}</p>
+                      )}
+                    </div>
+                  ) : hasSubs ? (
+                    <>
+                      <select
+                        id="tx-subcategory"
+                        aria-required="true"
+                        aria-invalid={fieldError('subCategory') ? true : undefined}
+                        value={subCatValue}
+                        onChange={e => set('categoryId', e.target.value ? Number(e.target.value) : selectedRootId)}
+                        className={fieldError('subCategory') ? CONTROL_INVALID : CONTROL}>
+                        <option value="">{translate('cmp.txModal.selectSubCategory')}</option>
+                        {subCategories.map(c => <option key={c.id} value={c.id}>{categoryName(c)}</option>)}
+                      </select>
+                      {fieldError('subCategory') && (
+                        <p role="alert" className="mt-1 text-xs text-expense">{fieldError('subCategory')}</p>
+                      )}
+                    </>
+                  ) : (
+                    <button type="button" onClick={() => { setShowNewSubCat(true); setNewSubCatError(null) }}
+                      className="focus-ring h-11 w-full cursor-pointer rounded-control border border-dashed border-slate-300 px-3 text-sm text-slate-500 transition-colors hover:border-indigo-300 hover:text-indigo-600">
+                      + {translate('cmp.txModal.addSubCategory')}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* 4. Whatever the chosen type needs: the counterparty, the loan being repaid, the
             investment being topped up, the month a repayment plan starts. */}
         {form.subType === 'LOAN_REPAYMENT' && !transaction ? (
           <div>
@@ -1245,7 +1479,7 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
           </p>
         )}
 
-        {/* 4. Amount — the thing the user came here to type. One instance, mounted for the life
+        {/* 5. Amount — the thing the user came here to type. One instance, mounted for the life
             of the form, so switching payment method never loses a half-typed figure. */}
         <Field
           id="tx-amount"
@@ -1287,7 +1521,7 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
           <p className="-mt-2 text-xs text-slate-500">{translate('cmp.txModal.amountKeptOnSwitch')}</p>
         )}
 
-        {/* 5. What this draft transaction would do to the monthly allocation (create mode only —
+        {/* 6. What this draft transaction would do to the monthly allocation (create mode only —
             editing an existing row would double-count it against what is already recorded). */}
         {!transaction && (
           <AllocationPreviewPanel
@@ -1300,7 +1534,7 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
           />
         )}
 
-        {/* 6. What for. Optional: left blank, the server writes the counterparty or the
+        {/* 7. What for. Optional: left blank, the server writes the counterparty or the
             category, and the hint under the field says which before you leave it empty. */}
         <div className="relative">
           <Field
@@ -1365,240 +1599,6 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
                   }}
                   className={POPOVER_ITEM}>{s}</button>
               ))}
-            </div>
-          )}
-        </div>
-
-        {/* 7. Category + Sub-category — same row once a root is picked. */}
-        <div>
-          {showNewCat && (
-            <>
-              <div className="mb-1 flex items-center justify-between">
-                <label htmlFor="tx-new-category" className="text-xs font-medium text-slate-600">
-                  {translate('cmp.txModal.newCategory')}
-                </label>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  icon={<X className="h-3.5 w-3.5" />}
-                  label={translate('action.cancel')}
-                  onClick={() => { setShowNewCat(false); setNewCatError(null) }}
-                />
-              </div>
-              <div className="space-y-2 rounded-control border border-slate-200 p-3">
-                <input id="tx-new-category" value={newCat.name}
-                  onChange={e => setNewCat(p => ({ ...p, name: e.target.value }))}
-                  className={CONTROL}
-                  placeholder={translate('cmp.txModal.categoryNamePlaceholder')} autoFocus />
-                <div className="flex items-center gap-2">
-                  {/* The dot stays 24px; the button around it is a 44px touch target. Growing
-                      the dot itself would turn twelve swatches into a wall of colour. */}
-                  <div className="flex flex-1 flex-wrap">
-                    {COLORS.map(c => (
-                      <button key={c} type="button" onClick={() => setNewCat(p => ({ ...p, color: c }))}
-                        aria-label={c}
-                        title={c}
-                        aria-pressed={newCat.color === c}
-                        className="focus-ring group flex h-11 w-11 cursor-pointer items-center justify-center rounded-control">
-                        <span aria-hidden="true"
-                          className={`h-6 w-6 rounded-full transition-transform ${
-                            newCat.color === c ? 'scale-110 ring-2 ring-slate-400 ring-offset-1' : 'group-hover:scale-110'}`}
-                          style={{ backgroundColor: c }} />
-                      </button>
-                    ))}
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    icon={<Plus className="h-3.5 w-3.5" />}
-                    loading={creatingCat}
-                    disabled={!newCat.name.trim()}
-                    onClick={handleCreateCategory}
-                    label={translate('action.create')}
-                  />
-                </div>
-                {newCatError && (
-                  <p role="alert" className="text-sm text-expense">{newCatError}</p>
-                )}
-              </div>
-            </>
-          )}
-
-          {!showNewCat && (
-            <div className={`grid gap-2 ${selectedRootId ? 'grid-cols-2' : 'grid-cols-1'}`}>
-              {/* Category column */}
-              <div className="min-w-0">
-                <div className="mb-1 flex items-center justify-between gap-2">
-                  {/* A <label> only while the select it names exists; the locked state has a chip
-                      instead of a control, and htmlFor pointing at nothing is worse than a span. */}
-                  {lockedRoot ? (
-                    <span className="text-xs font-medium text-slate-600">
-                      {translate('cmp.txModal.label.category')}
-                      <span aria-hidden="true" className="text-expense"> *</span>
-                    </span>
-                  ) : (
-                    <label htmlFor="tx-category" className="text-xs font-medium text-slate-600">
-                      {translate('cmp.txModal.label.category')}
-                      <span aria-hidden="true" className="text-expense"> *</span>
-                    </label>
-                  )}
-                  {!categoryLocked && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      icon={<Plus className="h-3.5 w-3.5" />}
-                      label={translate('cmp.txModal.new')}
-                      onClick={() => { setShowNewCat(true); setNewCatError(null) }}
-                    />
-                  )}
-                </div>
-
-                {lockedRoot ? (
-                  <>
-                    <div className="flex h-11 items-center justify-between gap-2 rounded-control border border-slate-200 pl-3 pr-1">
-                      <span className="flex min-w-0 items-center gap-2">
-                        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: lockedRoot.color }} />
-                        <span className="truncate text-sm text-slate-900">{categoryName(lockedRoot)}</span>
-                      </span>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        label={translate('cmp.txModal.change')}
-                        onClick={() => setCategoryUnlocked(true)}
-                      />
-                    </div>
-                    <p className="mt-1 text-xs text-slate-500">
-                      {translate('cmp.txModal.categorySwitchedForType', { name: categoryName(lockedRoot) })}
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <select
-                      id="tx-category"
-                      aria-required="true"
-                      aria-invalid={fieldError('category') ? true : undefined}
-                      value={selectedRootId ?? ''}
-                      onChange={e => selectRoot(e.target.value ? Number(e.target.value) : undefined)}
-                      className={fieldError('category') ? CONTROL_INVALID : CONTROL}>
-                      <option value="">{translate('cmp.txModal.selectCategory')}</option>
-                      {rootCategories.map(c => <option key={c.id} value={c.id}>{categoryName(c)}</option>)}
-                    </select>
-                    {fieldError('category') && (
-                      <p role="alert" className="mt-1 text-xs text-expense">{fieldError('category')}</p>
-                    )}
-                    {!fieldError('category') && categoryCleared && !selectedRootId && (
-                      <p className="mt-1 text-xs text-slate-500">
-                        {translate(categoryCleared === 'direction'
-                          ? 'cmp.txModal.categoryClearedByDirection'
-                          : 'cmp.txModal.categoryClearedByType')}
-                      </p>
-                    )}
-                  </>
-                )}
-              </div>
-
-              {/* Sub-category column — visible as soon as a root is selected. */}
-              {selectedRootId && (
-                <div className="min-w-0">
-                  <div className="mb-1 flex items-center justify-between gap-2">
-                    {/* Bound only when the sub-category select is the control on show — the
-                        inline creator and the dashed "add" button are not it. */}
-                    {hasSubs && !showNewSubCat ? (
-                      <label htmlFor="tx-subcategory" className="flex items-center gap-1 text-xs font-medium text-slate-600">
-                        <ChevronRight className="h-3 w-3 text-slate-400" />
-                        {translate('cmp.txModal.label.subCategory')}
-                        <span aria-hidden="true" className="text-expense">*</span>
-                      </label>
-                    ) : (
-                      <span className="flex items-center gap-1 text-xs font-medium text-slate-600">
-                        <ChevronRight className="h-3 w-3 text-slate-400" />
-                        {translate('cmp.txModal.label.subCategory')}
-                      </span>
-                    )}
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      icon={showNewSubCat ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
-                      iconOnly={showNewSubCat}
-                      label={showNewSubCat ? translate('action.cancel') : translate('cmp.txModal.new')}
-                      onClick={() => { setShowNewSubCat(v => !v); setNewSubCatError(null) }}
-                    />
-                  </div>
-
-                  {showNewSubCat ? (
-                    /* Inline sub-category creation — also captures custom description label/required. */
-                    <div className="space-y-2 rounded-control border border-slate-200 p-2.5">
-                      <input value={newSubCat.name} onChange={e => setNewSubCat(p => ({ ...p, name: e.target.value }))}
-                        className={CONTROL}
-                        aria-label={translate('cmp.txModal.subCategoryNamePlaceholder')}
-                        placeholder={translate('cmp.txModal.subCategoryNamePlaceholder')} autoFocus />
-                      <input value={newSubCat.descriptionLabel ?? ''}
-                        onChange={e => setNewSubCat(p => ({ ...p, descriptionLabel: e.target.value || undefined }))}
-                        className={CONTROL}
-                        aria-label={translate('cmp.txModal.descriptionLabelPlaceholder')}
-                        placeholder={translate('cmp.txModal.descriptionLabelPlaceholder')} />
-                      <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-600">
-                        <input type="checkbox"
-                          checked={newSubCat.descriptionRequired ?? true}
-                          onChange={e => setNewSubCat(p => ({ ...p, descriptionRequired: e.target.checked }))}
-                          className="focus-ring h-4 w-4 rounded text-indigo-600" />
-                        {translate('cmp.txModal.descriptionRequiredLabel')}
-                      </label>
-                      <div className="flex items-center gap-1.5">
-                        {/* 20px dots 4px apart were unhittable on a phone — same 44px target as
-                            the root-category picker above, dot size unchanged. */}
-                        <div className="flex flex-1 flex-wrap">
-                          {COLORS.map(c => (
-                            <button key={c} type="button" onClick={() => setNewSubCat(p => ({ ...p, color: c }))}
-                              aria-label={c}
-                              title={c}
-                              aria-pressed={newSubCat.color === c}
-                              className="focus-ring group flex h-11 w-11 cursor-pointer items-center justify-center rounded-control">
-                              <span aria-hidden="true"
-                                className={`h-5 w-5 rounded-full transition-transform ${
-                                  newSubCat.color === c ? 'scale-110 ring-2 ring-slate-400 ring-offset-1' : 'group-hover:scale-110'}`}
-                                style={{ backgroundColor: c }} />
-                            </button>
-                          ))}
-                        </div>
-                        <Button
-                          size="sm"
-                          variant="primary"
-                          icon={<Plus className="h-3.5 w-3.5" />}
-                          loading={creatingSubCat}
-                          disabled={!newSubCat.name.trim()}
-                          onClick={handleCreateSubCategory}
-                          label={translate('action.add')}
-                        />
-                      </div>
-                      {newSubCatError && (
-                        <p role="alert" className="text-sm text-expense">{newSubCatError}</p>
-                      )}
-                    </div>
-                  ) : hasSubs ? (
-                    <>
-                      <select
-                        id="tx-subcategory"
-                        aria-required="true"
-                        aria-invalid={fieldError('subCategory') ? true : undefined}
-                        value={subCatValue}
-                        onChange={e => set('categoryId', e.target.value ? Number(e.target.value) : selectedRootId)}
-                        className={fieldError('subCategory') ? CONTROL_INVALID : CONTROL}>
-                        <option value="">{translate('cmp.txModal.selectSubCategory')}</option>
-                        {subCategories.map(c => <option key={c.id} value={c.id}>{categoryName(c)}</option>)}
-                      </select>
-                      {fieldError('subCategory') && (
-                        <p role="alert" className="mt-1 text-xs text-expense">{fieldError('subCategory')}</p>
-                      )}
-                    </>
-                  ) : (
-                    <button type="button" onClick={() => { setShowNewSubCat(true); setNewSubCatError(null) }}
-                      className="focus-ring h-11 w-full cursor-pointer rounded-control border border-dashed border-slate-300 px-3 text-sm text-slate-500 transition-colors hover:border-indigo-300 hover:text-indigo-600">
-                      + {translate('cmp.txModal.addSubCategory')}
-                    </button>
-                  )}
-                </div>
-              )}
             </div>
           )}
         </div>
@@ -1698,7 +1698,7 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
           </>
         )}
 
-        {/* …and the wallet itself, directly under the method that decides which one it can be. */}
+        {/* 9. The wallet itself, directly under the method that decides which one it can be. */}
         {paymentMode === 'CASH' ? (
           <div>
             <p className="mb-1 text-xs font-medium text-slate-600">{translate('cmp.txModal.label.card')}</p>
@@ -1763,14 +1763,14 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
           </p>
         )}
 
-        {/* 9. Date — defaults to today on the viewer's clock, not UTC. */}
+        {/* 10. Date — defaults to today on the viewer's clock, not UTC. */}
         <Field id="tx-date" label={translate('cmp.txModal.label.date')} required error={fieldError('date')}>
           <input required type="date" value={form.transactionDate}
             onChange={e => set('transactionDate', e.target.value)}
             className={fieldError('date') ? CONTROL_INVALID : CONTROL} />
         </Field>
 
-        {/* 10. Notes. The one free-text field that is never used as the transaction's title. */}
+        {/* 11. Notes. The one free-text field that is never used as the transaction's title. */}
         <Field id="tx-note" label={translate('tx.note')}>
           <textarea rows={2} value={form.note ?? ''} onChange={e => set('note', e.target.value)}
             className={TEXTAREA}
