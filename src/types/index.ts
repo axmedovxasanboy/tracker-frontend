@@ -860,3 +860,89 @@ export interface AllocationPreviewResponse {
   remainingAfter?: number
   completesBucket: boolean
 }
+
+// ── Advisor (GET /advisor) ──────────────────────────────────────────────────
+// One answer shared by web Home and the Telegram bot: what you have, what is coming, what this
+// month still asks for, what is free after that, and what to do next. Every figure is UZS.
+
+export interface AdvisorWallet {
+  type: 'CARD' | 'CASH'
+  /** Null for cash. */
+  cardId: number | null
+  label: string
+  balance: number
+}
+
+export interface AdvisorOwed {
+  id: number
+  name: string
+  amount: number
+  expectedOn: string | null
+}
+
+export interface AdvisorBill {
+  kind: 'SUBSCRIPTION' | 'BANK' | 'LOAN_PLAN' | 'DEBTS'
+  /** The subscription id for SUBSCRIPTION. */
+  refId: number | null
+  /** The subscription name for SUBSCRIPTION; the client labels the other kinds. */
+  name: string | null
+  /** Still to pay this month. */
+  amount: number
+  paid: number
+  target: number
+}
+
+export interface AdvisorSetAside {
+  bucket: Bucket
+  percent: number | null
+  target: number
+  paid: number
+  remaining: number
+}
+
+export type AdvisorAction =
+  | 'SET_INCOME' | 'PAY_SUBSCRIPTION' | 'PAY_BANK' | 'PAY_DEBT'
+  | 'CLOSE_MONTH' | 'CHECK_IN' | 'SET_ASIDE' | 'ADD_GOAL'
+
+export interface AdvisorSuggestion {
+  /** Translation key root, e.g. "advisor.s.paySubscription". */
+  code: string
+  /** Names and months only — the amount is `amount`. */
+  params: Record<string, string>
+  /** The same sentence in English, for a code this client does not know. */
+  text: string
+  /** DO: due now · IDEA: optional encouragement · WARN: a heads-up with nothing to tap. */
+  kind: 'DO' | 'IDEA' | 'WARN'
+  action: AdvisorAction | null
+  /** PAY_SUBSCRIPTION: the subscription id. SET_ASIDE into a goal: the goal id. */
+  refId: number | null
+  /** SET_ASIDE: DONATION | EMERGENCY | INVESTMENTS | SAVINGS. */
+  bucket: Bucket | 'SAVINGS' | null
+  amount: number | null
+}
+
+export interface AdvisorResponse {
+  date: string
+  month: string
+  currency: Currency
+  missingStableIncome: boolean
+  have: number
+  wallets: AdvisorWallet[]
+  balanceCheckedOn: string | null
+  balanceCheckedDaysAgo: number | null
+  salaryExpected: number
+  salaryReceived: number
+  salaryComing: number
+  bonusReceived: number
+  owedToYou: AdvisorOwed[]
+  owedToYouTotal: number
+  bills: AdvisorBill[]
+  billsLeft: number
+  setAside: AdvisorSetAside[]
+  setAsideLeft: number
+  /** The Plan asks for the bills first; the set-aside figures are the step after. */
+  setAsideAfterBills: boolean
+  /** Null while the monthly stable income is unset. Negative = short. */
+  free: number | null
+  suggestions: AdvisorSuggestion[]
+}

@@ -37,8 +37,9 @@ interface Props { currency: Currency }
 const MAX_WALLET_CHIPS = 3
 
 /**
- * Home's two panels. `summary` is first, and first is load-bearing: it is what a bare "/" shows,
- * so the landing URL the sidebar links to carries no query string at all.
+ * Summary's two panels (this page was Home until the advisor took "/"; it lives at /summary now).
+ * `summary` is first, and first is load-bearing: it is what a bare /summary shows, so the URL
+ * the sidebar links to carries no query string at all.
  */
 type HomeTab = 'summary' | 'activity'
 
@@ -50,12 +51,8 @@ const TAB_LABEL: Record<HomeTab, TKey> = {
 }
 
 /**
- * The active tab rides in a search param rather than a path segment.
- *
- * Finance can use `/finance/:tab` because every one of its tabs is a sub-path. Home IS "/", and a
- * `/home/:tab` shape would need two files this change does not own: the route in `App.tsx`, and
- * `Sidebar.tsx`, whose Home item matches "/" exactly and would go dark on every tab but the
- * first. `?tab=` is linkable, survives a reload and needs neither.
+ * The active tab rides in a search param rather than a path segment: `?tab=` is linkable,
+ * survives a reload, and keeps the sidebar's /summary item lit on both tabs.
  */
 const TAB_PARAM = 'tab'
 
@@ -255,7 +252,7 @@ export function Dashboard({ currency }: Props) {
       <TileGrid>
         <div className={FULL}>
           <PageHeader
-            title={t('page.home')}
+            title={t('nav.summary')}
             subtitle={t('page.dashboard.subtitle')}
             primary={{ label: t('action.add'), onClick: () => openAdd(undefined), icon: <Plus className="w-4 h-4" aria-hidden="true" /> }}
             overflow={[

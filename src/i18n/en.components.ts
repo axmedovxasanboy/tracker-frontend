@@ -651,4 +651,14 @@ export const en_components = {
   'cmp.marks.kindPersonalLoan': 'Borrowed',
   'cmp.marks.kindDebt': 'Debt',
   'cmp.marks.kindBucket': 'Set aside',
+
+  // ── Quick income (components/dashboard/QuickIncomeModal.tsx) ───────────────
+  'cmp.quickIncome.title': 'Money came in',
+  'cmp.quickIncome.into': 'Into',
+  'cmp.quickIncome.category': 'Category',
+  'cmp.quickIncome.categoryHelp': 'Pick a bonus category for a bonus — it raises this month’s set-asides by its share.',
+  'cmp.quickIncome.noCategory': 'No category',
+  'cmp.quickIncome.bonusTag': 'bonus',
+  'cmp.quickIncome.note': 'Note',
+  'cmp.quickIncome.saved': 'Recorded {amount} of income.',
 } as const

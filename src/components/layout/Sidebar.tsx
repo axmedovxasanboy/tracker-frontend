@@ -1,8 +1,8 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import {
-  LayoutDashboard, ArrowLeftRight, Tag, WifiOff, CalendarCheck,
-  CreditCard, BarChart3, Settings as SettingsIcon, Gauge, LogOut,
+  LayoutDashboard, ArrowLeftRight, Tag, WifiOff, CalendarCheck, ChevronDown, ChevronRight,
+  CreditCard, BarChart3, Settings as SettingsIcon, Gauge, LogOut, Compass,
 } from 'lucide-react'
 import { useBackendStatus } from '../../context/BackendStatusContext'
 import { useAuth } from '../../context/AuthContext'
@@ -10,25 +10,34 @@ import { useLang } from '../../i18n/LanguageContext'
 import type { TKey } from '../../i18n/LanguageContext'
 import { formatMonth, monthLocal, plural } from '../../utils/format'
 
-// One name per destination, in the fixed order: Home · Plan · Months · Transactions ·
-// Wallets · Finance · Categories · Settings. Finance used to be a hand-rolled NavLink under
-// a section header of the same word; it is an ordinary item now, so the sidebar never prints
-// one name twice. Developer is deliberately absent — Settings › Advanced is its entry point.
-const primaryNav = [
-  { to: '/', labelKey: 'nav.home', icon: LayoutDashboard },
+// Home is the advisor — the one screen the owner is meant to need. Everything the app used to
+// put in front of them sits one click down, under Details: closed by default, remembered once
+// opened, and opened by itself whenever the page on screen lives inside it. Developer is
+// deliberately absent — Settings › Advanced is its entry point.
+const homeNav = { to: '/', labelKey: 'nav.home', icon: Compass } as const
+
+const detailsNav = [
+  { to: '/summary', labelKey: 'nav.summary', icon: LayoutDashboard },
   { to: '/overview', labelKey: 'nav.plan', icon: Gauge },
   { to: '/months', labelKey: 'nav.months', icon: CalendarCheck },
   { to: '/transactions', labelKey: 'nav.transactions', icon: ArrowLeftRight },
   { to: '/cards', labelKey: 'nav.wallets', icon: CreditCard },
   { to: '/finance', labelKey: 'nav.finance', icon: BarChart3 },
+  { to: '/categories', labelKey: 'nav.categories', icon: Tag },
 ] as const
 
-// Set-up-once destinations, separated by a rule rather than a caps header: the header used to
-// read "SETTINGS" directly above an item called "Settings", and it cost 20px the nav needed.
-const setupNav = [
-  { to: '/categories', labelKey: 'nav.categories', icon: Tag },
-  { to: '/settings', labelKey: 'nav.settings', icon: SettingsIcon },
-] as const
+const settingsNav = { to: '/settings', labelKey: 'nav.settings', icon: SettingsIcon } as const
+
+/** Whether the Details group was left open. A per-browser convenience, so storage may fail. */
+const DETAILS_KEY = 'tracker.nav.details'
+
+function readDetailsOpen(): boolean {
+  try { return localStorage.getItem(DETAILS_KEY) === '1' } catch { return false }
+}
+
+function inDetails(pathname: string): boolean {
+  return detailsNav.some(({ to }) => pathname === to || pathname.startsWith(`${to}/`))
+}
 
 /**
  * Days from today to the last day of the current month, on the VIEWER's clock.
@@ -90,6 +99,14 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
 
   const daysLeft = daysLeftInMonth(new Date())
 
+  const [detailsOpen, setDetailsOpen] = useState(() => readDetailsOpen() || inDetails(pathname))
+  // Arriving on a Details page from a link elsewhere opens the group, so the lit item is visible.
+  useEffect(() => { if (inDetails(pathname)) setDetailsOpen(true) }, [pathname])
+  const toggleDetails = () => setDetailsOpen(open => {
+    try { localStorage.setItem(DETAILS_KEY, open ? '0' : '1') } catch { /* storage blocked */ }
+    return !open
+  })
+
   return (
     <aside
       ref={asideRef}
@@ -117,14 +134,32 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
       <div className="relative flex-1 min-h-0">
         <nav ref={navRef} onClick={onClose} className="h-full px-3 py-4 overflow-y-auto">
           <div className="space-y-0.5">
-            {primaryNav.map(({ to, labelKey, icon }) => (
-              <NavItem key={to} to={to} labelKey={labelKey} icon={icon} exact={to === '/'} />
-            ))}
+            <NavItem to={homeNav.to} labelKey={homeNav.labelKey} icon={homeNav.icon} exact />
+            {/* The toggle must not bubble to the nav's onClick, which closes the phone drawer. */}
+            <button
+              type="button"
+              onClick={e => { e.stopPropagation(); toggleDetails() }}
+              aria-expanded={detailsOpen}
+              aria-controls="nav-details"
+              className="flex w-full items-center gap-3 px-3 py-3 md:py-2.5 rounded-control text-sm font-medium
+                         text-slate-300 hover:text-white hover:bg-slate-800 transition-colors
+                         focus-ring focus-visible:ring-offset-slate-900"
+            >
+              {detailsOpen
+                ? <ChevronDown className="w-4 h-4 shrink-0" aria-hidden="true" />
+                : <ChevronRight className="w-4 h-4 shrink-0" aria-hidden="true" />}
+              {t('nav.details')}
+            </button>
+            {detailsOpen && (
+              <div id="nav-details" className="ml-3 pl-2 border-l border-slate-800 space-y-0.5">
+                {detailsNav.map(({ to, labelKey, icon }) => (
+                  <NavItem key={to} to={to} labelKey={labelKey} icon={icon} />
+                ))}
+              </div>
+            )}
           </div>
           <div className="mt-3 pt-3 border-t border-slate-800 space-y-0.5">
-            {setupNav.map(({ to, labelKey, icon }) => (
-              <NavItem key={to} to={to} labelKey={labelKey} icon={icon} />
-            ))}
+            <NavItem to={settingsNav.to} labelKey={settingsNav.labelKey} icon={settingsNav.icon} />
           </div>
         </nav>
         <div

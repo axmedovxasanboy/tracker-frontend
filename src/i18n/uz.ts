@@ -21,6 +21,8 @@ export const uz: Partial<Record<keyof typeof en, string>> = {
   'nav.logout': 'Chiqish',
   // Oʻzbekchada son plural yasamaydi — ikkala shakl ham bir xil.
   'nav.thisMonth': 'Shu oy',
+  'nav.summary': 'Xulosa',
+  'nav.details': 'Batafsil',
   'nav.monthClosesInOne': 'Yopilishiga {count} kun qoldi',
   'nav.monthClosesInMany': 'Yopilishiga {count} kun qoldi',
   'nav.monthClosesToday': 'Bugun yopiladi',

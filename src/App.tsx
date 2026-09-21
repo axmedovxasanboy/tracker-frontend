@@ -13,6 +13,7 @@ import { Sidebar } from './components/layout/Sidebar'
 import { OfflineBanner } from './components/ui/OfflineBanner'
 import { Spinner } from './components/ui/Spinner'
 import { Dashboard } from './pages/Dashboard'
+import { Advisor } from './pages/Advisor'
 import { Transactions } from './pages/Transactions'
 import { Categories } from './pages/Categories'
 import { Cards } from './pages/Cards'
@@ -127,7 +128,8 @@ function AppRoutes() {
               <OfflineBanner />
             </div>
             <Routes>
-              <Route path="/" element={<Dashboard currency={currency} />} />
+              <Route path="/" element={<Advisor currency={currency} />} />
+              <Route path="/summary" element={<Dashboard currency={currency} />} />
               <Route path="/transactions" element={<Transactions currency={currency} />} />
               <Route path="/cards" element={<Cards />} />
               <Route path="/categories" element={<Categories />} />

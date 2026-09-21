@@ -639,4 +639,14 @@ export const uz_components: Partial<Record<keyof typeof en_components, string>> 
   'cmp.marks.kindPersonalLoan': 'Olingan qarz',
   'cmp.marks.kindDebt': 'Qarz',
   'cmp.marks.kindBucket': 'Ajratilgan',
+
+  // ── Tezkor daromad ─────────────────────────────────────────────────────────
+  'cmp.quickIncome.title': 'Pul tushdi',
+  'cmp.quickIncome.into': 'Qayerga',
+  'cmp.quickIncome.category': 'Kategoriya',
+  'cmp.quickIncome.categoryHelp': 'Bonus uchun bonus kategoriyasini tanlang — u shu oygi ajratmalarni oʻz ulushicha oshiradi.',
+  'cmp.quickIncome.noCategory': 'Kategoriyasiz',
+  'cmp.quickIncome.bonusTag': 'bonus',
+  'cmp.quickIncome.note': 'Izoh',
+  'cmp.quickIncome.saved': '{amount} daromad yozildi.',
 }

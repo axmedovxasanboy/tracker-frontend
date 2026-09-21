@@ -29,6 +29,8 @@ export const en = {
   // The sidebar's standing block: which month is running, and how long is left to record
   // into it. `{count}` is the day count — the singular form exists for "1 day".
   'nav.thisMonth': 'This month',
+  'nav.summary': 'Summary',
+  'nav.details': 'Details',
   'nav.monthClosesInOne': 'Closes in {count} day',
   'nav.monthClosesInMany': 'Closes in {count} days',
   'nav.monthClosesToday': 'Closes today',

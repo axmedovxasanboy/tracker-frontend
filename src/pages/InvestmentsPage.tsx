@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   ArrowDownRight, Building2, History, Pencil, Plus, ShieldAlert, Target, TrendingUp, Trash2, X,
 } from 'lucide-react'
@@ -154,6 +155,18 @@ export function InvestmentsPage({
     setDirty(false)
     setSheetOpen(true)
   }
+
+  // Home's "Add a goal" lands here with ?new=goal: open the goal form once, then drop the
+  // parameter so a reload or Back does not open it again.
+  const [searchParams, setSearchParams] = useSearchParams()
+  useEffect(() => {
+    if (searchParams.get('new') !== 'goal') return
+    openAdd(true)
+    const next = new URLSearchParams(searchParams)
+    next.delete('new')
+    setSearchParams(next, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
 
   const openEdit = (id: number) => {
     const i = investments.data?.find(x => x.id === id)
