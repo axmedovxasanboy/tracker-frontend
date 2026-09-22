@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  ArrowDownRight, ArrowLeftRight, ArrowUpRight, CreditCard, Eye, EyeOff, Info,
+  ArrowDownRight, ArrowLeftRight, ArrowUpRight, CreditCard, Info,
   Pencil, Plus, Trash2, Wallet,
 } from 'lucide-react'
 import { Sheet } from '../components/ui/Sheet'
 import { PageHeader, OverflowMenu } from '../components/ui/PageHeader'
 import type { OverflowAction } from '../components/ui/PageHeader'
 import { Tile, TileGrid } from '../components/ui/Tile'
+import { WalletUpkeepTile } from '../components/months/WalletUpkeepTile'
 import { StatTile } from '../components/ui/StatTile'
 import { Button } from '../components/ui/Button'
 import { Field } from '../components/ui/Field'
@@ -71,17 +72,15 @@ const defaultForm: CardRequest = {
 /** The submit button lives in the sheet's sticky footer, outside the <form> it submits. */
 const CARD_FORM_ID = 'wallet-card-form'
 const CASH_FORM_ID = 'wallet-cash-form'
-const REVEAL_FORM_ID = 'wallet-reveal-form'
 
 // ────────────────────────────────────────────────────────────────────────────────
 // One card, as a tile in the page grid
 // ────────────────────────────────────────────────────────────────────────────────
 
-function CardTile({ card, onOpen, onTopUp, onReveal, onExplain, onEdit, onDelete }: {
+function CardTile({ card, onOpen, onTopUp, onExplain, onEdit, onDelete }: {
   card: CardResponse
   onOpen: () => void
   onTopUp: () => void
-  onReveal: () => void
   onExplain: () => void
   onEdit: () => void
   onDelete: () => void
@@ -90,9 +89,6 @@ function CardTile({ card, onOpen, onTopUp, onReveal, onExplain, onEdit, onDelete
   const balance = card.currentBalance ?? 0
 
   const actions: OverflowAction[] = [
-    ...(card.hasFullNumber && card.hasPin
-      ? [{ label: t('page.cards.revealNumberTitle'), icon: <Eye className="h-4 w-4" />, onClick: onReveal }]
-      : []),
     { label: t('cmp.cardInfo.button', { title: t('page.cards.balanceLabel') }), icon: <Info className="h-4 w-4" />, onClick: onExplain },
     { label: t('action.edit'), icon: <Pencil className="h-4 w-4" />, onClick: onEdit },
     { label: t('action.delete'), icon: <Trash2 className="h-4 w-4" />, onClick: onDelete, danger: true },
@@ -277,11 +273,6 @@ export function Cards() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<number | null>(null)
-  const [revealModal, setRevealModal] = useState<CardResponse | null>(null)
-  const [pin, setPin] = useState('')
-  const [revealedNumber, setRevealedNumber] = useState<string | null>(null)
-  const [revealing, setRevealing] = useState(false)
-  const [revealError, setRevealError] = useState<string | null>(null)
   const [transferOpen, setTransferOpen] = useState(false)
   const [transferToCard, setTransferToCard] = useState<CardResponse | null>(null)
   const [txCard, setTxCard] = useState<CardResponse | null>(null) // card whose transactions are shown
@@ -443,22 +434,6 @@ export function Cards() {
     finally { setDeleting(null) }
   }
 
-  const openReveal = (c: CardResponse) => {
-    setRevealModal(c); setPin(''); setRevealedNumber(null); setRevealError(null)
-  }
-
-  const handleReveal = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!revealModal) return
-    setRevealing(true); setRevealError(null)
-    try {
-      const res = await cardsApi.revealFullNumber(revealModal.id, pin)
-      setRevealedNumber(res.data.fullNumber)
-    } catch (err: unknown) {
-      setRevealError(extractErrorMessage(err))
-    } finally { setRevealing(false) }
-  }
-
   const set = <K extends keyof CardRequest>(k: K, v: CardRequest[K]) => {
     setFormDirty(true)
     setForm(p => ({ ...p, [k]: v }))
@@ -506,6 +481,10 @@ export function Cards() {
             {walletsError && (
               <ErrorTile compact message={walletsError} onRetry={refetchWallets} className="md:col-span-6 xl:col-span-12" />
             )}
+
+            {/* Closing last month and checking the wallets both correct the figures below, so
+                they are asked for here rather than on a screen nobody opens. */}
+            <WalletUpkeepTile currency="UZS" onWrote={refetchWallets} />
 
             {/* The one number this page exists for: what Home's Spendable card promises when it
                 sends the user here. It did not exist anywhere on the page before. */}
@@ -606,7 +585,6 @@ export function Cards() {
                   card={card}
                   onOpen={() => { setTxCard(card); setTxPage(0); setTxCash(null) }}
                   onTopUp={() => openTransfer(card)}
-                  onReveal={() => openReveal(card)}
                   onExplain={() => setInfo('card')}
                   onEdit={() => openEdit(card)}
                   onDelete={() => handleDelete(card)}
@@ -740,59 +718,6 @@ export function Cards() {
               only tinted surface left on the page. */}
           {error && <p role="alert" className="text-sm text-expense">{error}</p>}
         </form>
-      </Sheet>
-
-      {/* Reveal the full card number */}
-      <Sheet
-        open={!!revealModal}
-        onClose={() => { setRevealModal(null); setRevealedNumber(null) }}
-        title={t('page.cards.revealModalTitle')}
-        maxWidth="max-w-md"
-        footer={!revealedNumber ? (
-          <Button
-            variant="primary"
-            type="submit"
-            form={REVEAL_FORM_ID}
-            loading={revealing}
-            disabled={!pin}
-            icon={<Eye className="h-4 w-4" />}
-            label={revealing ? t('page.cards.verifying') : t('page.cards.revealButton')}
-            className="w-full"
-          />
-        ) : undefined}
-      >
-        <div className="space-y-4">
-          <p className="text-sm text-slate-600">
-            {t('page.cards.revealPromptPre')} <strong className="text-slate-900">{revealModal?.name}</strong>.
-          </p>
-          {!revealedNumber ? (
-            <form id={REVEAL_FORM_ID} onSubmit={handleReveal}>
-              <Field id="reveal-pin" label={t('page.cards.revealPinLabel')} error={revealError ?? undefined}>
-                <input
-                  type="password"
-                  value={pin}
-                  onChange={e => setPin(e.target.value)}
-                  className="focus-ring h-11 w-full rounded-control border border-slate-200 px-3 text-center text-sm tracking-widest"
-                  placeholder={t('page.cards.enterPinPlaceholder')}
-                  autoFocus
-                />
-              </Field>
-            </form>
-          ) : (
-            <div className="space-y-3 text-center">
-              <p className="rounded-control border border-slate-200 bg-slate-50 py-3 font-mono text-xl tracking-widest tabular-nums text-slate-900">
-                {revealedNumber.replace(/(.{4})/g, '$1 ').trim()}
-              </p>
-              <Button
-                variant="ghost"
-                icon={<EyeOff className="h-4 w-4" />}
-                label={t('page.cards.hideButton')}
-                onClick={() => setRevealedNumber(null)}
-                className="mx-auto"
-              />
-            </div>
-          )}
-        </div>
       </Sheet>
 
       <BalanceTransferModal

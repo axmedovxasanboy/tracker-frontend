@@ -51,8 +51,6 @@ export interface CardResponse {
   currentBalance: number
   currency: Currency
   color: string
-  hasFullNumber: boolean
-  hasPin: boolean
   createdAt: string
 }
 
@@ -61,8 +59,6 @@ export interface CardRequest {
   bankName: string
   type: CardType
   lastFourDigits: string
-  fullNumber?: string
-  pin?: string
   initialBalance: number
   currency: Currency
   color?: string

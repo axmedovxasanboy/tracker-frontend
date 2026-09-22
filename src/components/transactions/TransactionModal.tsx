@@ -46,7 +46,7 @@ const FORM_ID = 'tx-form'
 
 const CONTROL = 'w-full h-11 rounded-control border border-slate-200 bg-white px-3 text-sm text-slate-900 focus-ring'
 const CONTROL_INVALID = 'w-full h-11 rounded-control border border-expense bg-white px-3 text-sm text-slate-900 focus-ring'
-const TEXTAREA = 'w-full rounded-control border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus-ring resize-none'
+const LINK = 'focus-ring cursor-pointer rounded-chip font-semibold text-indigo-600 hover:underline'
 /**
  * One option row inside the three suggestion popovers (borrowers, banks, descriptions).
  * Those containers clip — overflow-y-auto for the scrolling one, overflow-hidden to keep the
@@ -513,17 +513,6 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
     if (!transaction && paymentMode !== 'BOTH' && (form.amount || 0) === 0) amountRef.current?.focus()
   }
 
-  const switchSubType = (st: TransactionSubType) => {
-    setTouched(true)
-    setForm(prev => ({ ...prev, subType: st, categoryId: undefined, investmentId: undefined, loanGivenId: undefined }))
-    setCategoryCleared(selectedRootId ? 'subType' : null)
-    setSelectedRootId(undefined); setSubCategories([])
-    setAutoPickedRootId(undefined); setCategoryUnlocked(false)
-    setShowNewCat(false); setShowNewSubCat(false)
-    setSelectedInvestmentId(undefined); setInvestmentMode('existing')
-    loadRoots(form.type === 'INCOME' ? 'INCOME' : 'EXPENSE', st)
-  }
-
   const selectRoot = (id: number | undefined) => {
     setTouched(true)
     setSelectedRootId(id); setSubCategories([])
@@ -742,13 +731,16 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
     if (await confirmDiscard()) onClose()
   }
 
-  const goToWallets = async () => {
+  /** Leave the form for another screen, asking first when there is typed input to lose. */
+  const goTo = async (path: string) => {
     if (!(await confirmDiscard())) return
     onClose()
-    navigate('/cards')
+    navigate(path)
   }
+  const goToWallets = () => goTo('/cards')
 
   const subTypes = form.type === 'INCOME' ? INCOME_SUB_TYPES : EXPENSE_SUB_TYPES
+  const subTypeLabel = subTypes.find(s => s.value === form.subType)?.label
   const selectedCard = cards.find(c => c.id === form.cardId)
   const hasSubs = subCategories.length > 0
   // selected sub-category value for the select
@@ -865,24 +857,17 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
           </div>
         </div>
 
-        {/* 2. Type. Second, because it decides which blocks below exist at all — which categories
-            are offered, who the money went to, whether a finance record is created with it. */}
-        <div>
-          <p className="mb-1.5 text-xs font-medium text-slate-600">{translate('tx.type')}</p>
-          <div className="grid grid-cols-2 gap-1.5" role="group" aria-label={translate('tx.type')}>
-            {subTypes.map(s => (
-              <button key={s.value} type="button" onClick={() => switchSubType(s.value)}
-                aria-pressed={form.subType === s.value}
-                className={`focus-ring flex cursor-pointer items-start gap-2 rounded-control border px-2.5 py-2 text-left transition-colors ${
-                  form.subType === s.value ? 'border-indigo-500' : 'border-slate-200 hover:border-slate-300'}`}>
-                <span className={`mt-1 h-3 w-3 shrink-0 rounded-full border-2 ${
-                  form.subType === s.value ? 'border-indigo-500 bg-indigo-500' : 'border-slate-300'}`} />
-                <span className={`min-w-0 text-xs font-semibold leading-tight ${
-                  form.subType === s.value ? 'text-indigo-700' : 'text-slate-700'}`}>{s.label}</span>
-              </button>
-            ))}
+        {/* 2. The kind of record, when there is one to name. A new entry is always a plain
+            expense or a plain income — the special kinds are recorded where they live (see the
+            links at the foot of this form), so nothing here asks the owner to classify money
+            before they can type it. An existing special row shows its kind read-only: changing it
+            would mean creating or unpicking a loan / donation / holding behind the scenes. */}
+        {transaction && isSpecialSubType && subTypeLabel && (
+          <div className="flex items-center justify-between gap-3 rounded-control border border-hairline px-3 py-2">
+            <span className="text-xs font-medium text-slate-600">{translate('tx.type')}</span>
+            <span className="text-sm font-semibold text-slate-900">{subTypeLabel}</span>
           </div>
-        </div>
+        )}
 
         {/* 3. Category + Sub-category — same row once a root is picked. */}
         <div>
@@ -1728,11 +1713,21 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
             className={fieldError('date') ? CONTROL_INVALID : CONTROL} />
         </Field>
 
-        {/* 11. Notes. The one free-text field that is never used as the transaction's title. */}
-        <Field id="tx-note" label={translate('tx.note')}>
-          <textarea rows={2} value={form.note ?? ''} onChange={e => set('note', e.target.value)}
-            className={TEXTAREA} />
-        </Field>
+        {!transaction && (
+          <p className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-hairline pt-3 text-xs text-slate-500">
+            {translate('cmp.txModal.elseTitle')}
+            <button type="button" onClick={() => goTo('/finance/overview')} className={LINK}>
+              {translate('cmp.txModal.elseLoans')}
+            </button>
+            <button type="button" onClick={() => goTo('/overview/dashboard')} className={LINK}>
+              {translate('cmp.txModal.elseSetAside')}
+            </button>
+            <button type="button" onClick={() => goTo('/cards')} className={LINK}>
+              {translate('cmp.txModal.elseTransfer')}
+            </button>
+          </p>
+        )}
+
         {/* The one tinted alert on this form: the server said no. */}
         {error && (
           <div className="rounded-control border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-700" role="alert">

@@ -7,6 +7,4 @@ export const cardsApi = {
   create: (data: CardRequest) => apiClient.post<CardResponse>('/cards', data),
   update: (id: number, data: CardRequest) => apiClient.put<CardResponse>(`/cards/${id}`, data),
   delete: (id: number) => apiClient.delete(`/cards/${id}`),
-  revealFullNumber: (id: number, pin: string) =>
-    apiClient.post<{ fullNumber: string }>(`/cards/${id}/reveal`, { pin }),
 }

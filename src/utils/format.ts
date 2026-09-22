@@ -323,6 +323,13 @@ export function todayLocal(): string {
  * The current month in the viewer's timezone, as 'YYYY-MM'. Same reason `toISOString()`
  * is wrong here: on the 1st before 05:00 it names the previous month.
  */
+/** `YYYY-MM` shifted by whole months, on the viewer's clock. */
+export function shiftMonth(ym: string, by: number): string {
+  const [y, m] = ym.split('-').map(Number)
+  const d = new Date(y, m - 1 + by, 1)
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`
+}
+
 export function monthLocal(): string {
   const d = new Date()
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`

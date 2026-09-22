@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import { useApi } from '../hooks/useApi'
 import { monthsApi } from '../api/months'
-import { formatDate, formatMonth, money, moneyExact, moneyFull, monthLocal, todayLocal } from '../utils/format'
+import { formatDate, formatMonth, money, moneyExact, moneyFull, monthLocal, shiftMonth, todayLocal } from '../utils/format'
 import { PageHeader } from '../components/ui/PageHeader'
 import { Tile, TileGrid } from '../components/ui/Tile'
 import { StatTile } from '../components/ui/StatTile'
@@ -30,13 +30,6 @@ interface Props { currency: Currency }
 
 /** Which envelope figure's "where did this come from?" popup is open. */
 type InfoKey = 'start' | 'earned' | 'spent' | 'left' | 'tagged'
-
-/** `YYYY-MM` shifted by whole months, on the viewer's clock. */
-function shiftMonth(ym: string, by: number): string {
-  const [y, m] = ym.split('-').map(Number)
-  const d = new Date(y, m - 1 + by, 1)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-}
 
 /**
  * Calendar days from today to the last day of `ym`. Built from local date parts rather than
