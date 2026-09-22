@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
@@ -30,9 +30,11 @@ interface Props {
 
 const INVESTMENT_TYPES: InvestmentType[] = ['REAL_ESTATE', 'BONDS', 'MUTUAL_FUND', 'GOLD', 'OTHER']
 
-// The two non-numeric values of the Emergency target select; everything else is an investment id.
-const EM_FUND = 'fund'
-const EM_NEW = 'new'
+// The two non-numeric values of the target select; everything else is an existing investment's id.
+/** EMERGENCY only: the Emergency-fund tab's own row (an `Emergency` + its mirrored transaction). */
+const FUND = 'fund'
+/** Open a new holding instead of adding to one that exists. */
+const NEW = 'new'
 
 // The transaction sub-type each bucket books against — drives the category filter + auto-pick.
 const BUCKET_SUBTYPE: Record<Bucket, TransactionSubType> = {
@@ -70,20 +72,25 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
   const [recipientName, setRecipientName] = useState('')
   const [anonymous, setAnonymous] = useState(false)
 
-  // Investment-specific (also the "new emergency fund" name)
+  // Only needed when a NEW holding is being opened (name doubles as the new fund's name).
   const [name, setName] = useState('')
   const [invType, setInvType] = useState<InvestmentType>('OTHER')
   const [broker, setBroker] = useState('')
 
-  // Where an Emergency payment lands. 'fund' is the emergency fund itself — an `Emergency` row
-  // plus its mirrored EMERGENCY_CONTRIBUTION transaction, which is the record the Emergency fund
-  // tab lists and the only one the user can later edit or delete there. The other two options
-  // write an emergency-tagged *investment* instead; that also counts toward the bucket (same
-  // transaction sub-type) but is owned by the Investments tab, so it is now an explicit choice
-  // rather than the default. Paying the bucket used to always take the investment path, which is
-  // why "Set aside in September 500.000" could sit beside "All time · 0 UZS" on the same screen.
-  const [emInvestments, setEmInvestments] = useState<InvestmentResponse[]>([])
-  const [emTarget, setEmTarget] = useState<string>(EM_FUND) // EM_FUND | EM_NEW | investment id
+  /**
+   * Where this payment lands: an existing holding's id, `NEW`, or — for Emergency — `FUND`.
+   *
+   * Almost every set-aside is money going into an account that already exists, and the owner's
+   * emergency fund IS an investment flagged as one. This dialog used to have no way to say that
+   * for the Investments bucket at all: it called `createInvestment` every time, so recording from
+   * the Plan opened a second "Gold", a third, a fourth. So the existing accounts are loaded and
+   * the newest one is the default; opening a new holding is one option away, and Emergency keeps
+   * its fund-tab row as a third choice (it is listed and edited in a different tab).
+   */
+  const [holdings, setHoldings] = useState<InvestmentResponse[]>([])
+  const [target, setTarget] = useState<string>(NEW)
+  /** True once the owner has picked a target themselves, so the load below cannot overrule them. */
+  const targetTouched = useRef(false)
 
   // Funding source: 'cash' | 'none' (record only, no wallet) | card id string. "None" is offered
   // only for the investment / emergency-fund buckets (they record an entity that can exist without
@@ -121,24 +128,37 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
       setCategories(r.data)
       if (r.data.length > 0) setCategoryId(r.data[0].id)
     }).catch(() => {})
-    // Emergency bucket: the fund itself is the default; the user's emergency-tagged investments
-    // are loaded so an existing holding can still be topped up from here.
-    if (bucket === 'EMERGENCY') {
-      setEmInvestments([]); setEmTarget(EM_FUND)
+    // Both holding buckets: load what already exists and aim at it. Emergency falls back to its
+    // fund-tab row, Investments to a new holding, until the list arrives (or when it is empty).
+    setHoldings([])
+    setTarget(bucket === 'EMERGENCY' ? FUND : NEW)
+    targetTouched.current = false
+    if (bucket === 'EMERGENCY' || bucket === 'INVESTMENTS') {
       financeApi.getInvestments().then(r => {
-        setEmInvestments(r.data.filter(i => i.emergencyFund && i.currency === currency))
+        const mine = r.data.filter(i =>
+          i.currency === currency && !i.openingBalance
+          // An emergency-flagged holding funds the Emergency bucket; a savings goal funds neither
+          // (it has its own tracking), so it is never offered here.
+          && (bucket === 'EMERGENCY' ? i.emergencyFund : !i.emergencyFund && !i.savingsGoal))
+        setHoldings(mine)
+        // The API returns them newest purchase first, which is the account most likely meant.
+        // Skipped if the owner got there first — the list can land a moment after the dialog.
+        if (mine.length > 0 && !targetTouched.current) setTarget(String(mine[0].id))
       }).catch(() => {})
     }
   }, [open, bucket, suggestedAmount, defaultMonth, currency])
 
   const matchingCards = cards.filter(c => c.currency === currency)
-  const emCreatingNew = bucket === 'EMERGENCY' && emTarget === EM_NEW
-  const emToFund = bucket === 'EMERGENCY' && emTarget === EM_FUND
+  const creatingNew = target === NEW
+  const toFund = bucket === 'EMERGENCY' && target === FUND
+  const toHolding = /^\d+$/.test(target)
+  // The target select only has something to choose while a choice exists.
+  const showTarget = bucket === 'EMERGENCY' || (bucket === 'INVESTMENTS' && holdings.length > 0)
   // "None" records the entity without moving money, which only the investment endpoints support.
   // A contribution to the fund itself is always a real wallet movement, so the option is not
   // offered there — and offering it would be a trap anyway: with no transaction behind it the
   // payment would not count toward the Emergency bucket the dialog was opened to satisfy.
-  const allowNone = bucket === 'INVESTMENTS' || (bucket === 'EMERGENCY' && !emToFund)
+  const allowNone = bucket !== 'DONATION' && !toFund
   const sourceCardId = /^\d+$/.test(source) ? Number(source) : undefined
   const sourceNone = allowNone && source === 'none'
 
@@ -168,43 +188,34 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
           description: description || undefined,
           anonymous, cardId: sourceCardId, categoryId,
         })
-      } else if (bucket === 'EMERGENCY') {
-        if (emToFund) {
-          // The record the Emergency fund tab lists, edits and deletes. The backend mirrors it to
-          // the same EMERGENCY_CONTRIBUTION transaction the bucket counts, so the plan tile and
-          // the tab move together instead of quoting two totals for the same money.
-          await emergenciesApi.create({
-            amount, currency, date,
-            description: description || undefined,
-            cardId: sourceCardId, categoryId,
-          })
-        } else if (emCreatingNew) {
-          if (!name.trim()) { setError(t('cmp.err.nameFund')); setSaving(false); return }
-          await financeApi.createInvestment({
-            name: name.trim(), type: 'OTHER',
-            investedAmount: amount, currency, purchaseDate: date,
-            emergencyFund: true,
-            description: description || undefined,
-            cardId: sourceCardId, openingBalance: sourceNone, categoryId,
-          })
-        } else {
-          await financeApi.contributeInvestment(Number(emTarget), {
-            amount, currency, date,
-            cardId: sourceCardId, noWallet: sourceNone, categoryId,
-            description: description || undefined,
-          })
-        }
-      } else if (bucket === 'INVESTMENTS') {
+      } else if (toHolding) {
+        // The common case: more money into an account that already exists.
+        await financeApi.contributeInvestment(Number(target), {
+          amount, currency, date,
+          cardId: sourceCardId, noWallet: sourceNone, categoryId,
+          description: description || undefined,
+        })
+      } else if (toFund) {
+        // The record the Emergency fund tab lists, edits and deletes. The backend mirrors it to
+        // the same EMERGENCY_CONTRIBUTION transaction the bucket counts, so the plan tile and
+        // the tab move together instead of quoting two totals for the same money.
+        await emergenciesApi.create({
+          amount, currency, date,
+          description: description || undefined,
+          cardId: sourceCardId, categoryId,
+        })
+      } else {
+        const isEmergency = bucket === 'EMERGENCY'
         if (!name.trim()) {
-          setError(t('cmp.err.investmentNameRequired'))
+          setError(t(isEmergency ? 'cmp.err.nameFund' : 'cmp.err.investmentNameRequired'))
           setSaving(false); return
         }
         await financeApi.createInvestment({
           name: name.trim(),
-          type: invType,
-          investedAmount: amount, currency,
-          purchaseDate: date,
-          broker: broker || undefined,
+          type: isEmergency ? 'OTHER' : invType,
+          investedAmount: amount, currency, purchaseDate: date,
+          emergencyFund: isEmergency,
+          broker: isEmergency ? undefined : broker || undefined,
           description: description || undefined,
           cardId: sourceCardId, openingBalance: sourceNone, categoryId,
         })
@@ -239,9 +250,7 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
             ? t('action.saving')
             // "Add money" is the top-up verb; adding to the fund itself, or opening a new holding,
             // is the app's one write verb.
-            : bucket === 'EMERGENCY' && !emCreatingNew && !emToFund
-              ? t('cmp.action.topUp')
-              : t('action.record')}
+            : toHolding ? t('cmp.action.topUp') : t('action.record')}
           className="flex-1 min-w-[8rem]" />
       </div>
     </div>
@@ -250,31 +259,38 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
   return (
     <Modal open={open} onClose={onClose} title={BUCKET_TITLES[bucket]} maxWidth="max-w-lg" footer={footer}>
       <form id="pay-bucket-form" onSubmit={handleSubmit} className="space-y-3">
-        {/* Where the money is recorded. The fund itself is first and default; an emergency-tagged
-            investment is a deliberate second choice, because it is owned by the Investments tab. */}
-        {bucket === 'EMERGENCY' && (
-          <Field id="pb-em-target" label={t('cmp.payBucket.emergencyTarget')}
-            help={emToFund
-              ? t('cmp.payBucket.emergencyTargetFundHint')
-              : t('cmp.payBucket.emergencyTargetHoldingHint')}>
-            <select value={emTarget}
+        {/* Which account this goes into. Existing ones first, newest first, and one of them is
+            already selected — opening a new holding is the last option, not the default. */}
+        {showTarget && (
+          <Field id="pb-target"
+            label={t(bucket === 'EMERGENCY' ? 'cmp.payBucket.emergencyTarget' : 'cmp.payBucket.investmentTarget')}
+            help={toFund ? t('cmp.payBucket.emergencyTargetFundHint')
+              : toHolding && bucket === 'EMERGENCY' ? t('cmp.payBucket.emergencyTargetHoldingHint')
+              : toHolding ? t('cmp.payBucket.investmentTopUpHint')
+              : undefined}>
+            <select value={target}
               onChange={e => {
                 const next = e.target.value
-                setEmTarget(next)
+                targetTouched.current = true
+                setTarget(next)
                 // "None" only exists on the investment paths; leaving it selected after a switch
                 // back to the fund would silently fall through to cash.
-                if (next === EM_FUND && source === 'none') setSource('cash')
+                if (next === FUND && source === 'none') setSource('cash')
               }}
               className={`${INPUT} bg-white`}>
-              <option value={EM_FUND}>{t('cmp.payBucket.emergencyFundOption')}</option>
-              {emInvestments.map(i => (
+              {holdings.map(i => (
                 <option key={i.id} value={String(i.id)}>
                   {t('cmp.payBucket.emergencyHoldingOption', {
-                    name: i.name, amount: moneyFull(i.investedAmount, i.currency),
+                    name: i.name, amount: moneyFull(i.currentValue ?? i.investedAmount, i.currency),
                   })}
                 </option>
               ))}
-              <option value={EM_NEW}>{t('cmp.payBucket.newEmergencyFundOption')}</option>
+              {bucket === 'EMERGENCY' && (
+                <option value={FUND}>{t('cmp.payBucket.emergencyFundOption')}</option>
+              )}
+              <option value={NEW}>
+                {t(bucket === 'EMERGENCY' ? 'cmp.payBucket.newEmergencyFundOption' : 'cmp.payBucket.newInvestmentOption')}
+              </option>
             </select>
           </Field>
         )}
@@ -349,15 +365,15 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
           </>
         )}
 
-        {/* New emergency fund needs a name. */}
-        {emCreatingNew && (
+        {/* A new emergency fund needs a name. */}
+        {creatingNew && bucket === 'EMERGENCY' && (
           <Field id="pb-fund-name" required label={t('cmp.payBucket.fundNameRequired')}>
             <input required value={name} onChange={e => setName(e.target.value)}
               className={INPUT} placeholder={t('cmp.payBucket.fundNamePlaceholder')} />
           </Field>
         )}
 
-        {bucket === 'INVESTMENTS' && (
+        {creatingNew && bucket === 'INVESTMENTS' && (
           <>
             <Field id="pb-inv-name" required label={t('cmp.payBucket.nameRequired')}>
               <input required value={name} onChange={e => setName(e.target.value)}

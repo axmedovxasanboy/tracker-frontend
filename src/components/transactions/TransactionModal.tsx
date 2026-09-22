@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowDownRight, ArrowUpRight, ChevronDown, ChevronRight, Info, Plus, Wallet, X } from 'lucide-react'
+import { ArrowDownRight, ArrowUpRight, ChevronRight, Info, Plus, Wallet, X } from 'lucide-react'
 import { Sheet } from '../ui/Sheet'
 import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
@@ -108,18 +108,18 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
   const { t: translate, categoryName } = useLang()
   const navigate = useNavigate()
   const confirm = useConfirm()
-  const INCOME_SUB_TYPES: { value: TransactionSubType; label: string; hint: string }[] = [
-    { value: 'REGULAR_INCOME',      label: translate('cmp.txModal.subType.regularIncome'),      hint: translate('cmp.txModal.hint.regularIncome') },
-    { value: 'LOAN_RECEIVED',       label: translate('cmp.txModal.subType.loanReceived'),       hint: translate('cmp.txModal.hint.loanReceived') },
-    { value: 'LOAN_RETURNED_TO_ME', label: translate('cmp.txModal.subType.loanReturnedToMe'), hint: translate('cmp.txModal.hint.loanReturnedToMe') },
+  const INCOME_SUB_TYPES: { value: TransactionSubType; label: string }[] = [
+    { value: 'REGULAR_INCOME',      label: translate('cmp.txModal.subType.regularIncome') },
+    { value: 'LOAN_RECEIVED',       label: translate('cmp.txModal.subType.loanReceived') },
+    { value: 'LOAN_RETURNED_TO_ME', label: translate('cmp.txModal.subType.loanReturnedToMe') },
   ]
-  const EXPENSE_SUB_TYPES: { value: TransactionSubType; label: string; hint: string }[] = [
-    { value: 'REGULAR_EXPENSE',   label: translate('cmp.txModal.subType.regularExpense'),   hint: translate('cmp.txModal.hint.regularExpense') },
-    { value: 'LOAN_GIVEN',        label: translate('cmp.txModal.subType.loanGiven'),        hint: translate('cmp.txModal.hint.loanGiven') },
-    { value: 'LOAN_REPAYMENT',    label: translate('cmp.txModal.subType.loanRepayment'),    hint: translate('cmp.txModal.hint.loanRepayment') },
-    { value: 'BANK_LOAN_PAYMENT', label: translate('cmp.txModal.subType.bankLoanPayment'), hint: translate('cmp.txModal.hint.bankLoanPayment') },
-    { value: 'INVESTMENT',        label: translate('cmp.txModal.subType.investment'),        hint: translate('cmp.txModal.hint.investment') },
-    { value: 'DONATION',          label: translate('cmp.txModal.subType.donation'),          hint: translate('cmp.txModal.hint.donation') },
+  const EXPENSE_SUB_TYPES: { value: TransactionSubType; label: string }[] = [
+    { value: 'REGULAR_EXPENSE',   label: translate('cmp.txModal.subType.regularExpense') },
+    { value: 'LOAN_GIVEN',        label: translate('cmp.txModal.subType.loanGiven') },
+    { value: 'LOAN_REPAYMENT',    label: translate('cmp.txModal.subType.loanRepayment') },
+    { value: 'BANK_LOAN_PAYMENT', label: translate('cmp.txModal.subType.bankLoanPayment') },
+    { value: 'INVESTMENT',        label: translate('cmp.txModal.subType.investment') },
+    { value: 'DONATION',          label: translate('cmp.txModal.subType.donation') },
   ]
   const COUNTERPARTY_LABEL: Partial<Record<TransactionSubType, string>> = {
     LOAN_RECEIVED: translate('cmp.txModal.counterparty.lenderName'),
@@ -215,10 +215,6 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
   // and expense keep different lists" is not "this special type files itself" — and now that the
   // direction control is the first thing in the form, the first one is what they will hit.
   const [categoryCleared, setCategoryCleared] = useState<'direction' | 'subType' | null>(null)
-  // A direction switch carries a typed amount over instead of dropping it. Money surviving a
-  // green/red flip is exactly the kind of thing a user goes back to double-check, so say it.
-  const [amountKeptOnSwitch, setAmountKeptOnSwitch] = useState(false)
-
   const directionRef = useRef<HTMLButtonElement>(null)
   const amountRef = useRef<HTMLInputElement>(null)
 
@@ -370,7 +366,6 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
     counterpartySeeded.current = false
     setTouched(false)
     setAutoPickedRootId(undefined); setCategoryUnlocked(false); setCategoryCleared(null)
-    setAmountKeptOnSwitch(false)
     // Initialize payment mode from the transaction being edited, else default to Card-only —
     // which the effect below downgrades to Cash if the wallet turns out to be empty.
     // A transaction with cardId=null represents pure cash (tracked via CashBalance).
@@ -505,7 +500,6 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
     // The categories a type offers are not the categories the other type offers, so the pick has
     // to go — but silently dropping it is what makes it feel like a bug. Say so instead.
     setCategoryCleared(selectedRootId ? 'direction' : null)
-    setAmountKeptOnSwitch((form.amount || 0) > 0)
     setSelectedRootId(undefined); setSubCategories([])
     setAutoPickedRootId(undefined); setCategoryUnlocked(false)
     setShowNewCat(false); setShowNewSubCat(false)
@@ -523,9 +517,6 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
     setTouched(true)
     setForm(prev => ({ ...prev, subType: st, categoryId: undefined, investmentId: undefined, loanGivenId: undefined }))
     setCategoryCleared(selectedRootId ? 'subType' : null)
-    // A sub-type change is a different question from a direction change; leaving the direction
-    // note up would attach it to the wrong action.
-    setAmountKeptOnSwitch(false)
     setSelectedRootId(undefined); setSubCategories([])
     setAutoPickedRootId(undefined); setCategoryUnlocked(false)
     setShowNewCat(false); setShowNewSubCat(false)
@@ -851,7 +842,6 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
             offered and what the figure below it means, so typing an amount before choosing is
             typing into a field whose meaning has not been settled yet. */}
         <div>
-          <p className="mb-1 text-xs font-medium text-slate-600">{translate('cmp.txModal.label.direction')}</p>
           <div className={SEGMENT_TRACK} role="group" aria-label={translate('cmp.txModal.label.direction')}>
             {(['INCOME', 'EXPENSE'] as TransactionType[]).map(t => (
               <button
@@ -887,11 +877,8 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
                   form.subType === s.value ? 'border-indigo-500' : 'border-slate-200 hover:border-slate-300'}`}>
                 <span className={`mt-1 h-3 w-3 shrink-0 rounded-full border-2 ${
                   form.subType === s.value ? 'border-indigo-500 bg-indigo-500' : 'border-slate-300'}`} />
-                <span className="min-w-0">
-                  <span className={`block text-xs font-semibold leading-tight ${
-                    form.subType === s.value ? 'text-indigo-700' : 'text-slate-700'}`}>{s.label}</span>
-                  <span className="mt-0.5 block text-[11px] leading-tight text-slate-500">{s.hint}</span>
-                </span>
+                <span className={`min-w-0 text-xs font-semibold leading-tight ${
+                  form.subType === s.value ? 'text-indigo-700' : 'text-slate-700'}`}>{s.label}</span>
               </button>
             ))}
           </div>
@@ -995,9 +982,6 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
                         onClick={() => setCategoryUnlocked(true)}
                       />
                     </div>
-                    <p className="mt-1 text-xs text-slate-500">
-                      {translate('cmp.txModal.categorySwitchedForType', { name: categoryName(lockedRoot) })}
-                    </p>
                   </>
                 ) : (
                   <>
@@ -1140,7 +1124,7 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
               : <label htmlFor="tx-loan" className="mb-1 block text-xs font-medium text-slate-600">{translate('cmp.txModal.selectLoanToRepay')}</label>}
             {activeLoans.length === 0 ? (
               <p className="rounded-control border border-dashed border-slate-300 px-3 py-3 text-center text-xs text-slate-500">
-                {translate('cmp.txModal.noActiveBorrowedLoans')} <br />{translate('cmp.txModal.addLoanFirst')}
+                {translate('cmp.txModal.noActiveBorrowedLoans')}
               </p>
             ) : (
               <>
@@ -1188,7 +1172,7 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
               : <label htmlFor="tx-loan-given" className="mb-1 block text-xs font-medium text-slate-600">{translate('cmp.txModal.selectLoanReturned')}</label>}
             {activeLoansGiven.length === 0 ? (
               <p className="rounded-control border border-dashed border-slate-300 px-3 py-3 text-center text-xs text-slate-500">
-                {translate('cmp.txModal.noActiveLentLoans')} <br />{translate('cmp.txModal.addLoanFirst')}
+                {translate('cmp.txModal.noActiveLentLoans')}
               </p>
             ) : (
               <>
@@ -1326,8 +1310,6 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
                     {translate('cmp.txModal.newLoanInstead')}
                   </button>
                 </p>
-              ) : allLoansGiven.length > 0 ? (
-                <p className="mt-1.5 text-xs text-slate-500">{translate('cmp.txModal.newBorrowerHint')}</p>
               ) : null
             })()}
             {form.subType === 'BANK_LOAN_PAYMENT' && showBankPopover && bankOptions.length > 0 && (
@@ -1455,7 +1437,6 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
           <Field
             id="tx-payment-start"
             label={translate('cmp.txModal.repaymentsStart')}
-            help={translate('cmp.txModal.repaymentsStartHint')}
           >
             <input type="month"
               value={form.paymentStartDate ? form.paymentStartDate.slice(0, 7) : nextMonthStr()}
@@ -1498,9 +1479,6 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
             readOnly={paymentMode === 'BOTH'}
             onChange={v => {
               set('amount', v)
-              // The user is typing the figure now, so the note about the one carried over from
-              // before the switch has nothing left to reassure them about.
-              setAmountKeptOnSwitch(false)
               if (paymentMode === 'CARD') setCardInput(v)
               else if (paymentMode === 'CASH') setCashInput(v)
             }}
@@ -1514,12 +1492,6 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
             suffixClassName="text-sm"
           />
         </Field>
-        {paymentMode === 'BOTH' && (
-          <p className="-mt-2 text-xs text-slate-500">{translate('cmp.txModal.totalFromSplit')}</p>
-        )}
-        {amountKeptOnSwitch && (
-          <p className="-mt-2 text-xs text-slate-500">{translate('cmp.txModal.amountKeptOnSwitch')}</p>
-        )}
 
         {/* 6. What this draft transaction would do to the monthly allocation (create mode only —
             editing an existing row would double-count it against what is already recorded). */}
@@ -1640,15 +1612,6 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
           {!noUsableCards && atomicLoanPath && (
             <p className="mt-1 text-xs text-slate-500">{translate('cmp.txModal.bothNotForLoanPath')}</p>
           )}
-          {paymentMode === 'CASH' && (
-            <p className="mt-1 text-xs text-slate-500">
-              {translate('cmp.txModal.willAdjustCashPrefix')}{' '}
-              <span className="font-medium text-slate-600">{translate('cmp.txModal.willAdjustCashBold', { currency: defaultCurrency })}</span>
-              {cashBalance !== null && (
-                <> · {translate('cmp.txModal.current')} <span className="tabular-nums">{moneyFull(cashBalance, defaultCurrency)}</span></>
-              )}
-            </p>
-          )}
         </div>
 
         {paymentMode === 'BOTH' && (
@@ -1690,11 +1653,6 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
               <span className="text-xs text-slate-500">{translate('cmp.payBucket.total')}</span>
               <span className="text-sm font-semibold tabular-nums text-slate-900">{moneyFull(splitTotal, defaultCurrency)}</span>
             </div>
-            <p className="text-xs text-slate-500">
-              {translate('cmp.txModal.splitBadgeNoticePrefix')}
-              <span className="font-medium text-slate-600"> {translate('cmp.txModal.willAdjustCashBold', { currency: defaultCurrency })}</span>
-              {translate('cmp.txModal.splitBadgeNoticeSuffix')}
-            </p>
           </>
         )}
 
@@ -1773,8 +1731,7 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
         {/* 11. Notes. The one free-text field that is never used as the transaction's title. */}
         <Field id="tx-note" label={translate('tx.note')}>
           <textarea rows={2} value={form.note ?? ''} onChange={e => set('note', e.target.value)}
-            className={TEXTAREA}
-            placeholder={translate('cmp.txModal.notePlaceholder')} />
+            className={TEXTAREA} />
         </Field>
         {/* The one tinted alert on this form: the server said no. */}
         {error && (

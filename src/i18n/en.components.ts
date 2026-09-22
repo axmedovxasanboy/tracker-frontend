@@ -211,7 +211,7 @@ export const en_components = {
   // ── overview/PayBucketModal ───────────────────────────────────────────────────────────────
   'cmp.payBucket.titleDonation': 'Add a donation',
   'cmp.payBucket.titleEmergency': 'Add to your emergency fund',
-  'cmp.payBucket.titleInvestments': 'Add an investment',
+  'cmp.payBucket.titleInvestments': 'Add to investments',
   'cmp.payBucket.emergencyFund': 'Emergency fund',
   'cmp.payBucket.newEmergencyFundOption': '➕ New emergency fund…',
   'cmp.payBucket.emergencyFundHint': 'Your emergency fund is an investment marked as your emergency fund. Add to an existing one, or create a new one.',
@@ -233,6 +233,9 @@ export const en_components = {
   // record the Emergency fund tab lists and can edit; an emergency-tagged investment counts
   // toward the same bucket but is owned by the Investments tab.
   'cmp.payBucket.emergencyTarget': 'Record this as',
+  'cmp.payBucket.investmentTarget': 'Add to',
+  'cmp.payBucket.newInvestmentOption': '➕ New investment…',
+  'cmp.payBucket.investmentTopUpHint': 'Goes into this account — no new investment is created.',
   'cmp.payBucket.emergencyFundOption': 'Emergency fund contribution',
   'cmp.payBucket.emergencyHoldingOption': 'Top up: {name} · {amount}',
   'cmp.payBucket.emergencyTargetFundHint': 'Listed in the Emergency fund tab, where you can edit or delete it later.',
@@ -303,23 +306,14 @@ export const en_components = {
 
   // ── transactions/TransactionModal ─────────────────────────────────────────────────────────
   'cmp.txModal.subType.regularIncome': 'Regular income',
-  'cmp.txModal.hint.regularIncome': 'Salary, freelance…',
   'cmp.txModal.subType.loanReceived': 'Borrowed',
-  'cmp.txModal.hint.loanReceived': 'Creates a Borrowed record',
   'cmp.txModal.subType.loanReturnedToMe': 'Lent money returned',
-  'cmp.txModal.hint.loanReturnedToMe': 'Someone paid you back',
   'cmp.txModal.subType.regularExpense': 'Regular expense',
-  'cmp.txModal.hint.regularExpense': 'Shopping, food, bills…',
   'cmp.txModal.subType.loanGiven': 'Lent',
-  'cmp.txModal.hint.loanGiven': 'Creates a Lent record',
   'cmp.txModal.subType.loanRepayment': 'Loan repayment',
-  'cmp.txModal.hint.loanRepayment': 'Paying back owed money',
   'cmp.txModal.subType.bankLoanPayment': 'Bank loan payment',
-  'cmp.txModal.hint.bankLoanPayment': 'Monthly bank loan payment',
   'cmp.txModal.subType.investment': 'Investment',
-  'cmp.txModal.hint.investment': 'Creates Investment record',
   'cmp.txModal.subType.donation': 'Donation',
-  'cmp.txModal.hint.donation': 'Creates Donation record',
 
   'cmp.txModal.counterparty.lenderName': 'Lender name',
   'cmp.txModal.counterparty.debtorName': 'Debtor name',
@@ -332,9 +326,9 @@ export const en_components = {
 
   'cmp.txModal.err.selectCategory': 'Please select a category',
   'cmp.txModal.err.selectSubCategory': 'Please select a sub-category',
-  'cmp.txModal.err.selectInvestment': 'Please select an investment or switch to "Create new"',
-  'cmp.txModal.err.selectCardOrSwitch': 'Select a card or switch the payment method',
-  'cmp.txModal.err.enterBothAmounts': 'Enter both cash and card amounts (use Card-only or Cash-only otherwise)',
+  'cmp.txModal.err.selectInvestment': 'Select an investment, or switch to "Create new"',
+  'cmp.txModal.err.selectCardOrSwitch': 'Select a wallet, or pay with cash',
+  'cmp.txModal.err.enterBothAmounts': 'Enter both amounts',
   'cmp.txModal.err.fillInField': 'Please fill in the {field}',
   'cmp.txModal.err.fieldRequired': '{field} is required',
   'cmp.txModal.err.cannotExceedRemainingBalance': 'Cannot exceed remaining balance: {amount}',
@@ -349,7 +343,7 @@ export const en_components = {
   'cmp.txModal.descriptionExample': 'Monthly salary',
   'cmp.txModal.descriptionExampleIncome': 'Monthly salary',
   'cmp.txModal.descriptionExampleExpense': 'Lunch at Chaikhana',
-  'cmp.txModal.descriptionDerived': 'Will be saved as "{text}"',
+  'cmp.txModal.descriptionDerived': 'Saves as "{text}"',
 
   'cmp.txModal.newCategory': 'New category',
   'cmp.txModal.categoryNamePlaceholder': 'Category name',
@@ -359,20 +353,18 @@ export const en_components = {
   'cmp.txModal.subCategoryRequired': 'Sub-category *',
   'cmp.txModal.subCategory': 'Sub-category',
   'cmp.txModal.subCategoryNamePlaceholder': 'Sub-category name',
-  'cmp.txModal.descriptionLabelPlaceholder': 'Description field label (e.g. "Doctor name") — optional',
+  'cmp.txModal.descriptionLabelPlaceholder': 'Label for "What for" (optional)',
   'cmp.txModal.descriptionRequiredLabel': 'Description required',
   'cmp.txModal.selectSubCategory': 'Select sub-category *',
   'cmp.txModal.addSubCategory': 'Add sub-category',
 
-
   'cmp.txModal.selectLoanToRepay': 'Select the loan to repay',
-  'cmp.txModal.noActiveBorrowedLoans': 'No active borrowed loans found.',
-  'cmp.txModal.addLoanFirst': 'Add a loan first from Finance → Loans tab.',
-  'cmp.txModal.selectLoanOrManual': '— Select a loan (or enter manually below) —',
+  'cmp.txModal.noActiveBorrowedLoans': 'No borrowed money on record — add it in Finance.',
+  'cmp.txModal.selectLoanOrManual': '— Select a loan —',
   'cmp.txModal.loanRepaymentTo': 'Loan repayment to {name}',
   'cmp.txModal.maxPayable': 'Max payable:',
   'cmp.txModal.selectLoanReturned': 'Select the loan that was returned',
-  'cmp.txModal.noActiveLentLoans': 'No active lent loans found.',
+  'cmp.txModal.noActiveLentLoans': 'No lent money on record — add it in Finance.',
   'cmp.txModal.loanReturnedBy': 'Loan returned by {name}',
   'cmp.txModal.pending': 'Pending:',
   'cmp.txModal.maxReceivable': 'Max receivable:',
@@ -397,12 +389,11 @@ export const en_components = {
   'cmp.txModal.toppingUp': 'Lending more to {name}',
   'cmp.txModal.outstandingNow': 'Owes now',
   'cmp.txModal.newLoanInstead': 'New borrower instead',
-  'cmp.txModal.newBorrowerHint': 'A new borrower record will be created. Pick from the list to lend more to someone you already have a loan with.',
-  'cmp.txModal.anonymousDonationNotice': 'Anonymous donation — recipient details are intentionally omitted.',
+  'cmp.txModal.anonymousDonationNotice': 'Anonymous — no recipient saved.',
 
   'cmp.txModal.addToExisting': 'Add to existing',
   'cmp.txModal.createNew': 'Create new',
-  'cmp.txModal.noInvestmentsYet': 'No investments yet. Switch to "Create new" to add your first investment.',
+  'cmp.txModal.noInvestmentsYet': 'None yet — switch to "Create new".',
   'cmp.txModal.selectInvestmentRequired': 'Select investment *',
   'cmp.txModal.selectAnInvestment': '— Select an investment —',
   'cmp.txModal.addFundsTo': 'Add funds to {name}',
@@ -412,25 +403,18 @@ export const en_components = {
 
   'cmp.txModal.cardOnly': 'Card only',
   'cmp.txModal.cashOnly': 'Cash only',
-  'cmp.txModal.cardWalletRequired': 'Card / Wallet *',
+  'cmp.txModal.cardWalletRequired': 'Wallet *',
   'cmp.txModal.available': 'Available:',
   'cmp.txModal.cashAmountRequired': 'Cash amount *',
   'cmp.txModal.cardAmountRequired': 'Card amount *',
-  'cmp.txModal.willAdjustCashPrefix': 'Will adjust your',
-  'cmp.txModal.willAdjustCashBold': '{currency} cash balance',
-  'cmp.txModal.current': 'current',
-  'cmp.txModal.splitBadgeNoticePrefix': 'One transaction will be saved with a split badge. The cash portion adjusts your',
-  'cmp.txModal.splitBadgeNoticeSuffix': '; the card portion hits the selected card.',
 
   'cmp.txModal.repaymentsStart': 'Repayments start',
-  'cmp.txModal.repaymentsStartHint': 'Defaults to next month — your plan only counts this loan from this month on.',
-  'cmp.txModal.notePlaceholder': 'Optional note...',
 
-  'cmp.txModal.fundsAddedToInvestment': 'Funds will be added to the selected investment in Finance.',
-  'cmp.txModal.newInvestmentPrefix': 'A new',
-  'cmp.txModal.newInvestmentSuffix': 'record will be created in Finance.',
-  'cmp.txModal.autoCreatePrefix': 'A',
-  'cmp.txModal.autoCreateSuffix': 'record will also be created in Finance.',
+  'cmp.txModal.fundsAddedToInvestment': 'Adds funds to this investment.',
+  'cmp.txModal.newInvestmentPrefix': 'Creates a new',
+  'cmp.txModal.newInvestmentSuffix': 'record.',
+  'cmp.txModal.autoCreatePrefix': 'Also creates a',
+  'cmp.txModal.autoCreateSuffix': 'record.',
 
   'cmp.txModal.insufficientBalance': 'Insufficient balance',
 
@@ -439,15 +423,13 @@ export const en_components = {
   'cmp.txModal.noCardsTile': 'No cards yet — add one',
   'cmp.txModal.noCardsHint': 'Add a card first, or pay with cash',
   'cmp.txModal.cardsLoadFailed': 'Your cards could not be loaded',
-  'cmp.txModal.totalFromSplit': 'Total of the cash and card amounts below',
-  'cmp.txModal.categorySwitchedForType': 'Category set to {name} for this type',
 
   // Field labels bound to their controls. Separate from the '… *' strings above because
   // Field draws the required marker itself, so the label must not carry a second one.
   'cmp.txModal.label.amount': 'Amount',
   'cmp.txModal.label.category': 'Category',
   'cmp.txModal.label.subCategory': 'Sub-category',
-  'cmp.txModal.label.card': 'Card / Wallet',
+  'cmp.txModal.label.card': 'Wallet',
   'cmp.txModal.label.date': 'Date',
   'cmp.txModal.label.cashAmount': 'Cash amount',
   'cmp.txModal.label.cardAmount': 'Card amount',
@@ -455,15 +437,14 @@ export const en_components = {
   'cmp.txModal.label.direction': 'Money in or out',
   'cmp.txModal.label.whatFor': 'What for',
   'cmp.txModal.paidWithCash': 'Cash',
-  'cmp.txModal.cashBalanceCaption': 'Cash balance now {amount}',
+  'cmp.txModal.cashBalanceCaption': 'Cash: {amount}',
   'cmp.txModal.change': 'Change',
-  'cmp.txModal.categoryClearedByType': 'This type has its own categories — pick one again.',
+  'cmp.txModal.categoryClearedByType': 'Pick a category again.',
   // Direction is the form's first control, so switching it mid-entry is now the common case:
   // one line says what the switch dropped, one says what it kept.
-  'cmp.txModal.categoryClearedByDirection': 'Income and expense have different categories — pick one again.',
-  'cmp.txModal.amountKeptOnSwitch': 'You switched income/expense — the amount was kept.',
-  'cmp.txModal.noCardsCashNotice': 'No cards yet, so this is recorded as cash.',
-  'cmp.txModal.bothNotForLoanPath': 'A repayment is recorded from one source, so it cannot be split.',
+  'cmp.txModal.categoryClearedByDirection': 'Pick a category again.',
+  'cmp.txModal.noCardsCashNotice': 'No cards, so this is cash.',
+  'cmp.txModal.bothNotForLoanPath': 'A repayment cannot be split.',
   'cmp.txModal.err.selectDate': 'Please pick a date',
 
   // ── ui/CacheBadge, ui/OfflineBanner ───────────────────────────────────────────────────────
@@ -652,12 +633,4 @@ export const en_components = {
   'cmp.marks.kindDebt': 'Debt',
   'cmp.marks.kindBucket': 'Set aside',
 
-  // ── Quick income (components/dashboard/QuickIncomeModal.tsx) ───────────────
-  'cmp.quickIncome.title': 'Money came in',
-  'cmp.quickIncome.into': 'Into',
-  'cmp.quickIncome.category': 'Category',
-  'cmp.quickIncome.categoryHelp': 'Pick a bonus category for a bonus — it raises this month’s set-asides by its share.',
-  'cmp.quickIncome.noCategory': 'No category',
-  'cmp.quickIncome.bonusTag': 'bonus',
-  'cmp.quickIncome.saved': 'Recorded {amount} of income.',
 } as const

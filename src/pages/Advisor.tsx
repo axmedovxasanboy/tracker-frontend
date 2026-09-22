@@ -6,7 +6,6 @@ import {
   Hourglass, Landmark, Lightbulb, ListChecks, Plus, RefreshCw, Target, TrendingDown, Wallet,
 } from 'lucide-react'
 import { GetStartedHero, INCOME_FIELD_ID } from '../components/dashboard/GetStartedHero'
-import { QuickIncomeModal } from '../components/dashboard/QuickIncomeModal'
 import { PaySubscriptionModal } from '../components/finance/PaySubscriptionModal'
 import { ContributeInvestmentModal } from '../components/finance/ContributeInvestmentModal'
 import { PayBankInstallmentModal } from '../components/overview/PayBankInstallmentModal'
@@ -34,7 +33,7 @@ import { extractErrorMessage } from '../api/client'
 import { formatDate, formatMonth, money, moneyFull, todayLocal } from '../utils/format'
 import type {
   AdvisorBill, AdvisorResponse, AdvisorSuggestion, Bucket, Currency,
-  InvestmentResponse, MonthlyPaymentResponse,
+  InvestmentResponse, MonthlyPaymentResponse, TransactionType,
 } from '../types'
 
 interface Props { currency: Currency }
@@ -100,8 +99,9 @@ export function Advisor({ currency }: Props) {
   const summary = useApi(() => dashboardApi.getSummary(currency), [currency])
 
   const [showDetails, setShowDetails] = useState(false)
-  const [incomeOpen, setIncomeOpen] = useState(false)
-  const [expenseOpen, setExpenseOpen] = useState(false)
+  // Recording money from Home opens the one transaction form the rest of the app uses, already
+  // set to income or expense — the same questions in the same order, wherever you start from.
+  const [addType, setAddType] = useState<TransactionType | null>(null)
   const [subscription, setSubscription] = useState<MonthlyPaymentResponse | null>(null)
   const [bankOpen, setBankOpen] = useState(false)
   const [debtOpen, setDebtOpen] = useState(false)
@@ -206,9 +206,9 @@ export function Advisor({ currency }: Props) {
           <PageHeader
             title={t('nav.home')}
             subtitle={formatDate(today, lang, 'long')}
-            primary={{ label: t('page.advisor.addIncome'), onClick: () => setIncomeOpen(true), icon: <Plus className="w-4 h-4" aria-hidden="true" /> }}
+            primary={{ label: t('page.advisor.addIncome'), onClick: () => setAddType('INCOME'), icon: <Plus className="w-4 h-4" aria-hidden="true" /> }}
             overflow={[
-              { label: t('page.advisor.addExpense'), onClick: () => setExpenseOpen(true), icon: <TrendingDown className="w-4 h-4" aria-hidden="true" /> },
+              { label: t('page.advisor.addExpense'), onClick: () => setAddType('EXPENSE'), icon: <TrendingDown className="w-4 h-4" aria-hidden="true" /> },
               { label: t('page.advisor.refresh'), onClick: refetch, icon: <RefreshCw className="w-4 h-4" aria-hidden="true" /> },
             ]}
           />
@@ -221,7 +221,7 @@ export function Advisor({ currency }: Props) {
             walletCount={walletCount}
             transactionCount={summary.data?.transactionCount ?? 0}
             onStepDone={refetch}
-            onAddExpense={() => setExpenseOpen(true)}
+            onAddExpense={() => setAddType('EXPENSE')}
           />
         )}
 
@@ -294,10 +294,12 @@ export function Advisor({ currency }: Props) {
         ) : null}
       </TileGrid>
 
-      <QuickIncomeModal open={incomeOpen} onClose={() => setIncomeOpen(false)} onSaved={refetch} />
+      {/* Keyed by the direction so the form starts clean each time it is opened from here. */}
       <TransactionModal
-        open={expenseOpen} onClose={() => setExpenseOpen(false)}
-        onSaved={refetch} defaultCurrency={currency} transaction={null} presetType="EXPENSE"
+        key={addType ?? 'none'}
+        open={addType !== null} onClose={() => setAddType(null)}
+        onSaved={refetch} defaultCurrency={currency} transaction={null}
+        presetType={addType ?? undefined}
       />
       <PaySubscriptionModal
         open={!!subscription} subscription={subscription}
