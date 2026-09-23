@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { ComponentProps, FormEvent, ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
+import type { AxiosError } from 'axios'
 import {
   Banknote, CalendarClock, Check, ChevronDown, CreditCard, HandCoins, History as HistoryIcon,
   Landmark, Pause, Pencil, Play, Plus, Receipt, Trash2, Wallet,
@@ -23,6 +24,7 @@ import { Skeleton } from '../components/ui/Skeleton'
 import { StatTile } from '../components/ui/StatTile'
 import { Tile, TileGrid } from '../components/ui/Tile'
 import { useApi } from '../hooks/useApi'
+import { useRadioGroupKeys } from '../hooks/useRadioGroupKeys'
 import { useConfirm } from '../context/ConfirmContext'
 import { useSettings } from '../context/SettingsContext'
 import { useToast } from '../context/ToastContext'
@@ -31,16 +33,18 @@ import type { TKey } from '../i18n/LanguageContext'
 import { advisorApi } from '../api/advisor'
 import { categoriesApi } from '../api/categories'
 import { financeApi } from '../api/finance'
+import { peopleApi } from '../api/people'
 import { transactionsApi } from '../api/transactions'
 import { extractErrorMessage } from '../api/client'
 import {
-  formatDate, formatMonth, money, moneyExact, moneyFull, monthLocal, shiftMonth, snap, todayLocal,
+  formatDate, formatMonth, money, moneyExact, moneyFull, monthLocal, plural, shiftMonth, snap, todayLocal,
 } from '../utils/format'
 import type {
   AdvisorUpcoming, BankLoanRequest, BankLoanResponse, Category, DebtRequest, DebtResponse,
   LoanGivenRequest, LoanGivenResponse, LoanTakenRequest, LoanTakenResponse, MonthlyPaymentRequest,
-  MonthlyPaymentResponse, RecordStatus, Transaction,
+  MonthlyPaymentResponse, RecordStatus, RepaymentType, Transaction,
 } from '../types'
+import type { PersonKind, PersonSummary } from '../types/people'
 import type { BillRow, Obligation, Receivable } from '../types/shell'
 import { fetchMonthTransactions } from './History'
 
@@ -49,11 +53,14 @@ import { fetchMonthTransactions } from './History'
 // ────────────────────────────────────────────────────────────────────────────────
 
 /**
- * The share of the ORIGINAL sum the server asks for each month on money borrowed without a
- * monthly plan, and on every debt (OverviewService.debtMonthlyCharge). Mirrored so this page
- * quotes the same monthly figure Home counts; it is never named on screen.
+ * The share of what is left the server asks for each month on money repaid as fast as possible —
+ * borrowed that way, and every debt — once what is left is more than {@link ASAP_ALL_DUE_SHARE} of
+ * the monthly income. Also the old default for a loan with no plan. Mirrored so this page quotes
+ * the figure Home counts.
  */
 const DEFAULT_MONTHLY_SHARE = 0.34
+/** At or below this share of the monthly income, all that is left of a fast-repaid loan is due. */
+const ASAP_ALL_DUE_SHARE = 0.7
 
 /** Rounding slack when comparing money paid against money due. */
 const EPSILON = 0.5
@@ -66,11 +73,28 @@ function takenMonthly(l: LoanTakenResponse): number {
   return snap(Math.min(base, left))
 }
 
-function debtMonthly(d: DebtResponse): number {
-  const left = Math.max(0, d.remainingAmount)
-  if (left <= 0) return 0
-  return snap(Math.min(d.totalAmount * DEFAULT_MONTHLY_SHARE, left))
+/**
+ * What the as-fast-as-possible rule asks this month: all of what is left once that is 70% of the
+ * monthly income or less, else 34% of it. Without a known income only the 34% can be said.
+ */
+function asapDue(left: number, income: number | null): { amount: number; allNow: boolean } {
+  const rest = Math.max(0, left)
+  const allNow = income != null && income > 0 && rest <= income * ASAP_ALL_DUE_SHARE
+  return { amount: snap(allNow ? rest : rest * DEFAULT_MONTHLY_SHARE), allNow }
 }
+
+/** How borrowed money is repaid. An older server does not say: a plan then means monthly. */
+const repaymentOf = (l: LoanTakenResponse): RepaymentType =>
+  l.repaymentType ?? (l.plannedMonthlyPayment != null && l.plannedMonthlyPayment > 0 ? 'MONTHLY' : 'ASAP')
+
+/** A saved person as a picker answer: their id when they are on the list, else a name to type. */
+const personChoice = (id: number | null | undefined, people: PersonSummary[]): string =>
+  id != null && people.some(p => p.id === id) ? String(id) : 'new'
+
+/** Most-used first — the order a picker offers people in. */
+const byUse = (people: PersonSummary[]) => [...people].sort((a, b) => b.times - a.times || b.total - a.total)
+
+const REPAY_TYPES: RepaymentType[] = ['MONTHLY', 'ASAP']
 
 const ym = (date: string | null | undefined): string | null => (date ? date.slice(0, 7) : null)
 
@@ -176,12 +200,30 @@ const CHOOSER: { kind: Exclude<FormKind, 'debt'>; labelKey: TKey; Icon: typeof R
 
 interface BillForm { name: string; amount: number; dueDay: number; categoryId: number | '' }
 interface BankForm { bankName: string; monthly: number; total: number; takenDate: string; endDate: string }
-/** `firstMonth` is YYYY-MM: the server keeps only the month a loan's payments start in. */
-interface BorrowedForm { name: string; amount: number; monthly: number; firstMonth: string }
+/**
+ * `person` is the picked person's id, 'new' for a name typed in, or '' before a choice.
+ * `firstMonth` is YYYY-MM: the server keeps only the month a loan's payments start in.
+ */
+interface BorrowedForm {
+  person: string; name: string; amount: number; date: string; type: RepaymentType; monthly: number; firstMonth: string
+}
 interface DebtForm { name: string; amount: number; firstMonth: string }
-interface LentForm { name: string; amount: number; date: string; expected: string }
+interface LentForm { person: string; name: string; amount: number; date: string; expected: string }
 
-type FieldErrors = Partial<Record<'amount' | 'monthly' | 'endDate' | 'expected', string>>
+type FieldErrors = Partial<Record<'amount' | 'monthly' | 'endDate' | 'expected' | 'person' | 'name', string>>
+
+type PeopleList = { supported: boolean; people: PersonSummary[] }
+
+/** A people list, or — from a server that has none (404) — word that there is none. */
+const peopleQuery = (kind: 'lenders' | 'borrowers') => async () => {
+  try {
+    const res = await (kind === 'lenders' ? peopleApi.lenders() : peopleApi.borrowers())
+    return { ...res, data: { supported: true, people: res.data } as PeopleList }
+  } catch (err) {
+    if ((err as AxiosError)?.response?.status === 404) return { data: { supported: false, people: [] } as PeopleList }
+    throw err
+  }
+}
 
 export function Loans() {
   const { t, lang, categoryName } = useLang()
@@ -189,6 +231,8 @@ export function Loans() {
   const navigate = useNavigate()
   const { showSuccess, showError } = useToast()
   const { settings, hasStableIncome, ready: settingsReady, error: settingsError } = useSettings()
+  // The as-fast-as-possible rule measures what is left against the monthly income.
+  const income = settings?.monthlyStableIncome ?? null
   // A failed settings read is not an answer about the income; only a known "unset" gates.
   const incomeGated = settingsReady && !settingsError && !hasStableIncome
 
@@ -206,10 +250,18 @@ export function Loans() {
   // This month's payments, for which loans are already paid for the month.
   const monthTx = useApi(() => fetchMonthTransactions(month), [month])
   const categories = useApi(() => categoriesApi.getAll('EXPENSE'), [])
+  // Who the owner borrows from and lends to. On an older server there are no such lists: the forms
+  // then ask for a name as they always did, and the people tiles stay away.
+  const lenders = useApi(peopleQuery('lenders'), [])
+  const borrowers = useApi(peopleQuery('borrowers'), [])
+  const lendersOn = lenders.data?.supported === true
+  const borrowersOn = borrowers.data?.supported === true
+  const lenderPeople = useMemo(() => byUse(lenders.data?.people ?? []), [lenders.data])
+  const borrowerPeople = useMemo(() => byUse(borrowers.data?.people ?? []), [borrowers.data])
 
   const refetchAll = () => {
     bills.refetch(); bankLoans.refetch(); loansTaken.refetch(); debts.refetch(); loansGiven.refetch()
-    advisor.refetch(); monthTx.refetch()
+    advisor.refetch(); monthTx.refetch(); lenders.refetch(); borrowers.refetch()
   }
 
   // ── Bills ────────────────────────────────────────────────────────────────────
@@ -294,12 +346,12 @@ export function Loans() {
       out.push({
         kind: 'bank', record: b, key: `bank-${b.id}`, id: b.id, name: b.bankName, currency: b.currency,
         monthly, remaining: paidOff ? 0 : left, remainingEstimated: left != null, paidOff, paidThisMonth,
-        next: paidOff ? null : { month: nextMonth, first: notStarted },
+        next: paidOff ? null : { month: nextMonth, first: notStarted }, asap: false,
       })
     }
 
     const personal = <R extends LoanTakenResponse | DebtResponse>(
-      kind: 'taken' | 'debt', record: R, name: string, monthly: number, paidSoFar: number,
+      kind: 'taken' | 'debt', record: R, name: string, monthly: number, paidSoFar: number, asap: boolean,
     ): Obligation => {
       const paidOff = record.status === 'PAID' || record.remainingAmount <= EPSILON
       const start = ym(record.paymentStartDate)
@@ -312,6 +364,7 @@ export function Loans() {
         remainingEstimated: false,
         paidOff,
         paidThisMonth,
+        asap,
         next: paidOff
           ? null
           : notStarted
@@ -323,19 +376,25 @@ export function Loans() {
         : { kind: 'debt', record: record as DebtResponse, ...base, ...shared }
     }
     for (const l of loansTaken.data ?? []) {
-      out.push(personal('taken', l, l.lenderName, takenMonthly(l), repaidTaken.get(l.id) ?? 0))
+      const asap = repaymentOf(l) === 'ASAP'
+      const monthly = asap ? asapDue(l.remainingAmount, income).amount : takenMonthly(l)
+      out.push(personal('taken', l, l.lenderName, monthly, repaidTaken.get(l.id) ?? 0, asap))
     }
+    // Every debt is repaid as fast as possible.
     for (const d of debts.data ?? []) {
-      out.push(personal('debt', d, d.creditorName, debtMonthly(d), repaidDebt.get(d.id) ?? 0))
+      out.push(personal('debt', d, d.creditorName, asapDue(d.remainingAmount, income).amount, repaidDebt.get(d.id) ?? 0, true))
     }
 
     // Soonest payment first; a name breaks the tie so the order never shuffles on a refetch.
     return out.sort((a, b) =>
       (a.next?.month ?? '9999-99').localeCompare(b.next?.month ?? '9999-99') || a.name.localeCompare(b.name))
-  }, [bankLoans.data, loansTaken.data, debts.data, monthTx.data, month])
+  }, [bankLoans.data, loansTaken.data, debts.data, monthTx.data, month, income])
 
-  const activeLoans = obligations.filter(o => !o.paidOff)
-  const paidOffLoans = obligations.filter(o => o.paidOff)
+  // Two ways of paying back: by a monthly plan (bank loans too), or as fast as possible.
+  const activeMonthly = obligations.filter(o => !o.asap && !o.paidOff)
+  const paidOffMonthly = obligations.filter(o => !o.asap && o.paidOff)
+  const activeAsap = obligations.filter(o => o.asap && !o.paidOff)
+  const paidOffAsap = obligations.filter(o => o.asap && o.paidOff)
 
   // ── Owed to you ──────────────────────────────────────────────────────────────
   const receivables: Receivable[] = (loansGiven.data ?? []).map(record => ({
@@ -347,11 +406,10 @@ export function Loans() {
 
   // ── The top line ─────────────────────────────────────────────────────────────
   const billsMonthly = snap((bills.data ?? []).filter(m => m.active).reduce((s, m) => s + m.amount, 0))
-  const loansMonthly = snap(activeLoans.reduce((s, o) => s + (o.monthly ?? 0), 0))
-  // A bank loan with no end date has no known balance; its whole sum stands in, so "You owe"
-  // can only ever be too high, never too low.
-  const youOwe = snap(activeLoans.reduce((s, o) =>
-    s + (o.remaining ?? (o.kind === 'bank' ? o.record.totalAmount : 0)), 0))
+  // "Every month": the bills and the loans on a monthly plan — bank loans among them.
+  const loansMonthly = snap(activeMonthly.reduce((s, o) => s + (o.monthly ?? 0), 0))
+  // "You owe" is only what is to be repaid as fast as possible; a monthly loan is not in it.
+  const youOwe = snap(activeAsap.reduce((s, o) => s + (o.remaining ?? 0), 0))
   const owedToYou = snap(waitingFor.reduce((s, r) => s + r.record.pendingAmount, 0))
 
   const core = [bills, bankLoans, loansTaken, debts, loansGiven]
@@ -367,7 +425,8 @@ export function Loans() {
   const [payBank, setPayBank] = useState<{ id: number; amount?: number } | null>(null)
   const [repay, setRepay] = useState<{ target: RepayTarget; amount?: number } | null>(null)
   const [history, setHistory] = useState<HistoryTarget | null>(null)
-  const [showPaidOff, setShowPaidOff] = useState(false)
+  const [showPaidOffMonthly, setShowPaidOffMonthly] = useState(false)
+  const [showPaidOffAsap, setShowPaidOffAsap] = useState(false)
   const [showReturned, setShowReturned] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
 
@@ -377,8 +436,7 @@ export function Loans() {
     open()
   }
 
-  const payObligation = (o: Obligation) => {
-    const amount = o.monthly ?? undefined
+  const payObligation = (o: Obligation, amount = o.monthly ?? undefined) => {
     if (o.kind === 'bank') setPayBank({ id: o.id, amount })
     else if (o.kind === 'taken') setRepay({ target: { kind: 'loan-taken', record: o.record }, amount })
     else setRepay({ target: { kind: 'debt', record: o.record }, amount })
@@ -396,12 +454,11 @@ export function Loans() {
   const todayDay = Number(today.slice(8, 10))
   const [bill, setBill] = useState<BillForm>({ name: '', amount: 0, dueDay: todayDay, categoryId: '' })
   const [bank, setBank] = useState<BankForm>({ bankName: '', monthly: 0, total: 0, takenDate: today, endDate: '' })
-  const [borrowed, setBorrowed] = useState<BorrowedForm>({ name: '', amount: 0, monthly: 0, firstMonth: nextMonth() })
-  // The monthly figure an edited loan with no plan of its own was shown (the default rule's); null
-  // for a loan with a plan. Saved untouched, it stays on the rule rather than becoming a plan.
-  const [borrowedRule, setBorrowedRule] = useState<number | null>(null)
+  const [borrowed, setBorrowed] = useState<BorrowedForm>({
+    person: '', name: '', amount: 0, date: today, type: 'MONTHLY', monthly: 0, firstMonth: nextMonth(),
+  })
   const [debt, setDebt] = useState<DebtForm>({ name: '', amount: 0, firstMonth: '' })
-  const [lent, setLent] = useState<LentForm>({ name: '', amount: 0, date: today, expected: '' })
+  const [lent, setLent] = useState<LentForm>({ person: '', name: '', amount: 0, date: today, expected: '' })
 
   /** One setter per form that also marks the sheet dirty, so a stray tap cannot lose the typing. */
   const edit = <T,>(setter: (fn: (prev: T) => T) => void) => (patch: Partial<T>) => {
@@ -414,6 +471,8 @@ export function Loans() {
   const editBorrowed = edit<BorrowedForm>(setBorrowed)
   const editDebt = edit<DebtForm>(setDebt)
   const editLent = edit<LentForm>(setLent)
+  // "How will you repay?" is a radiogroup: arrow keys move and pick, one tab stop.
+  const repayKeys = useRadioGroupKeys(REPAY_TYPES, borrowed.type, v => editBorrowed({ type: v }))
 
   const openForm = (kind: FormKind, editId: number | null = null, name = '') => {
     setChooserOpen(false)
@@ -429,8 +488,16 @@ export function Loans() {
     const day = Number(todayLocal().slice(8, 10))
     if (kind === 'bill') setBill({ name: '', amount: 0, dueDay: day, categoryId: '' })
     if (kind === 'bank') setBank({ bankName: '', monthly: 0, total: 0, takenDate: todayLocal(), endDate: '' })
-    if (kind === 'borrowed') setBorrowed({ name: '', amount: 0, monthly: 0, firstMonth: nextMonth() })
-    if (kind === 'lent') setLent({ name: '', amount: 0, date: todayLocal(), expected: '' })
+    // A person is picked from the list; with nobody on it yet, the name is typed straight in.
+    if (kind === 'borrowed') {
+      setBorrowed({
+        person: lenderPeople.length > 0 ? '' : 'new', name: '', amount: 0, date: todayLocal(),
+        type: 'MONTHLY', monthly: 0, firstMonth: nextMonth(),
+      })
+    }
+    if (kind === 'lent') {
+      setLent({ person: borrowerPeople.length > 0 ? '' : 'new', name: '', amount: 0, date: todayLocal(), expected: '' })
+    }
     openForm(kind)
   }
 
@@ -445,12 +512,12 @@ export function Loans() {
       openForm('bank', b.id, b.bankName)
     } else if (o.kind === 'taken') {
       const l = o.record
-      // An older loan with no monthly plan shows what it is being charged now — in the field, in
-      // plain sight — so fixing its name does not mean inventing a figure first.
-      const hasPlan = l.plannedMonthlyPayment != null && l.plannedMonthlyPayment > 0
-      const monthly = hasPlan ? l.plannedMonthlyPayment as number : snap(l.totalAmount * DEFAULT_MONTHLY_SHARE)
-      setBorrowedRule(hasPlan ? null : monthly)
-      setBorrowed({ name: l.lenderName, amount: l.totalAmount, monthly, firstMonth: ym(l.paymentStartDate) ?? '' })
+      // An edit keeps who lent it and how it is repaid.
+      setBorrowed({
+        person: personChoice(l.lenderId, lenderPeople), name: l.lenderName, amount: l.totalAmount,
+        date: l.borrowedDate, type: repaymentOf(l), monthly: l.plannedMonthlyPayment ?? 0,
+        firstMonth: ym(l.paymentStartDate) ?? nextMonth(),
+      })
       openForm('borrowed', l.id, l.lenderName)
     } else {
       const d = o.record
@@ -459,7 +526,10 @@ export function Loans() {
     }
   }
   const startEditLent = (l: LoanGivenResponse) => {
-    setLent({ name: l.debtorName, amount: l.totalAmount, date: l.lentDate, expected: l.expectedReturnDate ?? '' })
+    setLent({
+      person: personChoice(l.borrowerId, borrowerPeople), name: l.debtorName, amount: l.totalAmount,
+      date: l.lentDate, expected: l.expectedReturnDate ?? '',
+    })
     openForm('lent', l.id, l.debtorName)
   }
 
@@ -478,18 +548,43 @@ export function Loans() {
       }
     }
     if (form.kind === 'borrowed') {
+      if (lendersOn && !borrowed.person) e.person = t('shell.form.errPerson')
+      else if ((!lendersOn || borrowed.person === 'new') && !borrowed.name.trim()) e.name = t('shell.form.errName')
       if (!positive(borrowed.amount)) e.amount = t('shell.form.errAmount')
-      if (!positive(borrowed.monthly)) e.monthly = t('shell.form.errAmount')
-      else if (positive(borrowed.amount) && borrowed.monthly > borrowed.amount) e.monthly = t('shell.form.errMonthlyTooBig')
+      if (borrowed.type === 'MONTHLY') {
+        if (!positive(borrowed.monthly)) e.monthly = t('shell.form.errAmount')
+        else if (positive(borrowed.amount) && borrowed.monthly > borrowed.amount) e.monthly = t('shell.form.errMonthlyTooBig')
+      }
     }
     if (form.kind === 'debt' && !positive(debt.amount)) e.amount = t('shell.form.errAmount')
     if (form.kind === 'lent') {
+      if (borrowersOn && !lent.person) e.person = t('shell.form.errPerson')
+      else if ((!borrowersOn || lent.person === 'new') && !lent.name.trim()) e.name = t('shell.form.errName')
       if (!positive(lent.amount)) e.amount = t('shell.form.errAmount')
       if (lent.expected && lent.expected < lent.date) {
         e.expected = t('shell.form.errDateBefore', { date: formatDate(lent.date, lang) })
       }
     }
     return e
+  }
+
+  /**
+   * The person a form names: the one picked, or — for a name typed in — the one the server files it
+   * under (a name already on file comes back as that same person). An older server keeps no people,
+   * and then the name alone is sent.
+   */
+  const personFor = async (kind: PersonKind, choice: string, typed: string, people: PersonSummary[], on: boolean) => {
+    const picked = on && choice && choice !== 'new' ? people.find(p => String(p.id) === choice) : undefined
+    if (picked) return { id: picked.id as number | undefined, name: picked.name }
+    const name = typed.trim()
+    if (!on) return { id: undefined, name }
+    try {
+      const res = await peopleApi.create(name, kind)
+      return { id: res.data.id as number | undefined, name: res.data.name }
+    } catch (err) {
+      if ((err as AxiosError)?.response?.status === 404) return { id: undefined, name }
+      throw err
+    }
   }
 
   const save = async (ev: FormEvent) => {
@@ -534,18 +629,21 @@ export function Loans() {
         else await financeApi.createBankLoan(req)
       } else if (kind === 'borrowed') {
         const existing = editId != null ? loansTaken.data?.find(l => l.id === editId) : undefined
+        const who = await personFor('LENDER', borrowed.person, borrowed.name, lenderPeople, lendersOn)
+        const monthlyPlan = borrowed.type === 'MONTHLY'
         // What has been paid back is left out on purpose: the server keeps it as it is when a
-        // request does not carry it. A loan with no plan keeps none unless its figure was changed.
-        const keepsRule = !!existing && borrowedRule != null && Math.abs(borrowed.monthly - borrowedRule) < 0.005
+        // request does not carry it. Repaid as fast as possible, the loan has no plan.
         const req: LoanTakenRequest = {
-          lenderName: borrowed.name.trim(),
+          lenderName: who.name,
+          lenderId: who.id,
           totalAmount: borrowed.amount,
           currency: existing?.currency ?? 'UZS',
-          borrowedDate: existing?.borrowedDate ?? todayLocal(),
+          borrowedDate: borrowed.date,
           dueDate: existing?.dueDate ?? undefined,
           description: existing?.description ?? undefined,
-          paymentStartDate: borrowed.firstMonth ? `${borrowed.firstMonth}-01` : undefined,
-          plannedMonthlyPayment: keepsRule ? null : borrowed.monthly,
+          repaymentType: borrowed.type,
+          paymentStartDate: monthlyPlan && borrowed.firstMonth ? `${borrowed.firstMonth}-01` : undefined,
+          plannedMonthlyPayment: monthlyPlan ? borrowed.monthly : null,
           status: existing ? repaymentStatus(existing.paidAmount, borrowed.amount) : undefined,
         }
         if (editId != null) await financeApi.updateLoanTaken(editId, req)
@@ -562,12 +660,16 @@ export function Loans() {
           description: existing.description ?? undefined,
           paymentStartDate: debt.firstMonth ? `${debt.firstMonth}-01` : undefined,
           status: repaymentStatus(existing.paidAmount, debt.amount),
+          // The person it is owed to stays linked.
+          lenderId: existing.lenderId ?? undefined,
         }
         await financeApi.updateDebt(existing.id, req)
       } else {
         const existing = editId != null ? loansGiven.data?.find(l => l.id === editId) : undefined
+        const who = await personFor('BORROWER', lent.person, lent.name, borrowerPeople, borrowersOn)
         const req: LoanGivenRequest = {
-          debtorName: lent.name.trim(),
+          debtorName: who.name,
+          borrowerId: who.id,
           totalAmount: lent.amount,
           currency: existing?.currency ?? 'UZS',
           lentDate: lent.date,
@@ -656,10 +758,11 @@ export function Loans() {
     // Only a bank loan with no end date has no known balance: say what was borrowed instead.
     if (o.remaining == null) return t('shell.loans.borrowedTotal', { amount: moneyFull(o.record.totalAmount, o.currency) })
     const amount = moneyFull(o.remaining, o.currency)
-    return o.remainingEstimated ? t('shell.loans.leftAbout', { amount }) : t('shell.loans.left', { amount })
+    return o.remainingEstimated ? t('shell.loans.leftToRepayAbout', { amount }) : t('shell.loans.leftToRepay', { amount })
   }
 
-  const obligationRow = (o: Obligation) => {
+  /** A loan on a monthly plan: what a month costs, when the next one is due, what is left. */
+  const monthlyRow = (o: Obligation) => {
     const Icon = o.kind === 'bank' ? Landmark : o.kind === 'taken' ? Banknote : Receipt
     const loanName = o.kind === 'bank' ? o.record.loanName : ''
     const showLoanName = !!loanName && loanName !== o.name && !DEFAULT_LOAN_NAMES.has(loanName.trim().toLocaleLowerCase())
@@ -685,6 +788,37 @@ export function Loans() {
         action={canPay ? (
           <Button size="sm" label={t('page.shared.payButton')} onClick={gate(() => payObligation(o))} />
         ) : undefined}
+        menu={menuFor(o.key, () => startEditObligation(o), () => setHistory({ kind: o.kind, id: o.id, name: o.name }),
+          () => deleteObligation(o))}
+      />
+    )
+  }
+
+  /** Repaid as fast as possible: what is left, and what this month asks of it. */
+  const asapRow = (o: Obligation) => {
+    const Icon = o.kind === 'taken' ? Banknote : Receipt
+    const left = o.remaining ?? 0
+    const rule = asapDue(left, income)
+    // This month's due, as the advisor places it (dated today): it knows what this month already
+    // paid. Without one — an older server — the rule says it.
+    const due = o.kind === 'bank' ? undefined : upcomingFor(o.kind, o.id)
+    const dueAmount = due?.amount ?? rule.amount
+    const allNow = due ? due.amount >= left - EPSILON : rule.allNow
+    return (
+      <MoneyRow
+        key={o.key}
+        icon={<Icon className="h-4 w-4" aria-hidden="true" />}
+        chip={o.kind === 'taken' ? 'bg-pink-100 text-pink-600' : 'bg-slate-100 text-slate-500'}
+        title={o.name}
+        badge={!o.paidOff && due?.overdue ? <OverdueChip /> : undefined}
+        detail={o.paidOff ? t('shell.loans.paidOff')
+          : allNow ? t('shell.loans.allDueNow')
+            : t('shell.loans.dueThisMonth', { amount: moneyFull(dueAmount, o.currency) })}
+        amount={moneyFull(o.paidOff ? o.record.totalAmount : left, o.currency)}
+        caption={o.paidOff ? t('page.shared.total') : t('shell.loans.leftCaption')}
+        action={o.paidOff ? undefined : (
+          <Button size="sm" label={t('page.shared.payButton')} onClick={gate(() => payObligation(o, dueAmount))} />
+        )}
         menu={menuFor(o.key, () => startEditObligation(o), () => setHistory({ kind: o.kind, id: o.id, name: o.name }),
           () => deleteObligation(o))}
       />
@@ -807,7 +941,7 @@ export function Loans() {
               <Tile span={6} mdSpan={6} as="section">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="min-w-0">
-                    <p className="text-label uppercase text-slate-500">{t('shell.loans.youOwe')}</p>
+                    <p className="text-label uppercase text-slate-500">{t('shell.loans.youOweFast')}</p>
                     <p className="mt-3 text-title tabular-nums text-expense sm:text-stat" title={moneyExact(youOwe)}>
                       {money(youOwe)}
                     </p>
@@ -837,10 +971,10 @@ export function Loans() {
 
               <ListTile
                 span={12}
-                header={<h2 className="text-sm font-semibold text-slate-900">{t('shell.loans.title')}</h2>}
+                header={<h2 className="text-sm font-semibold text-slate-900">{t('shell.loans.monthlyTitle')}</h2>}
                 empty={
                   <div className="flex flex-col items-center gap-3">
-                    <p>{t('shell.loans.none')}</p>
+                    <p>{t('shell.loans.monthlyNone')}</p>
                     <div className="flex flex-wrap justify-center gap-2">
                       <Button variant="ghost" size="sm" icon={<Landmark className="h-4 w-4" aria-hidden="true" />}
                         label={t('page.finance.optionBankLoan')} onClick={() => startAdd('bank')} />
@@ -850,15 +984,31 @@ export function Loans() {
                   </div>
                 }
               >
-                {activeLoans.map(obligationRow)}
-                {paidOffLoans.length > 0 && (
+                {activeMonthly.map(monthlyRow)}
+                {paidOffMonthly.length > 0 && (
                   <Disclosure
-                    open={showPaidOff}
-                    onToggle={() => setShowPaidOff(o => !o)}
-                    label={t('shell.loans.paidOffCount', { count: paidOffLoans.length })}
+                    open={showPaidOffMonthly}
+                    onToggle={() => setShowPaidOffMonthly(o => !o)}
+                    label={t('shell.loans.paidOffCount', { count: paidOffMonthly.length })}
                   />
                 )}
-                {showPaidOff && paidOffLoans.map(obligationRow)}
+                {showPaidOffMonthly && paidOffMonthly.map(monthlyRow)}
+              </ListTile>
+
+              <ListTile
+                span={12}
+                header={<h2 className="text-sm font-semibold text-slate-900">{t('shell.loans.asapTitle')}</h2>}
+                empty={<p>{t('shell.loans.asapNone')}</p>}
+              >
+                {activeAsap.map(asapRow)}
+                {paidOffAsap.length > 0 && (
+                  <Disclosure
+                    open={showPaidOffAsap}
+                    onToggle={() => setShowPaidOffAsap(o => !o)}
+                    label={t('shell.loans.paidOffCount', { count: paidOffAsap.length })}
+                  />
+                )}
+                {showPaidOffAsap && paidOffAsap.map(asapRow)}
               </ListTile>
 
               <ListTile
@@ -882,6 +1032,10 @@ export function Loans() {
                 )}
                 {showReturned && returned.map(receivableRow)}
               </ListTile>
+
+              {/* Who money goes back and forth with — only on a server that keeps people. */}
+              {lendersOn && <PeopleTile title={t('shell.people.lendersTitle')} people={lenders.data?.people ?? []} />}
+              {borrowersOn && <PeopleTile title={t('shell.people.borrowersTitle')} people={borrowers.data?.people ?? []} />}
             </>
           )}
         </TileGrid>
@@ -992,23 +1146,68 @@ export function Loans() {
 
           {form?.kind === 'borrowed' && (
             <>
-              <Field id="loans-borrowed-name" label={t('shell.form.fromWhom')} required>
-                <input required value={borrowed.name} onChange={e => editBorrowed({ name: e.target.value })}
-                  className={INPUT} autoComplete="off" />
-              </Field>
+              <PersonField
+                id="loans-borrowed-person"
+                on={lendersOn}
+                label={t(lendersOn ? 'shell.form.lender' : 'shell.form.fromWhom')}
+                newLabel={t('shell.form.newLender')}
+                people={lenderPeople}
+                value={borrowed.person}
+                name={borrowed.name}
+                onPick={v => editBorrowed({ person: v })}
+                onName={v => editBorrowed({ name: v })}
+                personError={errors.person}
+                nameError={errors.name}
+              />
               <Field id="loans-borrowed-amount" label={t('shell.form.amount')} required error={errors.amount}>
                 <AmountInput required value={borrowed.amount} currency="UZS" suffix="UZS"
                   onChange={v => editBorrowed({ amount: v })} className={MONEY_INPUT} />
               </Field>
-              <Field id="loans-borrowed-monthly" label={t('shell.form.monthlyPayment')} required
-                help={t('shell.form.monthlyHelp')} error={errors.monthly}>
-                <AmountInput required value={borrowed.monthly} currency="UZS" suffix="UZS"
-                  onChange={v => editBorrowed({ monthly: v })} className={MONEY_INPUT} />
+              <Field id="loans-borrowed-date" label={t('shell.form.date')} required>
+                <input required type="date" value={borrowed.date}
+                  onChange={e => editBorrowed({ date: e.target.value })} className={INPUT} />
               </Field>
-              <Field id="loans-borrowed-first" label={t('shell.form.firstPaymentMonth')} required>
-                <input required type="month" value={borrowed.firstMonth}
-                  onChange={e => editBorrowed({ firstMonth: e.target.value })} className={INPUT} />
-              </Field>
+              <div>
+                <p id="loans-borrowed-type-label" className="mb-1 text-xs font-medium text-slate-600">
+                  {t('shell.form.howRepay')}
+                </p>
+                <div role="radiogroup" aria-labelledby="loans-borrowed-type-label" className="flex gap-1 rounded-control bg-slate-100 p-1">
+                  {REPAY_TYPES.map((v, i) => (
+                    <button
+                      key={v}
+                      type="button"
+                      role="radio"
+                      aria-checked={borrowed.type === v}
+                      {...repayKeys(i)}
+                      onClick={() => editBorrowed({ type: v })}
+                      className={`focus-ring min-h-[44px] flex-1 rounded-chip px-2 text-xs font-semibold transition-colors focus-visible:ring-offset-slate-100 ${
+                        borrowed.type === v ? 'bg-white text-indigo-600 shadow-tile' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      {t(v === 'MONTHLY' ? 'shell.form.repayMonthly' : 'shell.form.repayAsap')}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {borrowed.type === 'MONTHLY' ? (
+                <>
+                  <Field id="loans-borrowed-monthly" label={t('shell.form.monthlyPayment')} required
+                    help={t('shell.form.monthlyHelp')} error={errors.monthly}>
+                    <AmountInput required value={borrowed.monthly} currency="UZS" suffix="UZS"
+                      onChange={v => editBorrowed({ monthly: v })} className={MONEY_INPUT} />
+                  </Field>
+                  <Field id="loans-borrowed-first" label={t('shell.form.firstPaymentMonth')} required>
+                    <input required type="month" value={borrowed.firstMonth}
+                      onChange={e => editBorrowed({ firstMonth: e.target.value })} className={INPUT} />
+                  </Field>
+                </>
+              ) : (
+                <p className="text-xs leading-snug tabular-nums text-slate-600">
+                  {income != null && income > 0
+                    ? t('shell.form.asapRule', { limit: moneyFull(snap(income * ASAP_ALL_DUE_SHARE)) })
+                    : t('shell.form.asapRuleNoIncome')}
+                </p>
+              )}
             </>
           )}
 
@@ -1031,10 +1230,19 @@ export function Loans() {
 
           {form?.kind === 'lent' && (
             <>
-              <Field id="loans-lent-name" label={t('shell.form.toWhom')} required>
-                <input required value={lent.name} onChange={e => editLent({ name: e.target.value })}
-                  className={INPUT} autoComplete="off" />
-              </Field>
+              <PersonField
+                id="loans-lent-person"
+                on={borrowersOn}
+                label={t(borrowersOn ? 'shell.form.borrower' : 'shell.form.toWhom')}
+                newLabel={t('shell.form.newPerson')}
+                people={borrowerPeople}
+                value={lent.person}
+                name={lent.name}
+                onPick={v => editLent({ person: v })}
+                onName={v => editLent({ name: v })}
+                personError={errors.person}
+                nameError={errors.name}
+              />
               <Field id="loans-lent-amount" label={t('shell.form.amount')} required error={errors.amount}>
                 <AmountInput required value={lent.amount} currency="UZS" suffix="UZS"
                   onChange={v => editLent({ amount: v })} className={MONEY_INPUT} />
@@ -1160,6 +1368,87 @@ function OverdueChip() {
     <span className="shrink-0 rounded-chip bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-expense">
       {t('home.upcoming.overdue')}
     </span>
+  )
+}
+
+/**
+ * Who the money came from or went to: picked from the people on file, most-used first, or typed in
+ * as someone new. An older server keeps no people, and then it is the plain name field it always was.
+ */
+function PersonField({ id, on, label, newLabel, people, value, name, onPick, onName, personError, nameError }: {
+  id: string
+  on: boolean
+  label: string
+  newLabel: string
+  people: PersonSummary[]
+  value: string
+  name: string
+  onPick: (v: string) => void
+  onName: (v: string) => void
+  personError?: string
+  nameError?: string
+}) {
+  const { t } = useLang()
+  const nameInput = (
+    <input required value={name} onChange={e => onName(e.target.value)} className={INPUT} autoComplete="off" />
+  )
+  if (!on) {
+    return <Field id={`${id}-name`} label={label} required error={nameError}>{nameInput}</Field>
+  }
+  return (
+    <>
+      <Field id={id} label={label} required error={personError}>
+        <select required value={value} onChange={e => onPick(e.target.value)} className={INPUT}>
+          <option value="" disabled>{t('shell.form.choosePerson')}</option>
+          {people.map(p => <option key={p.id} value={String(p.id)}>{p.name}</option>)}
+          <option value="new">{newLabel}</option>
+        </select>
+      </Field>
+      {value === 'new' && (
+        <Field id={`${id}-name`} label={t('shell.form.name')} required error={nameError}>{nameInput}</Field>
+      )}
+    </>
+  )
+}
+
+const PEOPLE_SHOWN = 5
+
+/** The people money goes back and forth with, by how much, largest first — five, then "Show all". */
+function PeopleTile({ title, people }: { title: string; people: PersonSummary[] }) {
+  const { t, lang } = useLang()
+  const [all, setAll] = useState(false)
+  const list = [...people].sort((a, b) => b.total - a.total)
+  const shown = all ? list : list.slice(0, PEOPLE_SHOWN)
+  return (
+    <Tile span={6} mdSpan={6} as="section">
+      <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
+      {list.length === 0 ? (
+        <p className="mt-3 text-sm text-slate-500">{t('shell.people.none')}</p>
+      ) : (
+        <ul className="mt-2 divide-y divide-hairline">
+          {shown.map(p => (
+            <li key={p.id} className="flex items-start justify-between gap-3 py-2">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-slate-900">{p.name}</p>
+                <p className="text-xs tabular-nums text-slate-500">
+                  {[
+                    plural(p.times, t('shell.people.timesOne', { count: p.times }), t('shell.people.timesMany', { count: p.times }), lang),
+                    p.open > 0 ? t('shell.people.open', { amount: moneyFull(p.open) }) : null,
+                  ].filter(Boolean).join(' · ')}
+                </p>
+              </div>
+              <p className="shrink-0 text-sm font-semibold tabular-nums text-slate-900">{moneyFull(p.total)}</p>
+            </li>
+          ))}
+        </ul>
+      )}
+      {list.length > PEOPLE_SHOWN && (
+        <button type="button" onClick={() => setAll(v => !v)} aria-expanded={all}
+          className="focus-ring mt-1 inline-flex min-h-[44px] items-center rounded-control text-sm font-semibold text-indigo-600 hover:underline">
+          {all ? t('home.list.showLess') : t('home.list.showAll', { count: list.length })}
+        </button>
+      )}
+    </Tile>
   )
 }
 

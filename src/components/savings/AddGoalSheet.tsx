@@ -8,7 +8,7 @@ import { useLang } from '../../i18n/LanguageContext'
 import { useToast } from '../../context/ToastContext'
 import { financeApi } from '../../api/finance'
 import { extractErrorMessage } from '../../api/client'
-import { formatDate, moneyFull, monthLocal, todayLocal } from '../../utils/format'
+import { formatDate, moneyFull, monthLocal, shiftMonth, todayLocal } from '../../utils/format'
 import { CONTROL, CONTROL_INVALID, MONEY_INPUT, MONEY_INPUT_INVALID, useOptional } from '../transactions/formParts'
 import { goalPlan, lastDayOf } from './goalPlan'
 import type { InvestmentRequest, InvestmentResponse } from '../../types'
@@ -39,8 +39,19 @@ export function requestFrom(i: InvestmentResponse, patch: Partial<InvestmentRequ
     // A goal's plan rides along, so editing anything else never drops it.
     targetDate: i.targetDate ?? null,
     monthlyContribution: i.monthlyContribution ?? null,
+    // Only when the server sent one: a key left out keeps the stored start month.
+    ...(i.paymentStartDate !== undefined ? { paymentStartDate: i.paymentStartDate } : {}),
     ...patch,
   }
+}
+
+/**
+ * The month a goal's payments start, as the form shows it (YYYY-MM): a new goal starts next month;
+ * a saved one keeps its own, and one without (or from an older server) started in its purchase month.
+ */
+function startOf(goal: InvestmentResponse | null | undefined): string {
+  if (!goal) return shiftMonth(monthLocal(), 1)
+  return (goal.paymentStartDate ?? goal.purchaseDate ?? '').slice(0, 7)
 }
 
 /**
@@ -69,10 +80,12 @@ export function AddGoalSheet({ open, onClose, onSaved, goal }: {
   const [monthlySuggested, setMonthlySuggested] = useState(false)
   /** YYYY-MM, or '' for none. */
   const [deadline, setDeadline] = useState('')
+  /** YYYY-MM: the month the first payment is due. */
+  const [start, setStart] = useState('')
   const [have, setHave] = useState(0)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [invalid, setInvalid] = useState<'name' | 'target' | 'monthly' | null>(null)
+  const [invalid, setInvalid] = useState<'name' | 'target' | 'monthly' | 'start' | null>(null)
   const nameRef = useRef<HTMLInputElement>(null)
   /** Set by a reset: the suggestion below must not act on the values the reset just replaced. */
   const reset = useRef(false)
@@ -85,6 +98,7 @@ export function AddGoalSheet({ open, onClose, onSaved, goal }: {
     setMonthly(goal?.monthlyContribution ?? 0)
     setMonthlySuggested(false)
     setDeadline(goal?.targetDate ? goal.targetDate.slice(0, 7) : '')
+    setStart(startOf(goal))
     setHave(0)
     setError(null)
     setInvalid(null)
@@ -94,7 +108,8 @@ export function AddGoalSheet({ open, onClose, onSaved, goal }: {
   // What is still missing: an edited goal counts what it already holds.
   const already = goal ? goal.currentValue ?? goal.investedAmount : have
   const remaining = Math.max(0, target - already)
-  const plan = goalPlan(remaining, monthly, deadline || null, month)
+  // Counted from the month payments start, when that is later than this one.
+  const plan = goalPlan(remaining, monthly, deadline || null, month, start || null)
 
   // Target and deadline known, no monthly figure of the owner's yet: suggest one — and keep it in
   // step with the inputs for as long as it is still only a suggestion.
@@ -111,27 +126,31 @@ export function AddGoalSheet({ open, onClose, onSaved, goal }: {
     }
   }, [open, suggestion, monthly, monthlySuggested])
 
-  const clear = (field: 'name' | 'target' | 'monthly') => {
+  const clear = (field: 'name' | 'target' | 'monthly' | 'start') => {
     if (invalid === field) { setInvalid(null); setError(null) }
   }
 
   const dirty = goal
     ? name !== goal.name || target !== (goal.targetAmount ?? 0)
       || monthly !== (goal.monthlyContribution ?? 0) || deadline !== (goal.targetDate?.slice(0, 7) ?? '')
+      || start !== startOf(goal)
     : !!name.trim() || target > 0 || have > 0 || !!deadline || (monthly > 0 && !monthlySuggested)
+      || start !== startOf(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!name.trim()) { setInvalid('name'); setError(t('home.goal.err.name')); nameRef.current?.focus(); return }
     if (target <= 0) { setInvalid('target'); setError(t('home.goal.err.target')); return }
     if (!(monthly > 0)) { setInvalid('monthly'); setError(t('home.goal.err.monthly')); return }
+    if (!start) { setInvalid('start'); setError(t('home.goal.err.start')); return }
     setSaving(true); setError(null); setInvalid(null)
     const targetDate = deadline ? lastDayOf(deadline) : null
+    const paymentStartDate = `${start}-01`
     try {
       if (goal) {
         await financeApi.updateInvestment(goal.id, requestFrom(goal, {
           // targetDate is always sent: an explicit null is how the server removes a deadline.
-          name: name.trim(), targetAmount: target, monthlyContribution: monthly, targetDate,
+          name: name.trim(), targetAmount: target, monthlyContribution: monthly, targetDate, paymentStartDate,
         }))
       } else {
         await financeApi.createInvestment({
@@ -148,6 +167,7 @@ export function AddGoalSheet({ open, onClose, onSaved, goal }: {
           openingBalance: true,
           monthlyContribution: monthly,
           targetDate,
+          paymentStartDate,
         })
       }
       showSuccess(t(goal ? 'home.goal.savedToast' : 'home.goal.addedToast', { name: name.trim() }))
@@ -209,6 +229,11 @@ export function AddGoalSheet({ open, onClose, onSaved, goal }: {
             {planLine && <p className={plan.late ? 'font-medium text-amber-700' : 'text-slate-600'}>{planLine}</p>}
           </div>
         )}
+        <Field id="goal-start" label={t('home.goal.start')} required error={invalid === 'start' ? error ?? undefined : undefined}>
+          <input type="month" required value={start}
+            onChange={e => { setStart(e.target.value); clear('start') }}
+            className={invalid === 'start' ? CONTROL_INVALID : CONTROL} />
+        </Field>
         <Field id="goal-deadline" label={optional(t('home.goal.deadline'))}>
           <input type="month" value={deadline} min={month}
             onChange={e => setDeadline(e.target.value)} className={CONTROL} />

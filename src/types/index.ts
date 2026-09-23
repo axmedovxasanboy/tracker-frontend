@@ -178,6 +178,8 @@ export interface DebtResponse {
   status: RecordStatus
   description: string | null
   createdAt: string
+  /** The person owed. Absent on an older server. */
+  lenderId?: number | null
 }
 
 export interface DebtRequest {
@@ -190,6 +192,7 @@ export interface DebtRequest {
   paymentStartDate?: string
   status?: RecordStatus
   description?: string
+  lenderId?: number | null
 }
 
 export interface LoanGivenResponse {
@@ -204,6 +207,8 @@ export interface LoanGivenResponse {
   status: RecordStatus
   description: string | null
   createdAt: string
+  /** The person who borrowed it. Absent on an older server. */
+  borrowerId?: number | null
 }
 
 export interface LoanGivenRequest {
@@ -215,7 +220,11 @@ export interface LoanGivenRequest {
   expectedReturnDate?: string
   status?: RecordStatus
   description?: string
+  borrowerId?: number | null
 }
+
+/** MONTHLY: repaid by a monthly plan, like a bank loan. ASAP: as fast as possible (the 70% / 34% rule). */
+export type RepaymentType = 'MONTHLY' | 'ASAP'
 
 export interface LoanTakenResponse {
   id: number
@@ -233,11 +242,17 @@ export interface LoanTakenResponse {
   monthlyPayment: number | null
   /** Opt-in fixed monthly repayment plan; null = default 34%-of-original charge. */
   plannedMonthlyPayment: number | null
+  /** Absent on an older server: read as MONTHLY when there is a plan, ASAP when there is not. */
+  repaymentType?: RepaymentType
+  /** The person lent it. Absent on an older server. */
+  lenderId?: number | null
 }
 
 export interface LoanTakenRequest {
   /** Null keeps (or puts back) the default rule: the server stores exactly what is sent. */
   plannedMonthlyPayment?: number | null
+  repaymentType?: RepaymentType
+  lenderId?: number | null
   lenderName: string
   totalAmount: number
   paidAmount?: number
@@ -358,6 +373,9 @@ export interface InvestmentResponse {
   targetDate?: string | null
   /** What a savings goal asks each month. Absent on an older backend. */
   monthlyContribution?: number | null
+  /** The month a savings goal's payments start, YYYY-MM-01; null = the month of `purchaseDate`.
+   *  Absent on an older backend, which is read the same way. */
+  paymentStartDate?: string | null
 }
 
 export interface InvestmentRequest {
@@ -382,6 +400,9 @@ export interface InvestmentRequest {
   targetDate?: string | null
   /** What a savings goal asks each month. */
   monthlyContribution?: number | null
+  /** The month a savings goal's payments start, YYYY-MM-01. On update, a key left out keeps the
+   *  stored month and null resets it to the purchase month. */
+  paymentStartDate?: string | null
 }
 
 export interface InvestmentContributeRequest {
@@ -606,6 +627,8 @@ export interface AdvisorUpcoming {
    * there is nothing left to pay for it. Absent on an older backend — read it as false.
    */
   recorded?: boolean
+  /** This month's due on a loan or debt repaid as fast as possible (dated today). */
+  asap?: boolean
 }
 
 /** One income the safe-to-spend figure expects before its window ends (salary, capped). */

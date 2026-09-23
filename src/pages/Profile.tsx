@@ -111,13 +111,13 @@ export function Profile() {
           ) : p ? (
             <>
               {q.error && <ErrorTile compact className={FULL} message={q.error} onRetry={q.refetch} />}
-              {/* The owner's order: the level beside its savings rule; under the level, this month
-                  so far beside what to set aside; the workings last, across the whole width. */}
+              {/* The owner's order: the level beside its savings rule; under the level, what to set
+                  aside beside this month so far; the workings last, across the whole width. */}
               <LevelHero p={p} cached={{ isCached: q.isCached, cachedAt: q.cachedAt }} />
               <RuleTile p={p} />
-              {/* An older server sends neither figure — then "set aside" takes the row alone. */}
-              {hasSoFar && <SoFarTile p={p} />}
+              {/* An older server sends no "so far" figures — then "set aside" takes the row alone. */}
               <SetAsideTile p={p} full={!hasSoFar} onHome={() => navigate('/')} onSavings={() => navigate('/savings')} />
+              {hasSoFar && <SoFarTile p={p} />}
               <LadderTile p={p} onChangeIncome={() => navigate('/settings')} />
             </>
           ) : null}
@@ -181,11 +181,12 @@ function SoFarTile({ p }: { p: ProfileResponse }) {
   const { t, lang, categoryName } = useLang()
   const income = p.incomeThisMonth
   const allocated = p.allocatedThisMonth
-  const incomeLines = [...(income?.lines ?? [])].sort((a, b) => b.amount - a.amount)
-  const notCounted = income ? [
-    income.excludedBorrowed > 0 ? t('shell.profile.notCountedBorrowed', { amount: moneyFull(income.excludedBorrowed) }) : null,
-    income.excludedReturned > 0 ? t('shell.profile.notCountedReturned', { amount: moneyFull(income.excludedReturned) }) : null,
-  ].filter(Boolean).join(' · ') : ''
+  // Only what the savings percentages apply to — salary, avans, bonus. Other income, and the
+  // borrowed or paid-back money the server already leaves out, are not listed (owner's call).
+  const incomeLines = (income?.lines ?? [])
+    .filter(l => l.inBase !== false)
+    .sort((a, b) => b.amount - a.amount)
+  const incomeTotal = incomeLines.reduce((sum, l) => sum + l.amount, 0)
   const allocatedLines = (allocated?.lines ?? [])
     .filter(l => ALLOCATED_ORDER.includes(l.bucket))
     .sort((a, b) => ALLOCATED_ORDER.indexOf(a.bucket) - ALLOCATED_ORDER.indexOf(b.bucket))
@@ -198,7 +199,7 @@ function SoFarTile({ p }: { p: ProfileResponse }) {
         <div className="mt-3">
           <div className="flex items-baseline justify-between gap-3">
             <h3 className="text-label uppercase text-slate-500">{t('shell.profile.incomeThisMonth')}</h3>
-            <p className="shrink-0 text-title tabular-nums text-income">{moneyFull(income.total)}</p>
+            <p className="shrink-0 text-title tabular-nums text-income">{moneyFull(incomeTotal)}</p>
           </div>
           {incomeLines.length === 0 ? (
             <p className="mt-1 text-sm text-slate-500">{t('shell.profile.noIncomeYet')}</p>
@@ -206,17 +207,11 @@ function SoFarTile({ p }: { p: ProfileResponse }) {
             <ul className="mt-1">
               {incomeLines.map((l, i) => (
                 <li key={`${l.categoryId ?? 'none'}-${i}`} className="flex items-baseline justify-between gap-3 py-1 text-sm">
-                  <span className="min-w-0">
-                    <span className="block truncate text-slate-700">{categoryName({ name: l.name, nameUz: l.nameUz })}</span>
-                    {l.inBase === false && <span className="block text-xs text-slate-500">{t('shell.profile.notInBase')}</span>}
-                  </span>
+                  <span className="min-w-0 truncate text-slate-700">{categoryName({ name: l.name, nameUz: l.nameUz })}</span>
                   <span className="shrink-0 tabular-nums text-slate-900">{moneyFull(l.amount)}</span>
                 </li>
               ))}
             </ul>
-          )}
-          {notCounted && (
-            <p className="mt-1 text-xs tabular-nums text-slate-500">{t('shell.profile.notCounted', { parts: notCounted })}</p>
           )}
         </div>
       )}

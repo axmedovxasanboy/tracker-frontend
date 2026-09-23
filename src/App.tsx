@@ -130,8 +130,11 @@ function AppRoutes() {
         <div className="flex-1 flex flex-col ml-0 md:ml-60 min-w-0 overflow-hidden">
           {/* pt-14 reserves the phone app bar, which is fixed to the viewport — so anything
               rendered above <main> would be painted over. The offline banner rides inside the
-              scroller instead, pinned just under the bar. */}
-          <main id="main" tabIndex={-1} className="app-scroll flex-1 overflow-y-auto pt-14 md:pt-0">
+              scroller instead, pinned just under the bar. `relative` makes this scroller the
+              containing block for absolutely positioned content (sr-only labels): without it
+              they are placed against the document, stretch the page, and a second scrollbar
+              appears next to this one. */}
+          <main id="main" tabIndex={-1} className="app-scroll relative flex-1 overflow-y-auto pt-14 md:pt-0">
             <div className="sticky top-14 md:top-0 z-10">
               <OfflineBanner />
             </div>

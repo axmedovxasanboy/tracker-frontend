@@ -157,7 +157,15 @@ export const ComingUpTile = forwardRef<HTMLHeadingElement, {
                   <span className="mt-0.5 text-[11px] font-medium">{m}</span>
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p id={nameId} className="truncate text-sm font-medium text-slate-900">{u.name}</p>
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <p id={nameId} className="truncate text-sm font-medium text-slate-900">{u.name}</p>
+                    {/* This month's share of a loan repaid as fast as possible. */}
+                    {u.asap && (
+                      <span className="shrink-0 rounded-chip bg-pink-50 px-1.5 py-0.5 text-[11px] font-medium text-pink-700">
+                        {t('home.upcoming.repayFast')}
+                      </span>
+                    )}
+                  </div>
                   <p className="text-xs tabular-nums text-slate-500">
                     <span className="sr-only">{day} · </span>
                     <span className="sm:hidden">{amount}</span>

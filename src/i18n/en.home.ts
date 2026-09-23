@@ -34,6 +34,7 @@ export const en_home = {
   'home.upcoming.all': 'All loans & bills',
   'home.upcoming.empty': 'Nothing due in the next 5 weeks.',
   'home.upcoming.overdue': 'Overdue',
+  'home.upcoming.repayFast': 'Repay fast',
   // Entered ahead for its day: the money leaves then, and there is nothing to pay now.
   'home.upcoming.recorded': 'Recorded',
 
@@ -64,6 +65,7 @@ export const en_home = {
   'home.goals.empty': 'Saving for a home, a car, a trip? Add it as a goal.',
   'home.goals.ofTarget': '{value} of {target}',
   'home.goals.perMonth': '{amount} a month',
+  'home.goals.perMonthFrom': '{amount} a month from {month}',
   'home.goals.by': 'by {month}',
   'home.goals.onTrack': 'On track',
   'home.goals.behind': 'Behind — about {amount} a month needed',
@@ -82,10 +84,12 @@ export const en_home = {
   'home.goal.haveHelp': 'Money already put by for this. No wallet is touched.',
   'home.goal.monthly': 'Monthly payment',
   'home.goal.monthlySuggested': 'Suggested from your target and deadline — change it if you like.',
+  'home.goal.start': 'Payments start',
   'home.goal.deadline': 'Deadline',
   'home.goal.reachBy': 'At {monthly} a month you’ll reach it around {month}.',
   'home.goal.reachLate': 'At {monthly} a month you’ll reach it around {month} — that’s after your deadline. About {needed} a month would make it.',
   'home.goal.err.monthly': 'Enter how much you’ll put in each month.',
+  'home.goal.err.start': 'Pick the month payments start.',
   // Only while the server still refuses a goal that starts from nothing.
   'home.goal.err.zeroStart': 'Couldn’t save with nothing already put by — try again in a minute.',
   'home.goal.err.name': 'Give the goal a name.',

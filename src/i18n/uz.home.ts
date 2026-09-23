@@ -28,6 +28,7 @@ export const uz_home: Partial<Record<keyof typeof en_home, string>> = {
   'home.upcoming.all': 'Barcha qarz va toʻlovlar',
   'home.upcoming.empty': 'Keyingi 5 haftada toʻlanadigan narsa yoʻq.',
   'home.upcoming.overdue': 'Muddati oʻtgan',
+  'home.upcoming.repayFast': 'Tez qaytarish',
   'home.upcoming.recorded': 'Yozilgan',
 
   // ── Shu oydagi jamgʻarmalar ─────────────────────────────────────────────────────────────────
@@ -57,6 +58,7 @@ export const uz_home: Partial<Record<keyof typeof en_home, string>> = {
   'home.goals.empty': 'Uy, mashina yoki sayohat uchun yigʻyapsizmi? Uni maqsad sifatida qoʻshing.',
   'home.goals.ofTarget': '{target} dan {value}',
   'home.goals.perMonth': 'oyiga {amount}',
+  'home.goals.perMonthFrom': '{month} dan oyiga {amount}',
   'home.goals.by': '{month} gacha',
   'home.goals.onTrack': 'Reja boʻyicha',
   'home.goals.behind': 'Ortda qolmoqda — oyiga taxminan {amount} kerak',
@@ -75,10 +77,12 @@ export const uz_home: Partial<Record<keyof typeof en_home, string>> = {
   'home.goal.haveHelp': 'Bu maqsad uchun oldindan yigʻilgan pul. Hech bir hamyonga tegilmaydi.',
   'home.goal.monthly': 'Oylik toʻlov',
   'home.goal.monthlySuggested': 'Maqsad va muddatdan hisoblangan taklif — xohlasangiz oʻzgartiring.',
+  'home.goal.start': 'Toʻlovlar boshlanadi',
   'home.goal.deadline': 'Muddat',
   'home.goal.reachBy': 'Oyiga {monthly} bilan unga taxminan {month} da erishasiz.',
   'home.goal.reachLate': 'Oyiga {monthly} bilan unga taxminan {month} da erishasiz — bu muddatingizdan keyin. Oyiga taxminan {needed} yetadi.',
   'home.goal.err.monthly': 'Har oy qancha qoʻyishingizni kiriting.',
+  'home.goal.err.start': 'Toʻlovlar boshlanadigan oyni tanlang.',
   'home.goal.err.zeroStart': 'Hali hech narsa yigʻilmagan maqsadni saqlab boʻlmadi — bir daqiqadan keyin qayta urinib koʻring.',
   'home.goal.err.name': 'Maqsadga nom bering.',
   'home.goal.err.target': 'Maqsad uchun qancha kerakligini kiriting.',

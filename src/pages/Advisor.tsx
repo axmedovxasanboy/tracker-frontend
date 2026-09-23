@@ -113,6 +113,7 @@ export function Advisor({ currency }: Props) {
       } else if (u.kind === 'BANK') {
         setBank({ id: u.refId ?? undefined, amount: u.amount })
       } else if (u.kind === 'LOAN') {
+        // A borrowed loan, repaid monthly or as fast as possible alike.
         const rec = (await financeApi.getLoansTaken()).data.find(l => l.id === u.refId)
         if (rec) setRepay({ target: { kind: 'loan-taken', record: rec }, amount: u.amount })
         else setDebtPickerOpen(true)

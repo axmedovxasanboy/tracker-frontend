@@ -53,6 +53,11 @@ export interface ObligationBase {
   /** Already paid in full for this calendar month. */
   paidThisMonth: boolean
   /**
+   * Repaid as fast as possible (the 70% / 34% rule) rather than by a monthly plan — money borrowed
+   * that way, and every debt. Such a loan is what "You owe" counts; a monthly one is not.
+   */
+  asap: boolean
+  /**
    * When the next payment falls, as YYYY-MM. `first` marks a loan whose payments have not
    * started yet. Null once the loan is paid off.
    */

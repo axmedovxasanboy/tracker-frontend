@@ -237,9 +237,17 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
                   // The plan, when the goal has one: "1.000.000 UZS a month · by Mar 2027". Both fields
                   // are absent on an older backend, and the card then reads as it always did.
                   const monthly = g.monthlyContribution ?? 0
-                  const plan = goalPlan(Math.max(0, (target ?? 0) - value), monthly, g.targetDate ?? null, month)
+                  // Payments start in their own month; without one (or on an older server), the goal's.
+                  const start = (g.paymentStartDate ?? g.purchaseDate ?? '').slice(0, 7)
+                  const plan = goalPlan(Math.max(0, (target ?? 0) - value), monthly, g.targetDate ?? null, month, start)
                   const planLine = [
-                    monthly > 0 ? t('home.goals.perMonth', { amount: moneyFull(monthly, g.currency) }) : null,
+                    monthly > 0
+                      ? start > month
+                        ? t('home.goals.perMonthFrom', {
+                          amount: moneyFull(monthly, g.currency), month: formatDate(start, lang, 'monthShort'),
+                        })
+                        : t('home.goals.perMonth', { amount: moneyFull(monthly, g.currency) })
+                      : null,
                     plan.deadlineMonth ? t('home.goals.by', { month: formatDate(plan.deadlineMonth, lang, 'monthShort') }) : null,
                   ].filter(Boolean).join(' · ')
                   // With a deadline and money still missing: does the monthly payment get there in time?
