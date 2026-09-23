@@ -40,6 +40,7 @@ export const uz_home: Partial<Record<keyof typeof en_home, string>> = {
   'home.savings.allDone': 'Shu oydagi jamgʻarmalar toʻliq bajarildi.',
   'home.savings.nothing': 'Shu oy yigʻiladigan narsa yoʻq.',
   'home.savings.addMore': 'Yana qoʻshish',
+  'home.savings.over': '+{amount} ortiq',
 
   // ── Sizda bor ───────────────────────────────────────────────────────────────────────────────
   'home.have.checkedToday': 'Bugun tekshirilgan',

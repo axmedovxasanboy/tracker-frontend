@@ -47,6 +47,8 @@ export function SavingsThisMonth({ rows, currency, onPay }: {
     <ul className="divide-y divide-hairline">
       {shown.map(r => {
         const done = r.remaining <= 0
+        // More than the month asked: shown, not hidden under "Done".
+        const over = done && r.target > 0 ? r.paid - r.target : 0
         const goal = r.bucket === 'GOAL'
         const key = goal ? `goal-${r.refId}` : r.bucket
         const name = isBucketRow(r) ? t(SAVINGS_NAME_KEY[r.bucket]) : r.name?.trim() || t('page.advisor.bucket.savings')
@@ -61,6 +63,11 @@ export function SavingsThisMonth({ rows, currency, onPay }: {
                 {done
                   ? moneyFull(r.paid, currency)
                   : t('home.savings.ofTarget', { paid: formatNumber(r.paid), target: moneyFull(r.target, currency) })}
+                {over >= 1 && (
+                  <span className="font-medium text-amber-700">
+                    {' · '}{t('home.savings.over', { amount: moneyFull(over, currency) })}
+                  </span>
+                )}
               </p>
             </div>
             {done ? (

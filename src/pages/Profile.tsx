@@ -1,7 +1,6 @@
-import type { ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { AxiosError } from 'axios'
-import { AlertTriangle, CloudOff } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, CloudOff, Target } from 'lucide-react'
 import { PageHeader } from '../components/ui/PageHeader'
 import { Tile, TileGrid } from '../components/ui/Tile'
 import { Button } from '../components/ui/Button'
@@ -16,9 +15,9 @@ import { useAuth } from '../context/AuthContext'
 import { useLang } from '../i18n/LanguageContext'
 import type { TKey } from '../i18n/LanguageContext'
 import { profileApi } from '../api/profile'
-import { formatMonth, formatNumber, moneyFull, todayLocal } from '../utils/format'
+import { formatDate, formatMonth, formatNumber, moneyFull, todayLocal } from '../utils/format'
 import type { Bucket } from '../types'
-import type { ProfileReason, ProfileResponse } from '../types/profile'
+import type { ProfileAllocatedLine, ProfileReason, ProfileResponse } from '../types/profile'
 
 const FULL = 'md:col-span-6 xl:col-span-12'
 const HALF = 'md:col-span-6 xl:col-span-6'
@@ -112,6 +111,8 @@ export function Profile() {
             <>
               {q.error && <ErrorTile compact className={FULL} message={q.error} onRetry={q.refetch} />}
               <LevelHero p={p} cached={{ isCached: q.isCached, cachedAt: q.cachedAt }} />
+              {/* Asked for by name, so it sits right under the level. An older server sends neither. */}
+              {(p.incomeThisMonth || p.allocatedThisMonth) && <SoFarTile p={p} />}
               <RuleTile p={p} />
               <LadderTile p={p} onChangeIncome={() => navigate('/settings')} />
               <SetAsideTile p={p} onHome={() => navigate('/')} onSavings={() => navigate('/savings')} />
@@ -158,6 +159,119 @@ function LevelHero({ p, cached }: { p: ProfileResponse; cached: { isCached: bool
           <p className="mt-2 text-xs tabular-nums text-slate-500">
             {t('shell.profile.nextLevel', { n: (p.level ?? 0) + 1, amount: moneyFull(next) })}
           </p>
+        </div>
+      )}
+    </Tile>
+  )
+}
+
+// ── This month so far ──────────────────────────────────────────────────────────────────────────
+
+/** The order the savings rows always come in; goals, when there are any, last. */
+const ALLOCATED_ORDER: ProfileAllocatedLine['bucket'][] = ['DONATION', 'EMERGENCY', 'INVESTMENTS', 'GOALS']
+
+/** "10,9%" — one decimal, or a dash while there is nothing to measure against yet. */
+const share = (p: number | null | undefined) => (p == null ? '—' : `${formatNumber(p, 1)}%`)
+
+function SoFarTile({ p }: { p: ProfileResponse }) {
+  const { t, lang, categoryName } = useLang()
+  const income = p.incomeThisMonth
+  const allocated = p.allocatedThisMonth
+  const incomeLines = [...(income?.lines ?? [])].sort((a, b) => b.amount - a.amount)
+  const notCounted = income ? [
+    income.excludedBorrowed > 0 ? t('shell.profile.notCountedBorrowed', { amount: moneyFull(income.excludedBorrowed) }) : null,
+    income.excludedReturned > 0 ? t('shell.profile.notCountedReturned', { amount: moneyFull(income.excludedReturned) }) : null,
+  ].filter(Boolean).join(' · ') : ''
+  const allocatedLines = (allocated?.lines ?? [])
+    .filter(l => ALLOCATED_ORDER.includes(l.bucket))
+    .sort((a, b) => ALLOCATED_ORDER.indexOf(a.bucket) - ALLOCATED_ORDER.indexOf(b.bucket))
+
+  return (
+    <Tile span={6} mdSpan={6} as="section">
+      <TileHead title={t('shell.profile.soFar', { month: formatDate(p.month, lang, 'monthName') })} />
+
+      {income && (
+        <div className="mt-3">
+          <div className="flex items-baseline justify-between gap-3">
+            <h3 className="text-label uppercase text-slate-500">{t('shell.profile.incomeThisMonth')}</h3>
+            <p className="shrink-0 text-title tabular-nums text-income">{moneyFull(income.total)}</p>
+          </div>
+          {incomeLines.length === 0 ? (
+            <p className="mt-1 text-sm text-slate-500">{t('shell.profile.noIncomeYet')}</p>
+          ) : (
+            <ul className="mt-1">
+              {incomeLines.map((l, i) => (
+                <li key={`${l.categoryId ?? 'none'}-${i}`} className="flex items-baseline justify-between gap-3 py-1 text-sm">
+                  <span className="min-w-0">
+                    <span className="block truncate text-slate-700">{categoryName({ name: l.name, nameUz: l.nameUz })}</span>
+                    {l.inBase === false && <span className="block text-xs text-slate-500">{t('shell.profile.notInBase')}</span>}
+                  </span>
+                  <span className="shrink-0 tabular-nums text-slate-900">{moneyFull(l.amount)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {notCounted && (
+            <p className="mt-1 text-xs tabular-nums text-slate-500">{t('shell.profile.notCounted', { parts: notCounted })}</p>
+          )}
+        </div>
+      )}
+
+      {allocated && (
+        <div className={income ? 'mt-4 border-t border-hairline pt-3' : 'mt-3'}>
+          <div className="flex items-baseline justify-between gap-3">
+            <h3 className="text-label uppercase text-slate-500">{t('shell.profile.setAsideSoFar')}</h3>
+            <p className="shrink-0 text-title tabular-nums text-slate-900">{moneyFull(allocated.total)}</p>
+          </div>
+          <p className="text-right text-xs tabular-nums text-slate-500">
+            {/* Measured against what the percentages apply to; an older server only knows income. */}
+            {allocated.percentOfBase !== undefined
+              ? allocated.percentOfBase == null
+                ? '—'
+                : `= ${t('shell.profile.ofBase', { percent: formatNumber(allocated.percentOfBase, 1) })}`
+              : allocated.percentOfIncome == null
+                ? '—'
+                : t('shell.profile.ofIncome', { percent: formatNumber(allocated.percentOfIncome, 1) })}
+          </p>
+          <ul className="mt-1 divide-y divide-hairline">
+            {allocatedLines.map(l => {
+              const icon = l.bucket === 'GOALS'
+                ? { icon: <Target className="h-4 w-4" aria-hidden="true" />, tone: 'indigo' as const }
+                : SAVINGS_ICON[l.bucket]
+              const name = l.bucket === 'GOALS' ? t('home.goals.title') : t(SAVINGS_NAME_KEY[l.bucket])
+              const met = l.target != null && l.target > 0 && l.amount >= l.target
+              return (
+                <li key={l.bucket} className="flex items-center gap-3 py-2">
+                  <IconChip tone={icon.tone}>{icon.icon}</IconChip>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm text-slate-900">{name}</p>
+                    {l.target != null && l.target > 0 && (
+                      <p className="text-xs tabular-nums text-slate-500">{t('shell.profile.ofTarget', { amount: moneyFull(l.target) })}</p>
+                    )}
+                    {l.over != null && l.over > 0 && (
+                      <p className="text-xs font-medium tabular-nums text-amber-700">
+                        {t('shell.profile.overAdvice', { amount: moneyFull(l.over) })}
+                      </p>
+                    )}
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="flex items-center justify-end gap-1 text-sm font-semibold tabular-nums text-slate-900">
+                      {moneyFull(l.amount)}
+                      {met && (
+                        <>
+                          <CheckCircle2 className="h-4 w-4 text-income" aria-hidden="true" />
+                          <span className="sr-only">{t('ui.status.done')}</span>
+                        </>
+                      )}
+                    </p>
+                    <p className="text-xs tabular-nums text-slate-500">
+                      {share(l.percentOfBase !== undefined ? l.percentOfBase : l.percentOfIncome)}
+                    </p>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
         </div>
       )}
     </Tile>
@@ -215,34 +329,68 @@ function RuleTile({ p }: { p: ProfileResponse }) {
 // ── How it's worked out ────────────────────────────────────────────────────────────────────────
 
 function LadderTile({ p, onChangeIncome }: { p: ProfileResponse; onChangeIncome: () => void }) {
-  const { t } = useLang()
+  const { t, categoryName } = useLang()
+  const parts = p.baseParts
   return (
     <Tile span={6} mdSpan={6} as="section">
       <TileHead
         title={t('cmp.cardInfo.howItsBuilt')}
         action={<LinkButton label={t('shell.profile.changeIncome')} onClick={onChangeIncome} />}
       />
-      <dl className="mt-2">
+
+      {/* The level: what is left after bills decides it — and which percentages apply. */}
+      <h3 className="mt-3 text-label uppercase text-slate-500">{t('shell.profile.levelLabel')}</h3>
+      <dl className="mt-1">
         <Rung label={t('shell.settings.income')} amount={p.stableIncome ?? 0} />
         <Rung sign="−" label={t('shell.bills.title')} amount={p.monthlyBills} />
-        <Rung sign="=" strong label={t('shell.profile.afterBills')} amount={p.leftAfterBills}
-          note={t('shell.profile.setsLevel')} />
-        <Rung sign="−" label={t('shell.profile.loanPayments')} amount={p.loanPayments} />
-        <Rung sign="=" strong label={t('shell.profile.forSavings')} amount={p.leftForSavings} />
-        {p.bonusThisMonth > 0 && <Rung sign="+" label={t('shell.profile.bonus')} amount={p.bonusThisMonth} />}
+        <Rung sign="=" strong label={t('shell.profile.afterBills')} amount={p.leftAfterBills} />
+      </dl>
+      {p.level != null && (
+        <p className="mt-1 text-sm font-medium tabular-nums text-indigo-700">
+          <span aria-hidden="true">→ </span>
+          {p.nextLevelAt != null && !p.aboveCeiling
+            ? t('shell.profile.levelResultNext', { n: p.level, next: p.level + 1, amount: moneyFull(p.nextLevelAt) })
+            : t('shell.profile.level', { n: p.level })}
+        </p>
+      )}
+
+      {/* The savings base: what the percentages apply to — salary, avans and bonus. */}
+      <h3 className="mt-4 border-t border-hairline pt-3 text-label uppercase text-slate-500">{t('shell.profile.baseLadder')}</h3>
+      <dl className="mt-1">
+        {parts ? (
+          parts.usesStableIncome ? (
+            // Before the salary lands, the income in Settings stands in for it; a bonus still adds.
+            <>
+              <Rung label={t('shell.profile.incomeUntilSalary')} amount={parts.stableIncome} />
+              {parts.bonus > 0 && <Rung sign="+" label={t('shell.profile.bonus')} amount={parts.bonus} />}
+            </>
+          ) : (
+            [...(parts.lines ?? [])].sort((a, b) => b.amount - a.amount).map((l, i) => (
+              <Rung key={`${l.categoryId ?? 'none'}-${i}`} sign={i === 0 ? undefined : '+'}
+                label={categoryName({ name: l.name, nameUz: l.nameUz })} amount={l.amount} />
+            ))
+          )
+        ) : (
+          // An older server still builds the base from what is left after bills and loans.
+          <>
+            <Rung label={t('shell.profile.afterBills')} amount={p.leftAfterBills} />
+            <Rung sign="−" label={t('shell.profile.loanPayments')} amount={p.loanPayments} />
+            <Rung sign="=" strong label={t('shell.profile.forSavings')} amount={p.leftForSavings} />
+            {p.bonusThisMonth > 0 && <Rung sign="+" label={t('shell.profile.bonus')} amount={p.bonusThisMonth} />}
+          </>
+        )}
         <Rung sign="=" strong label={t('shell.profile.base')} amount={p.savingsBase} />
       </dl>
     </Tile>
   )
 }
 
-/** One step of the ladder: the sign, what it is, the figure. */
-function Rung({ sign, label, amount, strong = false, note }: {
+/** One step of a ladder: the sign, what it is, the figure. */
+function Rung({ sign, label, amount, strong = false }: {
   sign?: '−' | '+' | '='
   label: string
   amount: number
   strong?: boolean
-  note?: ReactNode
 }) {
   return (
     <div className={`flex items-baseline justify-between gap-3 py-1.5 text-sm ${
@@ -251,11 +399,6 @@ function Rung({ sign, label, amount, strong = false, note }: {
       <dt className="min-w-0">
         <span className="inline-block w-4 text-slate-400">{sign ?? ''}</span>
         {label}
-        {note && (
-          <span className="ml-2 inline-block rounded-chip bg-indigo-50 px-1.5 py-0.5 text-[11px] font-medium text-indigo-700">
-            {note}
-          </span>
-        )}
       </dt>
       <dd className="shrink-0 tabular-nums">{moneyFull(amount)}</dd>
     </div>
@@ -267,6 +410,7 @@ function Rung({ sign, label, amount, strong = false, note }: {
 function SetAsideTile({ p, onHome, onSavings }: { p: ProfileResponse; onHome: () => void; onSavings: () => void }) {
   const { t } = useLang()
   const rows = known(p.buckets)
+  const bonus = p.baseParts ? p.baseParts.bonus : p.bonusThisMonth
   return (
     <Tile span={6} mdSpan={6} as="section">
       <TileHead title={t('shell.profile.setAsideTitle')} />
@@ -290,7 +434,7 @@ function SetAsideTile({ p, onHome, onSavings }: { p: ProfileResponse; onHome: ()
         </li>
       </ul>
       {/* A bonus month asks for more; the usual month is what to expect after it. */}
-      {p.bonusThisMonth > 0 && (
+      {bonus > 0 && (
         <div className="mt-3 rounded-control bg-slate-50 px-3 py-2.5 tabular-nums">
           <p className="text-sm text-slate-700">{t('shell.profile.withoutBonus', { amount: moneyFull(p.normalMonthTotal) })}</p>
           <p className="mt-0.5 text-xs text-slate-500">

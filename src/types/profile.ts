@@ -26,6 +26,58 @@ export interface ProfileNextMonth {
   buckets: { bucket: Bucket; percent: number; normalMonthAmount: number }[]
 }
 
+/** One kind of income this month: a category (or none), by the name it carries. */
+export interface ProfileIncomeLine {
+  categoryId: number | null
+  name: string
+  nameUz: string | null
+  amount: number
+  /** False for income the savings base leaves out (anything but salary, avans and bonus). */
+  inBase?: boolean
+}
+
+/** What the savings base is made of: salary + avans + bonus received this month. */
+export interface ProfileBaseParts {
+  salaryReceived: number
+  stableIncome: number
+  /** The Settings income stands in while this month's salary has not arrived yet. */
+  usesStableIncome: boolean
+  bonus: number
+  /** Salary, avans and bonus lines, largest first. */
+  lines: ProfileIncomeLine[]
+}
+
+export interface ProfileIncomeThisMonth {
+  /** Salary, advances, bonuses — money earned. Borrowed and paid-back money is left out. */
+  total: number
+  lines: ProfileIncomeLine[]
+  /** Borrowed money that arrived this month. */
+  excludedBorrowed: number
+  /** Money paid back to the owner this month. */
+  excludedReturned: number
+}
+
+export interface ProfileAllocatedLine {
+  bucket: Bucket | 'GOALS'
+  amount: number
+  /** Null while there is no income this month. */
+  percentOfIncome: number | null
+  /** Its share of the savings base (salary + avans + bonus). Absent on an older server. */
+  percentOfBase?: number | null
+  /** What this month asks for; null when nothing is asked. */
+  target: number | null
+  /** How much more went in than the advice asked. */
+  over?: number | null
+}
+
+export interface ProfileAllocatedThisMonth {
+  total: number
+  percentOfIncome: number | null
+  /** The total's share of the savings base. Absent on an older server. */
+  percentOfBase?: number | null
+  lines: ProfileAllocatedLine[]
+}
+
 export interface ProfileResponse {
   username: string
   month: string
@@ -40,10 +92,14 @@ export interface ProfileResponse {
   stableIncome: number | null
   monthlyBills: number
   leftAfterBills: number
+  /** Still sent, but no longer part of the savings base (an older server still builds on them). */
   loanPayments: number
   leftForSavings: number
   bonusThisMonth: number
+  /** What the percentages apply to: salary + avans + bonus received this month. */
   savingsBase: number
+  /** How `savingsBase` is made up. Absent on an older server. */
+  baseParts?: ProfileBaseParts
   /** Null while the monthly income is unset. */
   rule: { reason: ProfileReason; cutoff: number | null } | null
   /** Always the three, in this order: DONATION, EMERGENCY, INVESTMENTS. */
@@ -52,4 +108,7 @@ export interface ProfileResponse {
   totalAmount: number
   normalMonthTotal: number
   nextMonth: ProfileNextMonth | null
+  /** This month so far. Absent on an older server. */
+  incomeThisMonth?: ProfileIncomeThisMonth
+  allocatedThisMonth?: ProfileAllocatedThisMonth
 }

@@ -47,6 +47,7 @@ export const en_home = {
   'home.savings.allDone': 'This month’s savings are all in.',
   'home.savings.nothing': 'Nothing to save this month.',
   'home.savings.addMore': 'Add more',
+  'home.savings.over': '+{amount} over',
 
   // ── Home: You have ──────────────────────────────────────────────────────────────────────────
   'home.have.checkedToday': 'Checked today',
