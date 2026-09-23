@@ -164,6 +164,7 @@ function LevelHero({ p, cached }: { p: ProfileResponse; cached: { isCached: bool
           </p>
         </div>
       )}
+      <RuleReasons p={p} />
     </Tile>
   )
 }
@@ -284,19 +285,8 @@ function SoFarTile({ p }: { p: ProfileResponse }) {
 // ── The rule ───────────────────────────────────────────────────────────────────────────────────
 
 function RuleTile({ p }: { p: ProfileResponse }) {
-  const { t, lang } = useLang()
-  const cutoff = p.rule?.cutoff ?? null
-  const reasonText = (reason: ProfileReason | undefined): string | null => {
-    const key = reason ? REASON_KEY[reason] : undefined
-    if (!key) return null
-    // A sentence that names the cutoff is left unsaid rather than said with a hole in it.
-    if (NAMES_CUTOFF.has(reason!) && cutoff == null) return null
-    return t(key, { cutoff: cutoff != null ? moneyFull(cutoff) : '' })
-  }
-  const why = reasonText(p.rule?.reason)
-  const next = p.nextMonth
-  const nextWhy = next ? reasonText(next.reason) : null
-
+  const { t } = useLang()
+  // Why these percentages (and next month's) is said on the Level card — the owner's placement.
   return (
     <Tile span={6} mdSpan={6} as="section">
       <TileHead title={t('shell.profile.ruleTitle')} />
@@ -315,9 +305,34 @@ function RuleTile({ p }: { p: ProfileResponse }) {
           <span className="text-sm font-semibold tabular-nums text-slate-900">{percentText(p.totalPercent)}%</span>
         </li>
       </ul>
-      {why && <p className="mt-3 text-sm text-slate-600">{why}</p>}
+    </Tile>
+  )
+}
+
+/**
+ * Why the savings rule is what it is this month — and what it becomes next month when that
+ * changes. Shown on the Level card, under the level it follows from.
+ */
+function RuleReasons({ p }: { p: ProfileResponse }) {
+  const { t, lang } = useLang()
+  const cutoff = p.rule?.cutoff ?? null
+  const reasonText = (reason: ProfileReason | undefined): string | null => {
+    const key = reason ? REASON_KEY[reason] : undefined
+    if (!key) return null
+    // A sentence that names the cutoff is left unsaid rather than said with a hole in it.
+    if (NAMES_CUTOFF.has(reason!) && cutoff == null) return null
+    return t(key, { cutoff: cutoff != null ? moneyFull(cutoff) : '' })
+  }
+  const why = reasonText(p.rule?.reason)
+  const next = p.nextMonth
+  const nextWhy = next ? reasonText(next.reason) : null
+  if (!why && !next) return null
+
+  return (
+    <div className="mt-4 border-t border-hairline pt-4">
+      {why && <p className="text-sm text-slate-600">{why}</p>}
       {next && (
-        <p className="mt-3 rounded-control bg-slate-50 px-3 py-2.5 text-xs leading-relaxed tabular-nums text-slate-600">
+        <p className={`${why ? 'mt-3 ' : ''}rounded-control bg-slate-50 px-3 py-2.5 text-xs leading-relaxed tabular-nums text-slate-600`}>
           {t(nextWhy ? 'shell.profile.fromMonth' : 'shell.profile.fromMonthShort', {
             month: formatMonth(next.month, lang),
             percents: known(next.buckets).map(b => `${percentText(b.percent)}%`).join(' · '),
@@ -325,7 +340,7 @@ function RuleTile({ p }: { p: ProfileResponse }) {
           })}
         </p>
       )}
-    </Tile>
+    </div>
   )
 }
 
