@@ -17,6 +17,7 @@ import { History } from './pages/History'
 import { Cards } from './pages/Cards'
 import { Savings } from './pages/Savings'
 import { Loans } from './pages/Loans'
+import { Profile } from './pages/Profile'
 import { Categories } from './pages/Categories'
 import { Settings } from './pages/Settings'
 import { Developer } from './pages/Developer'
@@ -141,6 +142,7 @@ function AppRoutes() {
               <Route path="/wallets" element={<Cards />} />
               <Route path="/savings" element={<Savings />} />
               <Route path="/loans" element={<Loans />} />
+              <Route path="/profile" element={<Profile />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/settings/categories" element={<Categories />} />
               {/* Developer is out of the nav — Settings › Advanced is the way in — but the

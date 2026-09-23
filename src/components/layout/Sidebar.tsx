@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
-import { NavLink, useLocation } from 'react-router-dom'
+import { Link, NavLink, useLocation } from 'react-router-dom'
 import {
-  ArrowLeftRight, History, House, LogOut, PiggyBank, Receipt, Settings as SettingsIcon, Wallet, WifiOff,
+  ArrowLeftRight, History, House, LogOut, PiggyBank, Receipt, Settings as SettingsIcon, UserRound, Wallet, WifiOff,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useBackendStatus } from '../../context/BackendStatusContext'
@@ -10,7 +10,7 @@ import { useLang } from '../../i18n/LanguageContext'
 import type { TKey } from '../../i18n/LanguageContext'
 
 /**
- * The whole app, six places, one flat list (2026-09 rebuild). Nothing is folded away any more:
+ * The whole app, seven places, one flat list (2026-09 rebuild; Profile since). Nothing is folded away any more:
  * the old "Details" group hid seven screens the owner had to learn, and the rebuild merged them
  * into these. Developer stays out of the list — Settings › Advanced is its way in.
  */
@@ -20,6 +20,7 @@ const NAV: ReadonlyArray<{ to: string; labelKey: TKey; icon: LucideIcon; exact?:
   { to: '/wallets', labelKey: 'nav.wallets', icon: Wallet },
   { to: '/savings', labelKey: 'shell.nav.savings', icon: PiggyBank },
   { to: '/loans', labelKey: 'shell.nav.loans', icon: Receipt },
+  { to: '/profile', labelKey: 'shell.nav.profile', icon: UserRound },
   { to: '/settings', labelKey: 'nav.settings', icon: SettingsIcon },
 ]
 
@@ -137,10 +138,13 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
       {/* Account. The connection only earns its line when something is actually wrong. */}
       <div className="shrink-0 px-5 py-4 border-t border-slate-800 space-y-3 mt-3">
         <div className="flex items-center justify-between gap-2">
-          <div className="min-w-0">
-            <p className="text-[10px] uppercase tracking-widest text-slate-400 font-semibold">{t('nav.signedInAs')}</p>
-            <p className="text-sm text-slate-200 font-medium truncate">{username ?? '—'}</p>
-          </div>
+          {/* Who is signed in is also the way to the profile. */}
+          <Link to="/profile" onClick={onClose}
+            className="-mx-1.5 flex min-h-[44px] min-w-0 flex-1 flex-col justify-center rounded-control px-1.5 py-1
+                       hover:bg-slate-800 transition-colors focus-ring focus-visible:ring-offset-slate-900">
+            <span className="block text-[10px] uppercase tracking-widest text-slate-400 font-semibold">{t('nav.signedInAs')}</span>
+            <span className="block text-sm text-slate-200 font-medium truncate">{username ?? '—'}</span>
+          </Link>
           <button type="button" onClick={logout} title={t('nav.logout')}
             className="shrink-0 inline-flex items-center gap-1.5 min-h-[44px] md:min-h-0 px-2.5 py-1.5 rounded-control text-xs
                        font-medium text-slate-300 hover:text-white hover:bg-slate-800 transition-colors
