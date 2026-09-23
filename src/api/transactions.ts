@@ -1,12 +1,10 @@
 import { apiClient } from './client'
 import type {
   BalanceTransferRequest,
-  Currency,
   PageResponse,
   Transaction,
   TransactionFilters,
   TransactionRequest,
-  TransactionType,
 } from '../types'
 
 export const transactionsApi = {
@@ -30,9 +28,6 @@ export const transactionsApi = {
     return apiClient.get<PageResponse<Transaction>>('/transactions', { params })
   },
 
-  getById: (id: number) =>
-    apiClient.get<Transaction>(`/transactions/${id}`),
-
   create: (data: TransactionRequest) =>
     apiClient.post<Transaction>('/transactions', data),
 
@@ -42,20 +37,9 @@ export const transactionsApi = {
   delete: (id: number) =>
     apiClient.delete(`/transactions/${id}`),
 
-  getRecent: (currency: Currency, type?: TransactionType) => {
-    const params: Record<string, unknown> = {
-      page: 0, size: 8, sortBy: 'transactionDate', sortDir: 'desc',
-      excludeTransfers: true,
-    }
-    if (currency) params.currency = currency
-    if (type) params.type = type
-    return apiClient.get<PageResponse<Transaction>>('/transactions', { params })
-  },
-
   getSuggestions: (q: string, categoryId?: number) =>
     apiClient.get<string[]>('/transactions/suggestions', { params: { q, categoryId } }),
 
   transfer: (data: BalanceTransferRequest) =>
     apiClient.post<Transaction[]>('/transactions/transfer', data),
-
 }

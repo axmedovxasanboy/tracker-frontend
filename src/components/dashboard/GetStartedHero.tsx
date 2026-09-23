@@ -116,7 +116,7 @@ export function GetStartedHero({
           help={t('page.dashboard.getStarted.step1Help')}
         >
           <div className="flex flex-wrap items-end gap-3">
-            <Field id={INCOME_FIELD_ID} label={t('page.settings.stableIncomeHeading')} className="min-w-[12rem] flex-1">
+            <Field id={INCOME_FIELD_ID} label={t('shell.settings.income')} className="min-w-[12rem] flex-1">
               {/* No autoFocus: this tile renders on page load, and stealing focus there would
                   scroll the reader to a form they did not ask for. Home focuses it on demand. */}
               <AmountInput value={income} onChange={setIncome} currency={currency} suffix={currency} className={INPUT} />
@@ -150,7 +150,7 @@ export function GetStartedHero({
                 variant="primary"
                 icon={<CreditCard className="w-4 h-4" aria-hidden="true" />}
                 label={t('page.dashboard.getStarted.step2Card')}
-                onClick={() => navigate('/cards')}
+                onClick={() => navigate('/wallets')}
               />
               <Button
                 icon={<Wallet className="w-4 h-4" aria-hidden="true" />}

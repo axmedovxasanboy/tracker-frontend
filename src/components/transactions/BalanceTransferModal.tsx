@@ -17,9 +17,10 @@ interface Props {
   open: boolean
   onClose: () => void
   onSaved: () => void
-  preselectedFromCardId?: number
-  /** Preselect the DESTINATION instead — the "top up this card" entry point. */
+  /** Preselect the destination — the "top up this card" entry point. */
   preselectedToCardId?: number
+  /** Start with this amount — the Add form hands over what was already typed. */
+  presetAmount?: number
 }
 
 /**
@@ -54,7 +55,7 @@ const emptyForm = (): FormState => ({
   transactionDate: todayLocal(),
 })
 
-export function BalanceTransferModal({ open, onClose, onSaved, preselectedFromCardId, preselectedToCardId }: Props) {
+export function BalanceTransferModal({ open, onClose, onSaved, preselectedToCardId, presetAmount }: Props) {
   const { t } = useLang()
   const { showSuccess } = useToast()
   const [cards, setCards] = useState<CardResponse[]>([])
@@ -71,6 +72,7 @@ export function BalanceTransferModal({ open, onClose, onSaved, preselectedFromCa
       // isn't showing would look like the money disappeared.
       setCashPot(cashRes.data[0] ?? null)
       const f = emptyForm()
+      if (presetAmount && presetAmount > 0) f.amount = presetAmount
       if (preselectedToCardId) {
         // Topping THIS card up: lock the destination, default the source to any other card.
         f.toCardId = preselectedToCardId
@@ -78,11 +80,7 @@ export function BalanceTransferModal({ open, onClose, onSaved, preselectedFromCa
         if (source) f.fromCardId = source.id
         else if (cashRes.data[0]) f.fromCardId = CASH
       } else {
-        if (preselectedFromCardId) {
-          f.fromCardId = preselectedFromCardId
-        } else if (cardRes.data.length > 0) {
-          f.fromCardId = cardRes.data[0].id
-        }
+        if (cardRes.data.length > 0) f.fromCardId = cardRes.data[0].id
         if (cardRes.data.length > 1) {
           const other = cardRes.data.find(c => c.id !== f.fromCardId)
           if (other) f.toCardId = other.id
@@ -91,7 +89,9 @@ export function BalanceTransferModal({ open, onClose, onSaved, preselectedFromCa
       setForm(f)
     }).catch(() => {})
     setError(null)
-  }, [open, preselectedFromCardId, preselectedToCardId])
+    // `presetAmount` is read once per open: it seeds the form, it does not follow it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, preselectedToCardId])
 
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) =>
     setForm(p => ({ ...p, [k]: v }))
@@ -137,7 +137,7 @@ export function BalanceTransferModal({ open, onClose, onSaved, preselectedFromCa
       await transactionsApi.transfer(payload)
       onSaved()
       onClose()
-      showSuccess(t('cmp.transfer.success', { amount: form.amount }))
+      showSuccess(t('cmp.transfer.success', { amount: moneyFull(form.amount, fromCurrency ?? 'UZS') }))
     } catch (err: unknown) {
       setError(extractErrorMessage(err))
     } finally {
@@ -285,7 +285,7 @@ export function BalanceTransferModal({ open, onClose, onSaved, preselectedFromCa
         </Field>
 
         {/* The side effect, stated before the user commits: a transfer is booked as two
-            transactions, so both wallet balances and the Transactions page move. */}
+            transactions, so both wallet balances and History move. */}
         <p className="rounded-control border border-hairline px-3 py-2.5 text-xs leading-relaxed text-slate-600">
           {t('cmp.balanceTransfer.infoPrefix')} <strong className="font-semibold text-slate-900">{t('tx.expense')}</strong>{' '}
           {t('cmp.balanceTransfer.infoMid')} <strong className="font-semibold text-slate-900">{t('tx.income')}</strong>{' '}

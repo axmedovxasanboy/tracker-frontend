@@ -4,64 +4,73 @@ import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
 import { AmountInput } from '../ui/AmountInput'
 import { useLang } from '../../i18n/LanguageContext'
-import { cardsApi } from '../../api/cards'
 import { financeApi } from '../../api/finance'
 import { extractErrorMessage } from '../../api/client'
-import { moneyFull, todayLocal } from '../../utils/format'
-import type { CardResponse, InvestmentResponse } from '../../types'
+import { todayLocal } from '../../utils/format'
+import { CompactDate, CONTROL, MONEY_INPUT, MONEY_INPUT_INVALID, useOptional } from '../transactions/formParts'
+import { WalletPicker } from '../transactions/WalletPicker'
+import { rememberWallet, useWalletChoice, useWallets } from '../transactions/wallets'
+import type { InvestmentResponse } from '../../types'
 
 const FORM_ID = 'contribute-investment-form'
-/** Matches the 44px control every standalone page uses; the bare padding this replaced came
- *  out 42px, so the same field differed between a dialog and a page. */
-const CONTROL = 'focus-ring w-full rounded-control border border-slate-200 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-500'
-const INPUT = `${CONTROL} h-11`
-/** `AmountInput` overlays its `suffix` at `right-3`, which `px-3` leaves no room for. */
-const MONEY_INPUT = `${INPUT} pr-14`
-/** A textarea sizes from `rows`, so it takes padding where an input takes a height. */
-const TEXTAREA = `${CONTROL} py-2.5`
 
 interface Props {
   open: boolean
   onClose: () => void
   onSaved: () => void
   investment: InvestmentResponse | null
+  /** Start on this amount — e.g. what this month still asks for a goal. */
+  defaultAmount?: number
 }
 
-/** Add money to an existing investment / savings goal. Contribution currency matches the goal. */
-export function ContributeInvestmentModal({ open, onClose, onSaved, investment }: Props) {
+/**
+ * Add money to a goal, an investment or the emergency fund: how much, from which wallet, when.
+ * "Not from a wallet" records money that was already in the account — the total goes up and no
+ * wallet is touched.
+ */
+export function ContributeInvestmentModal({ open, onClose, onSaved, investment, defaultAmount }: Props) {
   const { t } = useLang()
+  const optional = useOptional()
   const [amount, setAmount] = useState(0)
   const [date, setDate] = useState(todayLocal())
   const [description, setDescription] = useState('')
-  // Source: 'cash' | 'none' (record only, no wallet) | a card id as a string.
-  const [source, setSource] = useState<string>('cash')
-  const [cards, setCards] = useState<CardResponse[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [invalid, setInvalid] = useState<'amount' | 'wallet' | null>(null)
+
+  const currency = investment?.currency ?? 'UZS'
+  const wallets = useWallets(open && !!investment, currency)
+  const choice = useWalletChoice({
+    open: open && !!investment,
+    cards: wallets.cards,
+    cashBalance: wallets.cashBalance,
+    loaded: wallets.loaded,
+    amount,
+  })
 
   useEffect(() => {
     if (!open) return
-    setAmount(0); setDate(todayLocal()); setDescription(''); setSource('cash'); setError(null)
-    cardsApi.getAll().then(r => setCards(r.data)).catch(() => {})
-  }, [open])
+    setAmount(defaultAmount && defaultAmount > 0 ? defaultAmount : 0)
+    setDate(todayLocal()); setDescription(''); setError(null); setInvalid(null)
+  }, [open, defaultAmount])
 
   if (!investment) return null
-  const currency = investment.currency
-  const matchingCards = cards.filter(c => c.currency === currency)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (amount <= 0) { setError(t('cmp.err.amountPositive')); return }
-    setSaving(true); setError(null)
+    if (amount <= 0) { setInvalid('amount'); setError(t('cmp.err.amountPositive')); return }
+    const wallet = choice.value
+    if (wallet == null) { setInvalid('wallet'); setError(t('cmp.err.pickCardOrCash')); return }
+    setSaving(true); setError(null); setInvalid(null)
     try {
       await financeApi.contributeInvestment(investment.id, {
         amount, currency, date,
-        cardId: /^\d+$/.test(source) ? Number(source) : undefined,
-        noWallet: source === 'none',
+        cardId: typeof wallet === 'number' ? wallet : undefined,
+        noWallet: wallet === 'none',
         description: description.trim() || undefined,
       })
-      // No toast here: InvestmentsPage's `onGoalSaved` already confirms the write, and two
-      // banners for one action is worse than a generic one.
+      rememberWallet(wallet)
+      // No toast here: the callers confirm the write themselves.
       onSaved(); onClose()
     } catch (err) {
       setError(extractErrorMessage(err))
@@ -82,39 +91,37 @@ export function ContributeInvestmentModal({ open, onClose, onSaved, investment }
         </div>
       }
     >
-      <form id={FORM_ID} onSubmit={handleSubmit} className="space-y-3">
-        <Field id="contrib-amount" label={t('cmp.field.amountWithCurrency', { currency })}>
-          <AmountInput required value={amount} currency={currency}
-            onChange={v => setAmount(v)} className={MONEY_INPUT} suffix={currency} />
+      <form id={FORM_ID} noValidate onSubmit={handleSubmit} className="space-y-4">
+        <Field id="contrib-amount" label={t('tx.amount')} required
+          error={invalid === 'amount' ? error ?? undefined : undefined}>
+          <AmountInput value={amount} currency={currency}
+            onChange={v => { setAmount(v); if (invalid === 'amount') { setInvalid(null); setError(null) } }}
+            className={invalid === 'amount' ? MONEY_INPUT_INVALID : MONEY_INPUT} suffix={currency} />
         </Field>
 
-        <Field id="contrib-date" label={t('cmp.field.dateRequired')}>
-          <input required type="date" value={date} onChange={e => setDate(e.target.value)} className={INPUT} />
+        <WalletPicker
+          id="contrib-wallet"
+          label={t('home.wallet.from')}
+          cards={wallets.cards}
+          cashBalance={wallets.cashBalance}
+          currency={currency}
+          loaded={wallets.loaded}
+          failed={wallets.failed}
+          onRetry={wallets.reload}
+          value={choice.value}
+          onChange={v => { choice.choose(v); if (invalid === 'wallet') { setInvalid(null); setError(null) } }}
+          noneLabel={t('home.wallet.none')}
+          help={choice.value === 'none' ? t('home.wallet.noneHelp') : undefined}
+          error={invalid === 'wallet' ? error ?? undefined : undefined}
+        />
+
+        <CompactDate id="contrib-date" label={t('tx.date')} value={date} onChange={setDate} />
+
+        <Field id="contrib-note" label={optional(t('tx.note'))}>
+          <input value={description} onChange={e => setDescription(e.target.value)} className={CONTROL} />
         </Field>
 
-        <Field
-          id="contrib-source"
-          label={t('cmp.field.source')}
-          help={source === 'none' ? t('cmp.contributeInvestment.noWalletHint') : undefined}
-        >
-          <select value={source} onChange={e => setSource(e.target.value)} className={INPUT}>
-            <option value="none">{t('cmp.source.noneOption')}</option>
-            <option value="cash">{t('tx.cash')}</option>
-            {matchingCards.map(c => (
-              <option key={c.id} value={String(c.id)}>
-                {c.name} •••• {c.lastFourDigits} · {moneyFull(c.currentBalance, c.currency)}
-              </option>
-            ))}
-          </select>
-        </Field>
-
-        <Field id="contrib-desc" label={t('tx.description')}>
-          <textarea rows={2} value={description}
-            onChange={e => setDescription(e.target.value)}
-            className={`${TEXTAREA} resize-none`} />
-        </Field>
-
-        {error && (
+        {error && !invalid && (
           <p role="alert" className="rounded-control border border-rose-200 px-3 py-2 text-sm text-expense">{error}</p>
         )}
       </form>

@@ -1,6 +1,7 @@
 import { Fragment, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
-  ArrowDownRight, ArrowUpRight, ChevronDown, ChevronRight, Pencil, Plus, Tag, Trash2,
+  ArrowDownRight, ArrowUpRight, ChevronDown, ChevronLeft, ChevronRight, Pencil, Plus, Tag, Trash2,
 } from 'lucide-react'
 import { OverflowMenu, PageHeader } from '../components/ui/PageHeader'
 import { Sheet } from '../components/ui/Sheet'
@@ -9,7 +10,6 @@ import { Field } from '../components/ui/Field'
 import { Tile, TileGrid } from '../components/ui/Tile'
 import { ListRow } from '../components/ui/ListRow'
 import { ErrorTile } from '../components/ui/ErrorTile'
-import { CacheBadge } from '../components/ui/CacheBadge'
 import { Skeleton } from '../components/ui/Skeleton'
 import { useApi } from '../hooks/useApi'
 import { useLang } from '../i18n/LanguageContext'
@@ -17,21 +17,15 @@ import type { TKey } from '../i18n/LanguageContext'
 import { useConfirm } from '../context/ConfirmContext'
 import { useToast } from '../context/ToastContext'
 import { categoriesApi } from '../api/categories'
-import { dashboardApi } from '../api/dashboard'
 import { transactionsApi } from '../api/transactions'
 import { extractErrorMessage } from '../api/client'
-import {
-  formatDate, formatMonth, money, moneyExact, moneyFull, monthLocal, plural,
-} from '../utils/format'
+import { formatDate, moneyFull, plural } from '../utils/format'
 import type {
-  Category, CategoryBreakdown, CategoryRequest, CategoryType, Currency,
+  Category, CategoryRequest, CategoryType, Currency,
   PageResponse, Transaction, TransactionFilters, TransactionSubType,
 } from '../types'
 
 const COLORS = ['#10b981','#f43f5e','#6366f1','#f59e0b','#06b6d4','#a855f7','#ec4899','#14b8a6','#3b82f6','#ef4444','#8b5cf6','#6b7280']
-
-/** UZS-only since the multi-currency pivot; every figure on this page is in it. */
-const CURRENCY: Currency = 'UZS'
 
 const FORM_ID = 'category-form'
 
@@ -39,52 +33,28 @@ const INPUT = 'w-full min-h-[44px] bg-white border border-slate-200 rounded-cont
   'text-sm text-slate-900 placeholder:text-slate-500 focus-ring'
 
 /**
- * Spans for the things that stand in for a tile but are not one — `Skeleton` and `ErrorTile` take
- * a className rather than a span, so the cell they occupy has to be spelled out or the first band
- * reflows the moment the real tiles land.
+ * The span for the things that stand in for a tile but are not one — `Skeleton` and `ErrorTile`
+ * take a className rather than a span, so the cell they occupy has to be spelled out.
  */
-const SPAN_HALF = 'md:col-span-3 xl:col-span-6'
 const SPAN_FULL = 'md:col-span-6 xl:col-span-12'
 
-/** How many of this month's spending rows the summary tile lists before it stops. */
-const TOP_ROWS = 6
-
 /**
- * Every sub-type a category can be pinned to, and whether the monthly plan is built from it.
- *
- * One list, not two. `EMERGENCY_CONTRIBUTION` used to be missing here while still being counted
- * as a plan sub-type, so the seeded Emergency Fund category (DataSeeder pins it to exactly that)
- * wore the "In monthly plan" badge over a subtitle claiming it took all expense types, and its
- * Advanced dropdown opened with nothing selected — where any pick silently retargeted the
- * sub-type the emergency bucket's payments route through.
- *
- * `STOCK_PURCHASE` is deliberately not a plan sub-type: Stocks was dropped from `Bucket` because
- * nothing allocates to it.
+ * Every sub-type a category can be pinned to. `EMERGENCY_CONTRIBUTION` must stay listed: the
+ * seeded Emergency Fund category is pinned to exactly that, and an edit that opened with nothing
+ * selected would silently retarget where those payments land.
  */
-const SUB_TYPE_OPTIONS: { value: TransactionSubType; labelKey: TKey; plan?: true }[] = [
+const SUB_TYPE_OPTIONS: { value: TransactionSubType; labelKey: TKey }[] = [
   { value: 'REGULAR_INCOME',        labelKey: 'page.categories.subtypeRegularIncome' },
   { value: 'LOAN_RECEIVED',         labelKey: 'page.categories.subtypeLoanReceived' },
   { value: 'LOAN_RETURNED_TO_ME',   labelKey: 'page.categories.subtypeLoanReturnedToMe' },
   { value: 'REGULAR_EXPENSE',       labelKey: 'page.categories.subtypeRegularExpense' },
   { value: 'LOAN_GIVEN',            labelKey: 'page.categories.subtypeLoanGiven' },
   { value: 'LOAN_REPAYMENT',        labelKey: 'page.categories.subtypeLoanRepayment' },
-  { value: 'BANK_LOAN_PAYMENT',     labelKey: 'page.categories.subtypeBankLoanPayment', plan: true },
-  { value: 'INVESTMENT',            labelKey: 'page.categories.subtypeInvestment', plan: true },
-  { value: 'DONATION',              labelKey: 'page.categories.subtypeDonation', plan: true },
-  { value: 'EMERGENCY_CONTRIBUTION', labelKey: 'page.categories.subtypeEmergency', plan: true },
+  { value: 'BANK_LOAN_PAYMENT',     labelKey: 'page.categories.subtypeBankLoanPayment' },
+  { value: 'INVESTMENT',            labelKey: 'page.categories.subtypeInvestment' },
+  { value: 'DONATION',              labelKey: 'page.categories.subtypeDonation' },
+  { value: 'EMERGENCY_CONTRIBUTION', labelKey: 'page.categories.subtypeEmergency' },
 ]
-
-/**
- * The sub-types the monthly plan is built from. A category tagged with one of these is where a
- * bucket payment lands, so it earns the badge and the wider tile — the page's size variance says
- * which categories the plan actually depends on.
- */
-const PLAN_SUB_TYPES = new Set<TransactionSubType>(
-  SUB_TYPE_OPTIONS.filter(o => o.plan).map(o => o.value),
-)
-
-const isPlanCategory = (c: Category) =>
-  c.applicableSubType != null && PLAN_SUB_TYPES.has(c.applicableSubType)
 
 /** Everything the "Advanced" disclosure holds. Set on the record being edited => open it. */
 const hasAdvanced = (f: CategoryRequest) =>
@@ -98,11 +68,6 @@ interface ModalState {
   open: boolean
   editTarget: Category | null
   parentCategory: Category | null
-}
-
-interface MonthTotals {
-  income: CategoryBreakdown[]
-  expense: CategoryBreakdown[]
 }
 
 export function Categories() {
@@ -122,32 +87,6 @@ export function Categories() {
 
   const categories = useApi(() => categoriesApi.getAll(), [])
 
-  const ym = monthLocal()
-  const monthLabel = formatMonth(ym, lang)
-
-  /**
-   * One aggregate for the whole page rather than a request per tile: the server groups this
-   * month's transactions by category, so 21 tiles cost two queries. Both halves are fetched
-   * together so the page never shows an income figure next to a stale expense one.
-   */
-  const monthTotals = useApi<MonthTotals>(async () => {
-    const year = Number(ym.slice(0, 4))
-    const month = Number(ym.slice(5, 7))
-    const [income, expense] = await Promise.all([
-      dashboardApi.getCategoryBreakdown('INCOME', CURRENCY, year, month),
-      dashboardApi.getCategoryBreakdown('EXPENSE', CURRENCY, year, month),
-    ])
-    // The flags travel with the payload: a composed fetcher that drops them makes a week-old
-    // cached figure indistinguishable from a live one on the tile above. `api/client.ts` bolts
-    // them onto the response at runtime, which is why they are read off a cast rather than typed.
-    const cache = (r: unknown) => r as { isCached?: boolean; cachedAt?: string }
-    return {
-      data: { income: income.data, expense: expense.data },
-      isCached: !!(cache(income).isCached || cache(expense).isCached),
-      cachedAt: cache(income).cachedAt ?? cache(expense).cachedAt,
-    }
-  }, [ym])
-
   const CAT_TX_FILTERS: TransactionFilters = {
     page: catTxPage, size: 12, sortBy: 'transactionDate', sortDir: 'desc',
     categoryId: selectedCat?.id ?? '', type: '', currency: '', cardId: '', search: '',
@@ -161,62 +100,10 @@ export function Categories() {
 
   const roots = useMemo(() => categories.data ?? [], [categories.data])
 
-  const grouped: Record<'INCOME' | 'EXPENSE', Category[]> = useMemo(() => {
-    // Plan categories first so the wide tiles cluster: three span-4s fill a row exactly, and so
-    // do four span-3s. Sort is stable, so everything else keeps the server's order.
-    const order = (list: Category[]) =>
-      [...list].sort((a, b) => Number(isPlanCategory(b)) - Number(isPlanCategory(a)))
-    return {
-      INCOME: order(roots.filter(c => c.type === 'INCOME' && c.parentId === null)),
-      EXPENSE: order(roots.filter(c => c.type === 'EXPENSE' && c.parentId === null)),
-    }
-  }, [roots])
-
-  /**
-   * The breakdown identifies a category by its English name, not its id, and names are only
-   * unique within one parent — two sub-categories called "Other" are legal. Counting the uses
-   * lets a tile refuse to show a figure it cannot attribute rather than quietly double-count.
-   */
-  const nameUses = useMemo(() => {
-    const uses = new Map<string, number>()
-    for (const root of roots) {
-      for (const c of [root, ...root.children]) uses.set(c.name, (uses.get(c.name) ?? 0) + 1)
-    }
-    return uses
-  }, [roots])
-
-  const byName = useMemo(() => {
-    const totals = new Map<string, number>()
-    const rows = [...(monthTotals.data?.income ?? []), ...(monthTotals.data?.expense ?? [])]
-    for (const r of rows) totals.set(r.category, (totals.get(r.category) ?? 0) + r.amount)
-    return totals
-  }, [monthTotals.data])
-
-  /** This month for one parent and its sub-categories, or null when a name is shared. */
-  const monthTotalFor = (root: Category): number | null => {
-    if (!monthTotals.data) return null
-    let sum = 0
-    for (const c of [root, ...root.children]) {
-      if ((nameUses.get(c.name) ?? 0) > 1) return null
-      sum += byName.get(c.name) ?? 0
-    }
-    return sum
-  }
-
-  const spent = (monthTotals.data?.expense ?? []).reduce((s, r) => s + r.amount, 0)
-  const earned = (monthTotals.data?.income ?? []).reduce((s, r) => s + r.amount, 0)
-  // The server already orders by amount descending.
-  const topRows = (monthTotals.data?.expense ?? []).slice(0, TOP_ROWS)
-  const topMax = topRows[0]?.amount ?? 0
-
-  /** A breakdown row shows its Uzbek name only when exactly one category answers to it. */
-  const rowLabel = (row: CategoryBreakdown) => {
-    if ((nameUses.get(row.category) ?? 0) !== 1) return row.category
-    for (const root of roots) {
-      for (const c of [root, ...root.children]) if (c.name === row.category) return categoryName(c)
-    }
-    return row.category
-  }
+  const grouped: Record<'INCOME' | 'EXPENSE', Category[]> = useMemo(() => ({
+    INCOME: roots.filter(c => c.type === 'INCOME' && c.parentId === null),
+    EXPENSE: roots.filter(c => c.type === 'EXPENSE' && c.parentId === null),
+  }), [roots])
 
   const openTx = (c: Category) => { setSelectedCat(c); setCatTxPage(0) }
 
@@ -271,8 +158,7 @@ export function Categories() {
   const toggleExpand = (id: number) =>
     setExpandedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
 
-  /** A rename moves a breakdown row's key, and a delete removes it — both figures have to reload. */
-  const refetchAll = () => { categories.refetch(); monthTotals.refetch() }
+  const refetchAll = () => { categories.refetch() }
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault(); setSaving(true); setError(null)
@@ -316,7 +202,17 @@ export function Categories() {
   const txRows = catTxs.data?.content ?? []
 
   return (
+    // A management page under Settings, deliberately without a hero: it holds no figure to rank,
+    // and a StatTile invented to count categories would only be one more thing to read.
     <div className="p-4 sm:p-6">
+      <Link
+        to="/settings"
+        aria-label={t('shell.categories.backLabel')}
+        className="focus-ring -ml-2 mb-1 inline-flex min-h-[44px] items-center gap-1 rounded-control px-2 text-sm font-medium text-slate-600 transition-colors hover:text-slate-900"
+      >
+        <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+        {t('shell.categories.back')}
+      </Link>
       <PageHeader
         title={t('page.categories')}
         subtitle={t('page.categories.totalCount', { count: roots.length })}
@@ -329,91 +225,6 @@ export function Categories() {
 
       <div className="mt-4 xl:mt-5">
         <TileGrid>
-          {/* ── This month, the figure every tile below is a slice of ─────────────── */}
-          {monthTotals.loading ? (
-            <>
-              <Skeleton variant="stat" className={SPAN_HALF} />
-              <Skeleton variant="stat" className={SPAN_HALF} />
-            </>
-          ) : monthTotals.error && !monthTotals.data ? (
-            // One alert for both tiles: half a summary is worse than none, and a single retry
-            // brings back both halves.
-            <ErrorTile className={SPAN_FULL} message={monthTotals.error} onRetry={monthTotals.refetch} />
-          ) : (
-            <>
-              {/* Stale but readable: the figures stay, the strip offers the retry. */}
-              {monthTotals.error && (
-                <ErrorTile
-                  compact className={SPAN_FULL}
-                  message={monthTotals.error} onRetry={monthTotals.refetch}
-                />
-              )}
-
-              <Tile
-                span={6} rows={2} padding="hero"
-                className={monthTotals.refreshing ? 'opacity-60 transition-opacity' : ''}
-              >
-                <p className="text-label uppercase text-slate-500">{t('page.categories.spentThisMonth')}</p>
-                <p className="mt-3 text-hero tabular-nums text-expense whitespace-nowrap">
-                  {money(spent, CURRENCY)}
-                </p>
-                <p className="mt-2 text-sm text-slate-600 tabular-nums break-words">
-                  {monthLabel} · {t('ui.exactValue', { value: moneyExact(spent, CURRENCY) })}
-                </p>
-                <div className="mt-4 flex items-baseline justify-between gap-3 border-t border-hairline pt-4">
-                  <p className="text-label uppercase text-slate-500">{t('page.categories.earnedThisMonth')}</p>
-                  <p className="text-title tabular-nums text-income" title={moneyExact(earned, CURRENCY)}>
-                    {money(earned, CURRENCY)}
-                  </p>
-                </div>
-                <p className="mt-3 text-xs text-slate-500">{t('page.categories.monthNote')}</p>
-                {/* Cached figures are pixel-identical to live ones; only this says which. */}
-                <div className="mt-3">
-                  <CacheBadge isCached={monthTotals.isCached} cachedAt={monthTotals.cachedAt} />
-                </div>
-              </Tile>
-
-              <Tile
-                span={6} rows={2} as="section"
-                className={monthTotals.refreshing ? 'opacity-60 transition-opacity' : ''}
-              >
-                <div className="flex items-baseline justify-between gap-3">
-                  <h2 className="text-title text-slate-900">{t('page.categories.topThisMonth')}</h2>
-                  <p className="shrink-0 text-xs text-slate-500">{monthLabel}</p>
-                </div>
-                {topRows.length === 0 ? (
-                  <p className="mt-4 text-sm text-slate-500">{t('page.categories.topEmpty')}</p>
-                ) : (
-                  <ul className="mt-4 space-y-3">
-                    {topRows.map(row => (
-                      <li key={`${row.category}-${row.amount}`}>
-                        <div className="flex items-baseline justify-between gap-3">
-                          <span className="min-w-0 truncate text-sm text-slate-700">{rowLabel(row)}</span>
-                          <span
-                            className="shrink-0 text-sm font-semibold tabular-nums text-slate-900"
-                            title={moneyExact(row.amount, CURRENCY)}
-                          >
-                            {money(row.amount, CURRENCY)}
-                          </span>
-                        </div>
-                        {/* A bar is one of the three places colour is allowed to carry meaning. */}
-                        <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-                          <div
-                            className="h-full rounded-full"
-                            style={{
-                              width: `${topMax > 0 ? Math.max(4, (row.amount / topMax) * 100) : 0}%`,
-                              backgroundColor: row.color,
-                            }}
-                          />
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </Tile>
-            </>
-          )}
-
           {/* ── The categories themselves ─────────────────────────────────────────── */}
           {categories.loading ? (
             // The stat variant comes in its own responsive grid, so the placeholder is a grid of
@@ -426,7 +237,6 @@ export function Categories() {
               <p className="text-sm text-slate-500">{t('cat.none')}</p>
               <Button
                 className="mt-3"
-                variant="primary"
                 label={t('cat.addCategory')}
                 icon={<Plus className="w-4 h-4" aria-hidden="true" />}
                 onClick={openNew}
@@ -446,11 +256,9 @@ export function Categories() {
 
                   {grouped[type].map(cat => {
                     const expanded = expandedIds.has(cat.id)
-                    const plan = isPlanCategory(cat)
                     const subLabelKey = cat.applicableSubType
                       ? SUB_TYPE_OPTIONS.find(s => s.value === cat.applicableSubType)?.labelKey
                       : null
-                    const total = monthTotalFor(cat)
                     const subCount = cat.children.length
                     const subCountLabel = plural(
                       subCount,
@@ -462,7 +270,7 @@ export function Categories() {
                     return (
                       <Tile
                         key={cat.id}
-                        span={plan ? 4 : 3}
+                        span={4}
                         onClick={() => openTx(cat)}
                         className={deleting === cat.id || categories.refreshing ? 'opacity-60 transition-opacity' : ''}
                       >
@@ -497,24 +305,6 @@ export function Categories() {
                               ]}
                             />
                           </div>
-                        </div>
-
-                        {plan && (
-                          <span className="mt-3 inline-flex items-center rounded-chip bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700">
-                            {t('page.categories.inMonthlyPlan')}
-                          </span>
-                        )}
-
-                        <div className="mt-3 flex items-baseline justify-between gap-2 border-t border-hairline pt-3">
-                          <span className="text-label uppercase text-slate-500">{t('ui.scope.thisMonth')}</span>
-                          <MonthFigure
-                            loading={monthTotals.loading}
-                            total={total}
-                            income={type === 'INCOME'}
-                            ambiguousHint={t('page.categories.totalAmbiguous')}
-                            unavailableHint={t('page.categories.totalUnavailable')}
-                            known={!!monthTotals.data}
-                          />
                         </div>
 
                         {subCount > 0 ? (
@@ -850,10 +640,10 @@ export function Categories() {
                   )}
                 </div>
 
-                {/* Bonus income raises that month's targets by the level's share of it (never the level). */}
+                {/* A bonus is extra money: Home does not count it as the monthly pay arriving. */}
                 {(form.type === 'INCOME' || form.type === 'BOTH') && (
                   <div className="space-y-2">
-                    <p className="text-label uppercase text-slate-500">{t('page.categories.allocationHeading')}</p>
+                    <p className="text-label uppercase text-slate-500">{t('shell.categories.bonusHeading')}</p>
                     <label className="flex cursor-pointer items-start gap-2 py-1">
                       <input
                         type="checkbox"
@@ -864,7 +654,7 @@ export function Categories() {
                       <span className="text-sm text-slate-600">
                         {t('page.categories.bonusIncomeLabel')}
                         <span className="mt-0.5 block text-xs text-slate-500">
-                          {t('page.categories.bonusIncomeHint')}
+                          {t('shell.categories.bonusHint')}
                         </span>
                       </span>
                     </label>
@@ -882,41 +672,5 @@ export function Categories() {
         </form>
       </Sheet>
     </div>
-  )
-}
-
-/**
- * The one fact each tile carries. It refuses to print a number it cannot attribute: the server's
- * breakdown is keyed by category NAME, and two sub-categories under different parents may share
- * one, in which case their totals cannot be told apart.
- */
-function MonthFigure({ loading, known, total, income, ambiguousHint, unavailableHint }: {
-  loading: boolean
-  known: boolean
-  total: number | null
-  income: boolean
-  ambiguousHint: string
-  unavailableHint: string
-}) {
-  if (loading) {
-    // Reserves the figure's box so the tile does not resize when the total lands.
-    return <span aria-hidden="true" className="inline-block h-4 w-20 animate-pulse rounded-full bg-slate-200/70" />
-  }
-  if (total === null) {
-    return (
-      <span className="text-sm text-slate-500" title={known ? ambiguousHint : unavailableHint}>
-        —<span className="sr-only"> {known ? ambiguousHint : unavailableHint}</span>
-      </span>
-    )
-  }
-  return (
-    <span
-      className={`text-sm font-semibold tabular-nums ${
-        total === 0 ? 'text-slate-500' : income ? 'text-income' : 'text-expense'
-      }`}
-      title={moneyExact(total, CURRENCY)}
-    >
-      {money(total, CURRENCY)}
-    </span>
   )
 }

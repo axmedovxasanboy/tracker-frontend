@@ -31,10 +31,10 @@ function walletFieldId(w: MonthPreviewWallet) {
 }
 
 /**
- * The mid-month sibling of CloseMonthModal: the same per-wallet form, prefilled with the app's
- * own figures so the owner only corrects what differs, and the same everyday-spending arithmetic
- * per wallet. What it leaves out is the consent gate — a check-in freezes nothing, and every
- * adjustment it books is an ordinary transaction that can be edited or deleted afterwards.
+ * The wallet check-in: one field per wallet, prefilled with the app's own figure so the owner only
+ * corrects what differs, and the everyday-spending difference worked out per wallet. It freezes
+ * nothing — every adjustment it books is an ordinary transaction that can be edited or deleted
+ * afterwards.
  */
 export function CheckInModal({ open, onClose, onSaved, currency }: Props) {
   const { t, lang } = useLang()
@@ -99,20 +99,25 @@ export function CheckInModal({ open, onClose, onSaved, currency }: Props) {
     } finally { setSaving(false) }
   }
 
-  // The server's verdict, not a guess: between opening the dialog and saving, the month may have
-  // crossed into its last five days, and the save would be refused anyway.
+  // The server's verdict, not a guess: the only thing that refuses a check-in is a locked month.
   const refused = status && !status.allowed
+  // Said in the app's own words — the server's sentence talks about closing the month, which is
+  // not something the owner is asked to do any more.
+  const refusedReason = !status || status.allowed ? undefined
+    : status.blockedCode === 'MONTH_CLOSED'
+      ? t('home.checkIn.locked')
+      : status.blockedReason ?? undefined
 
   const footer = status && (
     <div className="flex gap-3">
       <Button label={t('action.cancel')} onClick={onClose} className="flex-1" />
       <Button
         variant="primary"
-        label={saving ? t('action.saving') : t('cmp.checkIn.save')}
+        label={saving ? t('action.saving') : t('action.save')}
         onClick={commit}
         loading={saving}
         disabled={!!refused || status.wallets.length === 0}
-        disabledReason={refused ? status.blockedReason ?? undefined : undefined}
+        disabledReason={refusedReason}
         className="flex-1"
       />
     </div>
@@ -122,7 +127,7 @@ export function CheckInModal({ open, onClose, onSaved, currency }: Props) {
     <Modal
       open={open}
       onClose={onClose}
-      title={t('cmp.checkIn.title', { date: formatDate(date, lang) })}
+      title={t('home.checkIn.title', { date: formatDate(date, lang, 'dayShort') })}
       maxWidth="max-w-2xl"
       dirty={dirty && !saving}
       footer={footer ?? undefined}
@@ -135,11 +140,11 @@ export function CheckInModal({ open, onClose, onSaved, currency }: Props) {
         <div className="space-y-4">
           {refused && (
             <p role="alert" className="rounded-control border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
-              {status.blockedReason}
+              {refusedReason}
             </p>
           )}
 
-          <p className="text-sm text-slate-600">{t('cmp.checkIn.intro')}</p>
+          <p className="text-sm text-slate-600">{t('home.checkIn.intro')}</p>
           {/* A check-in after the fact double-counts: whatever it books as "everyday" is exactly
               what a transaction recorded later for the same days would book again. Saying so up
               front is cheaper than untangling it — the next check-in would net it out, but only

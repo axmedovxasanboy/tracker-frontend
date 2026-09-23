@@ -2,15 +2,15 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ArrowDownRight, ArrowLeftRight, ArrowUpRight, CreditCard, Info,
-  Pencil, Plus, Trash2, Wallet,
+  Pencil, Plus, Scale, Trash2, Wallet,
 } from 'lucide-react'
 import { Sheet } from '../components/ui/Sheet'
 import { PageHeader, OverflowMenu } from '../components/ui/PageHeader'
 import type { OverflowAction } from '../components/ui/PageHeader'
 import { Tile, TileGrid } from '../components/ui/Tile'
-import { WalletUpkeepTile } from '../components/months/WalletUpkeepTile'
+import { CheckInModal } from '../components/months/CheckInModal'
 import { StatTile } from '../components/ui/StatTile'
-import { Button } from '../components/ui/Button'
+import { Button, DisabledHint } from '../components/ui/Button'
 import { Field } from '../components/ui/Field'
 import { ListRow } from '../components/ui/ListRow'
 import { ErrorTile } from '../components/ui/ErrorTile'
@@ -32,8 +32,9 @@ import { useSettings } from '../context/SettingsContext'
 import { cardsApi } from '../api/cards'
 import { transactionsApi } from '../api/transactions'
 import { cashBalancesApi } from '../api/cashBalances'
+import { monthsApi } from '../api/months'
 import { extractErrorMessage } from '../api/client'
-import { formatDate, money, moneyExact, moneyFull, plural } from '../utils/format'
+import { formatDate, money, moneyExact, moneyFull, plural, todayLocal } from '../utils/format'
 import type {
   CardRequest, CardResponse, CardType, CashBalanceResponse, PageResponse, Transaction, TransactionFilters,
 } from '../types'
@@ -124,9 +125,8 @@ function CardTile({ card, onOpen, onTopUp, onExplain, onEdit, onDelete }: {
 
       <div className="flex flex-1 flex-col p-5">
         <p className="text-label uppercase text-slate-500">{t('page.cards.balanceLabel')}</p>
-        <p className="mt-2 text-stat tabular-nums text-slate-900">{money(balance, card.currency)}</p>
-        <p className="mt-1 text-sm tabular-nums text-slate-600">
-          {t('ui.exactValue', { value: moneyExact(balance, card.currency) })}
+        <p className="mt-2 text-stat tabular-nums text-slate-900" title={moneyExact(balance, card.currency)}>
+          {money(balance, card.currency)}
         </p>
 
         {/* Always painted. The row this replaces was `sm:opacity-0 sm:group-hover:opacity-100` —
@@ -307,6 +307,13 @@ export function Cards() {
   const cards = useApi(() => cardsApi.getAll(), [])
   const cashBalances = useApi(() => cashBalancesApi.getAll(), [])
 
+  // The wallet check-in: tell the app what is really in each wallet, and it books the small
+  // spending nobody wrote down. Always offered here, with the day it was last done, so the owner
+  // can tell at a glance whether "You have" is still true.
+  const today = todayLocal()
+  const checkIn = useApi(() => monthsApi.getCheckIn(today), [today])
+  const [checkOpen, setCheckOpen] = useState(false)
+
   /**
    * Every figure on this page moves together: a transfer, a transaction edit or a delete changes
    * a card AND the cash pot at the same time. Refetching one and not the other is what left the
@@ -315,6 +322,7 @@ export function Cards() {
   const refetchWallets = () => {
     cards.refetch()
     cashBalances.refetch()
+    checkIn.refetch()
     // No-ops while their panel is closed — the fetcher resolves null without a request.
     cardTxs.refetch()
     cashTxs.refetch()
@@ -385,7 +393,7 @@ export function Cards() {
    * (`TransactionService.transferBalance` → `assertStableIncomeSet`), and the refusal used to
    * arrive as untranslated English after the whole form had been filled in.
    *
-   * Same answer as Home and Transactions give: the button stays live and takes the user to the
+   * Same answer as Home and History give: the button stays live and takes the user to the
    * field that unblocks it. A toast that only says no is one more thing to dismiss.
    */
   const openTransfer = (toCard: CardResponse | null) => {
@@ -396,6 +404,16 @@ export function Cards() {
     setTransferToCard(toCard)
     setTransferOpen(true)
   }
+
+  // A check-in is a write, so it sits behind the same income gate as a transfer.
+  const openCheck = () => {
+    if (incomeGated) { navigate('/'); return }
+    setCheckOpen(true)
+  }
+  const check = checkIn.data
+  // The server decides when a check-in can happen — only a locked month refuses one. Said here in
+  // plain words, rather than leaving the owner to find out inside the dialog.
+  const checkBlockedReason = !check || check.allowed ? undefined : t('shell.wallets.checkUnavailable')
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -459,12 +477,12 @@ export function Cards() {
           : undefined}
         primary={{ label: t('page.cards.addCard'), onClick: openNew, icon: <Plus className="h-4 w-4" /> }}
         overflow={[
-          { label: t('action.transfer'), icon: <ArrowLeftRight className="h-4 w-4" />, onClick: () => openTransfer(null) },
+          { label: t('shell.wallets.moveMoney'), icon: <ArrowLeftRight className="h-4 w-4" />, onClick: () => openTransfer(null) },
         ]}
       />
 
       <TileGrid className={`mt-5 ${walletsRefreshing ? 'opacity-60 transition-opacity' : ''}`}>
-        {/* The same notice Transactions shows, in the same words: the gate is one feature. */}
+        {/* The same notice History shows, in the same words: the gate is one feature. */}
         <IncomeRequiredNotice className="md:col-span-6 xl:col-span-12" />
 
         {walletsLoading ? (
@@ -482,19 +500,14 @@ export function Cards() {
               <ErrorTile compact message={walletsError} onRetry={refetchWallets} className="md:col-span-6 xl:col-span-12" />
             )}
 
-            {/* Closing last month and checking the wallets both correct the figures below, so
-                they are asked for here rather than on a screen nobody opens. */}
-            <WalletUpkeepTile currency="UZS" onWrote={refetchWallets} />
-
-            {/* The one number this page exists for: what Home's Spendable card promises when it
-                sends the user here. It did not exist anywhere on the page before. */}
+            {/* The one number this page exists for: every card plus the cash. The wallet check-in
+                lives inside it, because checking is what keeps this figure true. */}
             <StatTile
               hero
               span={6}
               rows={2}
-              label={t('page.cards.everythingYouHold')}
+              label={t('shell.wallets.youHave')}
               value={money(held)}
-              caption={t('ui.exactValue', { value: moneyExact(held) })}
               icon={<Wallet className="h-4 w-4" />}
               onInfo={() => setInfo('total')}
             >
@@ -520,6 +533,37 @@ export function Cards() {
                   isCached={cards.isCached || cashBalances.isCached}
                   cachedAt={cards.cachedAt ?? cashBalances.cachedAt}
                 />
+
+                <div className="border-t border-hairline pt-3">
+                  <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+                    <p className="flex min-w-0 items-center gap-2 text-sm text-slate-600">
+                      <span className="tabular-nums">
+                        {check?.lastReconciledOn
+                          ? t('shell.wallets.lastChecked', { date: formatDate(check.lastReconciledOn, lang) })
+                          : checkIn.loading
+                            ? t('ui.loading')
+                            : check
+                              ? t('shell.wallets.neverChecked')
+                              : null}
+                      </span>
+                      {check?.due && (
+                        <span className="shrink-0 rounded-chip bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">
+                          {t('page.months.checkIn.duePill')}
+                        </span>
+                      )}
+                    </p>
+                    <Button
+                      size="sm"
+                      icon={<Scale className="h-4 w-4" aria-hidden="true" />}
+                      label={t('page.months.checkIn.action')}
+                      onClick={openCheck}
+                      disabled={!!checkBlockedReason}
+                      disabledReason={checkBlockedReason}
+                    />
+                  </div>
+                  {/* The visible half of the reason: a disabled button's tooltip never reaches a phone. */}
+                  <DisabledHint reason={checkBlockedReason} className="mt-2" />
+                </div>
               </div>
             </StatTile>
 
@@ -540,14 +584,15 @@ export function Cards() {
                 </div>
               </div>
 
-              <p className="mt-3 text-stat tabular-nums text-slate-900">{money(cashTotal)}</p>
+              <p className="mt-3 text-stat tabular-nums text-slate-900" title={moneyExact(cashTotal)}>{money(cashTotal)}</p>
 
               {cashPot ? (
-                <p className="mt-2 text-sm tabular-nums text-slate-600">
-                  {t('ui.exactValue', { value: moneyExact(cashTotal) })}
-                  {' · '}
-                  {t('page.cards.startingAmount', { amount: moneyFull(cashPot.initialBalance) })}
-                </p>
+                // Only when it explains something: the figure you typed, moved by cash spending since.
+                cashPot.initialBalance !== cashPot.currentBalance && (
+                  <p className="mt-2 text-sm tabular-nums text-slate-600">
+                    {t('page.cards.startingAmount', { amount: moneyFull(cashPot.initialBalance) })}
+                  </p>
+                )
               ) : (
                 <p className="mt-2 text-sm text-slate-600">{t('page.cards.cashBalancesEmptyHint')}</p>
               )}
@@ -596,18 +641,28 @@ export function Cards() {
       </TileGrid>
 
       {info && (
-        <ExplainModal
-          open onClose={() => setInfo(null)}
-          title={t(`cmp.walletInfo.${info}.title`)}
-          meaning={t(`cmp.walletInfo.${info}.meaning`)}
-          formula={t(`cmp.walletInfo.${info}.formula`)}
-          note={t(`cmp.walletInfo.${info}.note`)}
-          rows={info === 'total' ? [
-            { label: t('page.cards.cardsLabel'), value: moneyFull(cardsTotal) },
-            { label: t('page.cards.cashLabel'), value: moneyFull(cashTotal) },
-            { label: t('page.cards.everythingYouHold'), value: moneyFull(held), strong: true },
-          ] : undefined}
-        />
+        info === 'total' ? (
+          <ExplainModal
+            open onClose={() => setInfo(null)}
+            title={t('shell.wallets.youHave')}
+            meaning={t('shell.wallets.info.meaning')}
+            formula={t('shell.wallets.info.formula')}
+            note={t('shell.wallets.info.note')}
+            rows={[
+              { label: t('page.cards.cardsLabel'), value: moneyFull(cardsTotal) },
+              { label: t('page.cards.cashLabel'), value: moneyFull(cashTotal) },
+              { label: t('shell.wallets.youHave'), value: moneyFull(held), strong: true },
+            ]}
+          />
+        ) : (
+          <ExplainModal
+            open onClose={() => setInfo(null)}
+            title={t(`cmp.walletInfo.${info}.title`)}
+            meaning={t(`cmp.walletInfo.${info}.meaning`)}
+            formula={t(`cmp.walletInfo.${info}.formula`)}
+            note={t(`cmp.walletInfo.${info}.note`)}
+          />
+        )
       )}
 
       {/* Add / edit card */}
@@ -719,6 +774,13 @@ export function Cards() {
           {error && <p role="alert" className="text-sm text-expense">{error}</p>}
         </form>
       </Sheet>
+
+      <CheckInModal
+        open={checkOpen}
+        currency="UZS"
+        onClose={() => setCheckOpen(false)}
+        onSaved={refetchWallets}
+      />
 
       <BalanceTransferModal
         open={transferOpen}

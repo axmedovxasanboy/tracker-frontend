@@ -6,10 +6,14 @@ import { en_pages } from './en.pages'
 import { uz_pages } from './uz.pages'
 import { en_components } from './en.components'
 import { uz_components } from './uz.components'
+import { en_shell } from './en.shell'
+import { uz_shell } from './uz.shell'
+import { en_home } from './en.home'
+import { uz_home } from './uz.home'
 
 // Split by area purely so the files stay manageable; they form one flat key space.
-const en = { ...enCore, ...en_pages, ...en_components }
-const uz = { ...uzCore, ...uz_pages, ...uz_components }
+const en = { ...enCore, ...en_pages, ...en_components, ...en_shell, ...en_home }
+const uz = { ...uzCore, ...uz_pages, ...uz_components, ...uz_shell, ...uz_home }
 
 export type Lang = 'en' | 'uz'
 export type TKey = keyof typeof en

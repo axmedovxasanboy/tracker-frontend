@@ -5,12 +5,13 @@ export type TransactionSubType =
   | 'BANK_LOAN_PAYMENT' | 'INVESTMENT' | 'STOCK_PURCHASE' | 'DONATION'
   | 'EMERGENCY_CONTRIBUTION'
   | 'TRANSFER_OUT' | 'TRANSFER_IN'
+  // Booked by a wallet check: the gap between what the app computed and what was really there.
+  | 'EVERYDAY_SPENDING'
 // USD/EUR exist only as standalone cash pots — nothing converts them to UZS.
 export type Currency = 'UZS' | 'USD' | 'EUR'
 export type CategoryType = 'INCOME' | 'EXPENSE' | 'BOTH'
 export type CardType = 'UZCARD' | 'HUMO' | 'VISA' | 'CASH'
 export type RecordStatus = 'PENDING' | 'PARTIALLY_PAID' | 'PAID' | 'OVERDUE'
-export type BankLoanStatus = 'ACTIVE' | 'PAID_OFF' | 'DEFAULTED'
 export type InvestmentType = 'REAL_ESTATE' | 'BONDS' | 'MUTUAL_FUND' | 'GOLD' | 'OTHER'
 
 export interface Category {
@@ -105,21 +106,6 @@ export interface DashboardSummary {
   spendableBalance: number
   /** spendable (all currencies) + every investment/savings current value, in this currency. */
   netWorth: number
-}
-
-export interface MonthlyData {
-  month: number
-  monthName: string
-  income: number
-  expense: number
-  net: number
-}
-
-export interface CategoryBreakdown {
-  category: string
-  color: string
-  amount: number
-  percentage: number
 }
 
 export interface TransactionFilters {
@@ -250,7 +236,8 @@ export interface LoanTakenResponse {
 }
 
 export interface LoanTakenRequest {
-  plannedMonthlyPayment?: number
+  /** Null keeps (or puts back) the default rule: the server stores exactly what is sent. */
+  plannedMonthlyPayment?: number | null
   lenderName: string
   totalAmount: number
   paidAmount?: number
@@ -410,60 +397,8 @@ export interface RepaymentRequest {
   categoryId?: number
 }
 
-// "Already paid" — mark an obligation satisfied for a month with NO transaction / money move.
-export type MarkPaidKind = 'SUBSCRIPTION' | 'BANK' | 'PERSONAL_LOAN' | 'DEBT' | 'BUCKET'
-
-export interface MarkPaidRequest {
-  kind: MarkPaidKind
-  refId?: number          // subscription / bank-loan / loan-taken / debt id (omit for BUCKET)
-  bucket?: Bucket         // only when kind === 'BUCKET'
-  month?: string          // YYYY-MM; defaults to current month server-side
-  amount: number
-  currency: Currency
-  note?: string
-}
-
-export interface MarkPaidResponse {
-  id: number
-  kind: MarkPaidKind
-  refId: number | null
-  bucket: Bucket | null
-  month: string
-  amount: number
-  currency: Currency
-}
-
-export interface OverviewIncomeResponse {
-  month: string
-  currency: Currency
-  actualIncome: number
-  stableIncome: number | null
-}
-
-// Stocks was removed as an allocation bucket — nothing allocates to it.
+// The three kinds of saving the advisor asks for each month.
 export type Bucket = 'DONATION' | 'EMERGENCY' | 'INVESTMENTS'
-
-export interface AllocationLine {
-  bucket: Bucket
-  label: string
-  recommended: boolean
-  minPercent: number | null
-  minAmount: number | null
-  paidAmount: number
-  paidPercent: number | null
-  remainingAmount: number | null
-}
-
-export interface BucketPayment {
-  id: number
-  bucket: Bucket
-  date: string
-  amount: number          // FX-converted to display currency
-  nativeAmount: number
-  nativeCurrency: Currency
-  label: string
-  description: string | null
-}
 
 export interface EmergencyResponse {
   id: number
@@ -483,67 +418,6 @@ export interface EmergencyRequest {
   categoryId?: number
 }
 
-export interface ActionItem {
-  text: string
-  action: 'PAY_BANK' | 'PAY_PERSONAL_LOAN' | null
-  paid: number | null
-  target: number | null
-  // Amount that must be paid this month for the item to count as "met" (and stop
-  // locking the allocation buckets). Bank = 90% of target; personal = full target.
-  unlockThreshold: number | null
-}
-
-export interface TierAllocation {
-  scenarioKey: string | null
-  scenarioLabel: string
-  lines: AllocationLine[]
-  actions: ActionItem[]
-  // True while any actionable item is below its unlockThreshold — allocation recording
-  // is disabled until debts are paid to their recommended amounts.
-  allocationLocked: boolean
-}
-
-export interface OverviewTierResponse {
-  currency: Currency
-  income: number
-  mandatorySubscriptions: number
-  leftMoney: number
-  // What the bucket percentages apply to: the left balance, max(0, leftMoney − debtPayments), plus
-  // `bonusIncome`. The tier level uses leftMoney and never sees the bonus.
-  allocationBase: number
-  // This month's income in bonus-flagged categories — already inside allocationBase. Optional so a
-  // cached response from an older backend still type-checks; treat a missing value as 0.
-  bonusIncome?: number
-  debtPayments: number
-  debtBreakdown: {
-    bankLoans: number
-    loansTaken: number
-    debts: number
-  }
-  debtRatio: number | null
-  level: number | null
-  subLevel: string | null
-  levelLabel: string
-  missingStableIncome: boolean
-  // True when the viewed month is before the configured allocation tracking start month —
-  // guidance is paused (no payment asks) and the dashboard is greyed out.
-  beforeTrackingStart: boolean
-  trackingStartMonth: string | null
-  // True while any active mandatory subscription is unpaid this month — level / sub-level /
-  // action items / allocation are withheld until they're paid.
-  subscriptionsPending: boolean
-  pendingSubscriptions: PendingSubscription[]
-  allocation: TierAllocation | null
-}
-
-export interface PendingSubscription {
-  id: number
-  name: string
-  currency: Currency
-  amount: number
-  paid: number
-}
-
 export interface SettingsResponse {
   id: number
   monthlyStableIncome: number | null
@@ -560,104 +434,6 @@ export interface SettingsRequest {
   allocationTrackingStartMonth?: string
   telegramWebhookUrl?: string
   telegramWebViewUrl?: string
-}
-
-// Allocation ledger (cross-month backlog)
-export interface AllocationLedgerLine {
-  bucket: Bucket
-  percent: number | null
-  recommended: number
-  paid: number
-  net: number
-}
-
-export interface AllocationLedgerMonth {
-  month: string
-  level: number | null
-  subLevel: string | null
-  stableIncome: number
-  bonus: number
-  allocationBase: number
-  selected: boolean
-  lines: AllocationLedgerLine[]
-}
-
-export interface AllocationLedgerBucket {
-  bucket: Bucket
-  label: string
-  percent: number | null
-  recommended: number
-  paid: number
-  carried: number
-  outstanding: number
-  effectivePercent: number | null
-  overAllocated: boolean
-}
-
-export interface LevelAllocationRuleRequest {
-  subLevel: string
-  donationPercent?: number | null
-  emergencyPercent?: number | null
-  investmentsPercent?: number | null
-  stocksPercent?: number | null
-  note?: string | null
-}
-
-// Allocation rules view (Levels 1–6; Level 1 is a read-only reference). UZS amounts.
-export interface AllocationSubLevelView {
-  subLevel: string
-  debtLabel: string
-  donationPercent: number | null
-  emergencyPercent: number | null
-  investmentsPercent: number | null
-  stocksPercent: number | null
-}
-
-export interface AllocationLevelView {
-  level: number
-  incomeLow: number
-  incomeHigh: number
-  minLeftover: number | null
-  expirationMonth: string | null
-  locked: boolean
-  editable: boolean
-  builtIn: boolean
-  subLevels: AllocationSubLevelView[]
-}
-
-export interface AllocationRulesView {
-  currentLevel: number | null
-  currentSubLevel: string | null
-  missingStableIncome: boolean
-  levels: AllocationLevelView[]
-}
-
-export interface LevelConfigRequest {
-  level: number
-  minLeftover?: number | null
-  expirationMonth?: string | null
-  rules?: LevelAllocationRuleRequest[]
-}
-
-export interface AllocationLedgerResponse {
-  currency: Currency
-  startMonth: string
-  selectedMonth: string
-  missingStableIncome: boolean
-  beforeTrackingStart?: boolean
-  trackingStartMonth?: string | null
-  stableIncome: number | null
-  bonusThisMonth: number | null
-  allocationBase: number | null
-  level: number | null
-  subLevel: string | null
-  dueThisMonth: number | null
-  carriedFromPrevious: number | null
-  totalDueNow: number | null
-  carriedStartMonth: string | null
-  carriedEndMonth: string | null
-  buckets: AllocationLedgerBucket[]
-  months: AllocationLedgerMonth[]
 }
 
 export interface CashBalanceResponse {
@@ -684,46 +460,8 @@ export interface BalanceTransferRequest {
   transactionDate: string
 }
 
-// ── Monthly-envelope: month close + summary ───────────────────────────────
+// ── Wallet check-in ────────────────────────────────────────────────────────
 export type WalletType = 'CARD' | 'CASH'
-
-/** The "earned / tagged / spent / left" envelope view for one month. */
-export interface MonthSummaryResponse {
-  month: string
-  currency: Currency
-  closed: boolean
-  startBalance: number
-  income: number
-  donation: number
-  emergency: number
-  investments: number
-  stocks: number
-  savings: number
-  /**
-   * Every bucket figure above, summed — and it counts "already paid" marks, on a closed month
-   * exactly as on an open one, so this page and the Plan never quote two totals for one bucket.
-   */
-  taggedTotal: number
-  /**
-   * The recorded half alone: the part of `totalSpent` that actually left a wallet for a bucket.
-   * This — not `taggedTotal` — is what the close freezes and what `everydaySpend` balances against.
-   *
-   *   taggedTotal   = taggedRecorded + markedNotMoved
-   *   everydaySpend = totalSpent − taggedRecorded      (closed months)
-   */
-  taggedRecorded: number
-  /** The marks-only delta: money declared paid that never left a wallet. Reported for both. */
-  markedNotMoved: number
-  /** null until the month is closed. */
-  everydaySpend: number | null
-  /**
-   * Open months only (null once closed): net everyday spending the wallet check-ins have booked
-   * so far. Optional so an older backend that does not report it simply shows nothing.
-   */
-  everydaySoFar?: number | null
-  totalSpent: number | null
-  leftover: number | null
-}
 
 export interface MonthPreviewWallet {
   walletType: WalletType
@@ -734,24 +472,6 @@ export interface MonthPreviewWallet {
   computedBalance: number
 }
 
-export interface MonthClosePreviewResponse {
-  month: string
-  currency: Currency
-  alreadyClosed: boolean
-  closeable: boolean
-  blockedReason: string | null
-  wallets: MonthPreviewWallet[]
-  startBalance: number
-  income: number
-  donation: number
-  emergency: number
-  investments: number
-  stocks: number
-  savings: number
-  taggedTotal: number
-  spendableNow: number
-}
-
 /**
  * Whether a wallet check-in can be recorded today and what to tell the owner either way. The
  * rules are the server's (WalletCheckInService), so the web app and the bot cannot disagree.
@@ -760,17 +480,14 @@ export interface WalletCheckInStatus {
   date: string
   month: string
   allowed: boolean
-  /** MONTH_ENDING — the next one would fall in next month, so the close takes over.
-   *  MONTH_CLOSED — the month is locked. */
-  blockedCode: 'MONTH_ENDING' | 'MONTH_CLOSED' | null
+  /** MONTH_CLOSED — the month is locked; the only reason a check-in is refused. */
+  blockedCode: 'MONTH_CLOSED' | null
   blockedReason: string | null
-  daysUntilMonthEnd: number
-  nextMonthStart: string
   lastReconciledOn: string | null
   daysSinceLastReconciled: number | null
   intervalDays: number
   due: boolean
-  /** When the next one is suggested; null when the month close will come first. */
+  /** When the next one is suggested; null when the month is closed. */
   nextDueOn: string | null
   everydaySoFar: number
   checkInsThisMonth: number
@@ -798,63 +515,6 @@ export interface MonthCloseWalletEntry {
   cardId?: number | null
   currency: Currency
   enteredBalance: number
-}
-
-export interface MonthCloseRequest {
-  month: string
-  wallets: MonthCloseWalletEntry[]
-}
-
-export interface MonthCloseWalletResult {
-  walletType: WalletType
-  cardId: number | null
-  currency: Currency
-  computedBalance: number
-  enteredBalance: number
-  everydaySpend: number
-  adjustmentTxId: number | null
-}
-
-/** A committed, permanent month close. All money figures are the UZS snapshot (currency = UZS). */
-export interface MonthCloseResponse {
-  id: number
-  month: string
-  closedAt: string
-  currency: Currency
-  startBalance: number
-  income: number
-  donation: number
-  emergency: number
-  investments: number
-  stocks: number
-  savings: number
-  everydaySpend: number
-  totalSpent: number
-  leftover: number
-  wallets: MonthCloseWalletResult[]
-}
-
-// ── Allocation preview (what a draft transaction would do) ────────────────
-export interface AllocationPreviewRequest {
-  subType?: TransactionSubType | ''
-  amount: number
-  transactionDate: string
-  investmentId?: number
-}
-
-export interface AllocationPreviewResponse {
-  applicable: boolean
-  bucket?: string
-  label?: string
-  message?: string
-  bucketNotRecommended: boolean
-  recommended?: number
-  paidBefore?: number
-  amount?: number
-  paidAfter?: number
-  remainingBefore?: number
-  remainingAfter?: number
-  completesBucket: boolean
 }
 
 // ── Advisor (GET /advisor) ──────────────────────────────────────────────────
@@ -917,6 +577,80 @@ export interface AdvisorSuggestion {
   amount: number | null
 }
 
+/** One bill or loan payment due between today and the next few weeks. */
+export interface AdvisorUpcoming {
+  /** YYYY-MM-DD */
+  date: string
+  /** BILL: a subscription · BANK: a bank loan · LOAN: money borrowed from a person · DEBT: a debt. */
+  kind: 'BILL' | 'BANK' | 'LOAN' | 'DEBT'
+  /**
+   * The subscription / bank loan / loan-taken / debt id, per `kind`. Null for a payment recorded
+   * ahead that names no loan.
+   */
+  refId: number | null
+  name: string
+  amount: number
+  /** The due date has passed and it is still unpaid. */
+  overdue: boolean
+  /**
+   * A payment the owner already entered for this later day: the money leaves the wallet then, and
+   * there is nothing left to pay for it. Absent on an older backend — read it as false.
+   */
+  recorded?: boolean
+}
+
+/** One income the safe-to-spend figure expects before its window ends (salary, capped). */
+export interface AdvisorIncomePart {
+  date: string
+  name: string
+  amount: number
+}
+
+/** The window from today to `tightestOn`, in the words the "How is this worked out?" line uses. */
+export interface AdvisorDailyBreakdown {
+  have: number
+  comingIn: number
+  /** Bills and loan payments due inside the window. */
+  goingOut: number
+  savings: number
+  /** have + comingIn − goingOut − savings */
+  net: number
+  days: number
+}
+
+/**
+ * "How much can I safely spend each day until salary." Every figure is UZS; dates are YYYY-MM-DD.
+ * Optional on the response because the backend ships separately — a client must fall back to
+ * "You have" plus the suggestions when it is absent.
+ */
+export interface AdvisorDaily {
+  /** The most the owner can spend each day without running short before `until`. */
+  safePerDay: number
+  until: string
+  /** The date that limits `safePerDay`; `breakdown` explains today → this date. */
+  tightestOn: string
+  breakdown: AdvisorDailyBreakdown
+  /** What they actually spent per day lately, over [paceFrom, paceTo]. */
+  paceDaily: number | null
+  paceFrom: string | null
+  paceTo: string | null
+  /** When the money runs out at `paceDaily`; null when it lasts. */
+  runsOutOn: string | null
+  /** Set when even spending nothing is not enough. */
+  shortBy: { date: string; amount: number } | null
+  upcoming: AdvisorUpcoming[]
+  incomes: AdvisorIncomePart[]
+}
+
+/** One savings line for this month: what it asks, what went in, what is left. */
+export interface AdvisorSavingsRow {
+  bucket: Bucket
+  percent: number | null
+  target: number
+  paid: number
+  remaining: number
+}
+
 export interface AdvisorResponse {
   date: string
   month: string
@@ -941,4 +675,11 @@ export interface AdvisorResponse {
   /** Null while the monthly stable income is unset. Negative = short. */
   free: number | null
   suggestions: AdvisorSuggestion[]
+  /**
+   * Safe-to-spend per day. Null while the stable income is unset; absent on an older backend.
+   * Either way the client falls back to "You have" plus the suggestions.
+   */
+  daily?: AdvisorDaily | null
+  /** This month's savings lines (met ones included). Absent on an older backend. */
+  savingsThisMonth?: AdvisorSavingsRow[]
 }

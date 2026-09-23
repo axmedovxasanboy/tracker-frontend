@@ -38,12 +38,6 @@ export function getFromCache<T>(key: string): CachedEntry<T> | null {
   }
 }
 
-export function clearCache(): void {
-  Object.keys(localStorage)
-    .filter((k) => k.startsWith(PREFIX))
-    .forEach((k) => localStorage.removeItem(k))
-}
-
 function trimCount() {
   const keys = Object.keys(localStorage).filter((k) => k.startsWith(PREFIX))
   if (keys.length <= MAX_ENTRIES) return

@@ -75,11 +75,6 @@ export function extractErrorMessage(err: unknown): string {
   return data?.message || data?.error || tStatic('error.requestFailed', { status: ax.response.status })
 }
 
-export function extractFieldErrors(err: unknown): Record<string, string> {
-  const ax = err as AxiosError<BackendErrorPayload>
-  return ax?.response?.data?.errors ?? {}
-}
-
 // Callbacks set by BackendStatusContext
 export let onBackendOnline: (() => void) | null = null
 export let onBackendOffline: (() => void) | null = null

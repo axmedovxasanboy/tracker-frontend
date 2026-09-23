@@ -1,56 +1,34 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import {
-  LayoutDashboard, ArrowLeftRight, Tag, WifiOff, CalendarCheck, ChevronDown, ChevronRight,
-  CreditCard, BarChart3, Settings as SettingsIcon, Gauge, LogOut, Compass,
+  ArrowLeftRight, History, House, LogOut, PiggyBank, Receipt, Settings as SettingsIcon, Wallet, WifiOff,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { useBackendStatus } from '../../context/BackendStatusContext'
 import { useAuth } from '../../context/AuthContext'
 import { useLang } from '../../i18n/LanguageContext'
 import type { TKey } from '../../i18n/LanguageContext'
-import { formatMonth, monthLocal, plural } from '../../utils/format'
-
-// Home is the advisor — the one screen the owner is meant to need. Everything the app used to
-// put in front of them sits one click down, under Details: closed by default, remembered once
-// opened, and opened by itself whenever the page on screen lives inside it. Developer is
-// deliberately absent — Settings › Advanced is its entry point.
-const homeNav = { to: '/', labelKey: 'nav.home', icon: Compass } as const
-
-const detailsNav = [
-  { to: '/summary', labelKey: 'nav.summary', icon: LayoutDashboard },
-  { to: '/overview', labelKey: 'nav.plan', icon: Gauge },
-  { to: '/months', labelKey: 'nav.months', icon: CalendarCheck },
-  { to: '/transactions', labelKey: 'nav.transactions', icon: ArrowLeftRight },
-  { to: '/cards', labelKey: 'nav.wallets', icon: CreditCard },
-  { to: '/finance', labelKey: 'nav.finance', icon: BarChart3 },
-  { to: '/categories', labelKey: 'nav.categories', icon: Tag },
-] as const
-
-const settingsNav = { to: '/settings', labelKey: 'nav.settings', icon: SettingsIcon } as const
-
-/** Whether the Details group was left open. A per-browser convenience, so storage may fail. */
-const DETAILS_KEY = 'tracker.nav.details'
-
-function readDetailsOpen(): boolean {
-  try { return localStorage.getItem(DETAILS_KEY) === '1' } catch { return false }
-}
-
-function inDetails(pathname: string): boolean {
-  return detailsNav.some(({ to }) => pathname === to || pathname.startsWith(`${to}/`))
-}
 
 /**
- * Days from today to the last day of the current month, on the VIEWER's clock.
- *
- * `new Date(y, m + 1, 0)` is the last day of month `m`. Deliberately not derived from a UTC
- * ISO string: in Tashkent (UTC+5) that names the previous day before 05:00 and would count
- * one day too many on the 1st.
+ * The whole app, six places, one flat list (2026-09 rebuild). Nothing is folded away any more:
+ * the old "Details" group hid seven screens the owner had to learn, and the rebuild merged them
+ * into these. Developer stays out of the list — Settings › Advanced is its way in.
  */
-function daysLeftInMonth(now: Date): number {
-  return new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() - now.getDate()
-}
+const NAV: ReadonlyArray<{ to: string; labelKey: TKey; icon: LucideIcon; exact?: boolean }> = [
+  { to: '/', labelKey: 'nav.home', icon: House, exact: true },
+  { to: '/history', labelKey: 'shell.nav.history', icon: History },
+  { to: '/wallets', labelKey: 'nav.wallets', icon: Wallet },
+  { to: '/savings', labelKey: 'shell.nav.savings', icon: PiggyBank },
+  { to: '/loans', labelKey: 'shell.nav.loans', icon: Receipt },
+  { to: '/settings', labelKey: 'nav.settings', icon: SettingsIcon },
+]
 
-function NavItem({ to, labelKey, icon: Icon, exact = false }: { to: string; labelKey: TKey; icon: typeof LayoutDashboard; exact?: boolean }) {
+function NavItem({ to, labelKey, icon: Icon, exact = false }: {
+  to: string
+  labelKey: TKey
+  icon: LucideIcon
+  exact?: boolean
+}) {
   const { t } = useLang()
   return (
     <NavLink
@@ -58,7 +36,7 @@ function NavItem({ to, labelKey, icon: Icon, exact = false }: { to: string; labe
       end={exact}
       className={({ isActive }) =>
         // 44px on touch, 40px with a mouse — the drawer is a phone target, the fixed sidebar
-        // is a list that has to fit a 700px-tall window.
+        // is a list that has to fit a short window.
         `flex items-center gap-3 px-3 py-3 md:py-2.5 rounded-control text-sm font-medium
          transition-colors focus-ring focus-visible:ring-offset-slate-900 ${
           isActive
@@ -67,7 +45,7 @@ function NavItem({ to, labelKey, icon: Icon, exact = false }: { to: string; labe
         }`
       }
     >
-      <Icon className="w-4 h-4 shrink-0" />
+      <Icon className="w-4 h-4 shrink-0" aria-hidden="true" />
       {t(labelKey)}
     </NavLink>
   )
@@ -82,8 +60,8 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
   const asideRef = useRef<HTMLElement>(null)
   const restoreFocusRef = useRef<HTMLElement | null>(null)
 
-  // Below ~700px tall the list scrolls; without this the active item can sit off-screen and
-  // the sidebar looks like it has forgotten where you are. NavLink sets aria-current itself.
+  // On a very short window the list scrolls; keep the lit item in view. NavLink sets
+  // aria-current itself.
   useEffect(() => {
     navRef.current?.querySelector('[aria-current="page"]')?.scrollIntoView({ block: 'nearest' })
   }, [pathname])
@@ -96,16 +74,6 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
     asideRef.current?.focus({ preventScroll: true })
     return () => restoreFocusRef.current?.focus?.({ preventScroll: true })
   }, [open])
-
-  const daysLeft = daysLeftInMonth(new Date())
-
-  const [detailsOpen, setDetailsOpen] = useState(() => readDetailsOpen() || inDetails(pathname))
-  // Arriving on a Details page from a link elsewhere opens the group, so the lit item is visible.
-  useEffect(() => { if (inDetails(pathname)) setDetailsOpen(true) }, [pathname])
-  const toggleDetails = () => setDetailsOpen(open => {
-    try { localStorage.setItem(DETAILS_KEY, open ? '0' : '1') } catch { /* storage blocked */ }
-    return !open
-  })
 
   return (
     <aside
@@ -123,43 +91,19 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
       <div className="shrink-0 px-6 py-5 border-b border-slate-800">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 bg-indigo-500 rounded-chip flex items-center justify-center">
-            <ArrowLeftRight className="w-4 h-4 text-white" />
+            <ArrowLeftRight className="w-4 h-4 text-white" aria-hidden="true" />
           </div>
           <span className="text-white font-semibold text-base tracking-tight">Tracker</span>
         </div>
       </div>
 
-      {/* Nav — tapping a link also closes the drawer on mobile. The wrapper is what the fade
-          hangs off: an ::after inside the scroller would scroll away with the last item. */}
+      {/* Nav — tapping a link also closes the drawer on mobile. */}
       <div className="relative flex-1 min-h-0">
         <nav ref={navRef} onClick={onClose} className="h-full px-3 py-4 overflow-y-auto">
           <div className="space-y-0.5">
-            <NavItem to={homeNav.to} labelKey={homeNav.labelKey} icon={homeNav.icon} exact />
-            {/* The toggle must not bubble to the nav's onClick, which closes the phone drawer. */}
-            <button
-              type="button"
-              onClick={e => { e.stopPropagation(); toggleDetails() }}
-              aria-expanded={detailsOpen}
-              aria-controls="nav-details"
-              className="flex w-full items-center gap-3 px-3 py-3 md:py-2.5 rounded-control text-sm font-medium
-                         text-slate-300 hover:text-white hover:bg-slate-800 transition-colors
-                         focus-ring focus-visible:ring-offset-slate-900"
-            >
-              {detailsOpen
-                ? <ChevronDown className="w-4 h-4 shrink-0" aria-hidden="true" />
-                : <ChevronRight className="w-4 h-4 shrink-0" aria-hidden="true" />}
-              {t('nav.details')}
-            </button>
-            {detailsOpen && (
-              <div id="nav-details" className="ml-3 pl-2 border-l border-slate-800 space-y-0.5">
-                {detailsNav.map(({ to, labelKey, icon }) => (
-                  <NavItem key={to} to={to} labelKey={labelKey} icon={icon} />
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="mt-3 pt-3 border-t border-slate-800 space-y-0.5">
-            <NavItem to={settingsNav.to} labelKey={settingsNav.labelKey} icon={settingsNav.icon} />
+            {NAV.map(item => (
+              <NavItem key={item.to} to={item.to} labelKey={item.labelKey} icon={item.icon} exact={item.exact} />
+            ))}
           </div>
         </nav>
         <div
@@ -184,16 +128,14 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
                           transition-colors focus-ring focus-visible:ring-offset-slate-900 ${
                 lang === code ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:text-white'}`}
             >
-              {code === 'en' ? 'English' : 'O‘zbek'}
+              {code === 'en' ? 'English' : 'Oʻzbek'}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Account, then the month. A permanent "Backend online" chip was reassurance nobody
-          asked for; the countdown to month close is the one thing worth a standing slot, and
-          the connection only earns its line when something is actually wrong. */}
-      <div className="shrink-0 px-5 py-4 border-t border-slate-800 space-y-3">
+      {/* Account. The connection only earns its line when something is actually wrong. */}
+      <div className="shrink-0 px-5 py-4 border-t border-slate-800 space-y-3 mt-3">
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
             <p className="text-[10px] uppercase tracking-widest text-slate-400 font-semibold">{t('nav.signedInAs')}</p>
@@ -203,23 +145,13 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
             className="shrink-0 inline-flex items-center gap-1.5 min-h-[44px] md:min-h-0 px-2.5 py-1.5 rounded-control text-xs
                        font-medium text-slate-300 hover:text-white hover:bg-slate-800 transition-colors
                        focus-ring focus-visible:ring-offset-slate-900">
-            <LogOut className="w-3.5 h-3.5" /> {t('nav.logout')}
+            <LogOut className="w-3.5 h-3.5" aria-hidden="true" /> {t('nav.logout')}
           </button>
-        </div>
-
-        <div>
-          <p className="text-[10px] uppercase tracking-widest text-slate-400 font-semibold">{t('nav.thisMonth')}</p>
-          <p className="text-sm text-slate-200 font-medium truncate">{formatMonth(monthLocal(), lang)}</p>
-          <p className="text-xs text-slate-400 tabular-nums">
-            {daysLeft <= 0
-              ? t('nav.monthClosesToday')
-              : plural(daysLeft, t('nav.monthClosesInOne'), t('nav.monthClosesInMany'), lang)}
-          </p>
         </div>
 
         {!isOnline && (
           <div className="flex items-center gap-2 text-xs">
-            <WifiOff className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+            <WifiOff className="w-3.5 h-3.5 shrink-0 text-amber-400" aria-hidden="true" />
             <span className="text-amber-400 font-medium">{t('nav.offline')}</span>
           </div>
         )}

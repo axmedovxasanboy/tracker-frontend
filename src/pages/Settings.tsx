@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import {
-  AlertTriangle, CalendarClock, ChevronDown, CreditCard, Lock, Save, Sliders, Trash2,
+  AlertTriangle, CalendarClock, ChevronDown, ChevronRight, CreditCard, Lock, Save, Send, Sliders, Tags, Trash2,
 } from 'lucide-react'
 import { AmountInput } from '../components/ui/AmountInput'
 import { Button, DisabledHint } from '../components/ui/Button'
@@ -21,7 +21,7 @@ import { useSettings } from '../context/SettingsContext'
 import { useLang } from '../i18n/LanguageContext'
 import { settingsApi } from '../api/settings'
 import { extractErrorMessage } from '../api/client'
-import { formatDate, formatMonth, money, moneyExact } from '../utils/format'
+import { formatMonth, money, moneyExact } from '../utils/format'
 
 const INPUT = 'w-full h-11 rounded-control border border-slate-200 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-500 focus-ring'
 
@@ -43,10 +43,6 @@ export function Settings() {
   // instead of leaving a toast as the only answer to "and now?".
   const [savedNow, setSavedNow] = useState(false)
 
-  const [trackStart, setTrackStart] = useState('')
-  const [savingTrack, setSavingTrack] = useState(false)
-  const [trackError, setTrackError] = useState<string | null>(null)
-
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [dangerOpen, setDangerOpen] = useState(false)
 
@@ -57,10 +53,7 @@ export function Settings() {
   const [resetError, setResetError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (settings.data) {
-      setIncome(settings.data.monthlyStableIncome ?? 0)
-      setTrackStart(settings.data.allocationTrackingStartMonth?.slice(0, 7) ?? '')
-    }
+    if (settings.data) setIncome(settings.data.monthlyStableIncome ?? 0)
   }, [settings.data])
 
   const savedIncome = settings.data?.monthlyStableIncome ?? 0
@@ -68,10 +61,8 @@ export function Settings() {
   const trackingLock = settings.data?.allocationTrackingStartMonth ?? null
 
   /**
-   * Income only. The tracking start month has its own save under Advanced now — the backend
-   * patches whatever it is given and leaves the rest alone (SettingsService.update), so
-   * splitting the form changes nothing about what is stored, and it keeps a write-once,
-   * irreversible field off the one screen a new user is required to visit.
+   * Income only. The backend patches whatever it is given and leaves the rest alone
+   * (SettingsService.update), so the read-only fields under Advanced are never touched.
    */
   const handleIncomeSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -85,22 +76,6 @@ export function Settings() {
     } catch (err: unknown) {
       setError(extractErrorMessage(err))
     } finally { setSaving(false) }
-  }
-
-  const handleTrackSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!trackStart || trackingLock) return
-    setSavingTrack(true); setTrackError(null)
-    try {
-      // Write-once server-side: sent only while nothing is stored, so saving anything else
-      // can never trip the "locked" rejection.
-      await settingsApi.update({ allocationTrackingStartMonth: `${trackStart}-01` })
-      settings.refetch()
-      refetchGate()
-      showSuccess(t('page.settings.savedToast'))
-    } catch (err: unknown) {
-      setTrackError(extractErrorMessage(err))
-    } finally { setSavingTrack(false) }
   }
 
   const openReset = async () => {
@@ -132,7 +107,7 @@ export function Settings() {
 
   return (
     <div className="p-4 sm:p-6">
-      <PageHeader title={t('page.settings')} subtitle={t('page.settings.subtitle')} />
+      <PageHeader title={t('page.settings')} />
 
       <div className="mt-4 xl:mt-5">
         <TileGrid>
@@ -146,10 +121,7 @@ export function Settings() {
           )}
 
           {settings.loading ? (
-            <>
-              <Skeleton variant="stat" className="md:col-span-3 xl:col-span-6" />
-              <Skeleton variant="stat" className="md:col-span-3 xl:col-span-6" />
-            </>
+            <Skeleton variant="stat" className="md:col-span-3 xl:col-span-6" />
           ) : settings.error && !settings.data ? (
             <ErrorTile
               className="md:col-span-6 xl:col-span-12"
@@ -157,158 +129,111 @@ export function Settings() {
               onRetry={settings.refetch}
             />
           ) : (
-            <>
-              {/* The page's one hero: the single figure everything else on it is derived from. */}
-              <Tile span={6} rows={2} padding="hero" as="section">
-                <form onSubmit={handleIncomeSubmit} className="flex h-full flex-col gap-4">
-                  <div>
-                    <p className="text-label uppercase text-slate-500">{t('page.settings.stableIncomeHeading')}</p>
-                    {incomeIsSet ? (
-                      <>
-                        <p className="mt-2 text-hero text-slate-900 tabular-nums">{money(savedIncome)}</p>
-                        <p className="mt-1 text-sm text-slate-600 tabular-nums">
-                          {t('ui.exactValue', { value: moneyExact(savedIncome) })}
-                        </p>
-                      </>
-                    ) : (
-                      <p className="mt-2 text-title text-slate-900">{t('page.settings.firstRunHeading')}</p>
-                    )}
-                  </div>
-
-                  <Field
-                    id="settings-income"
-                    label={t('page.settings.amountLabel')}
-                    help={t('page.settings.stableIncomeDesc')}
-                    error={error ?? undefined}
-                  >
-                    <AmountInput
-                      value={income} onChange={setIncome} currency="UZS"
-                      suffix="UZS" className={`${INPUT} pr-14`}
-                    />
-                  </Field>
-
-                  <div className="mt-auto space-y-2">
-                    <Button
-                      type="submit" variant="primary" loading={saving}
-                      disabled={incomeMissing}
-                      disabledReason={incomeMissing ? t('page.settings.amountRequired') : undefined}
-                      icon={<Save className="w-4 h-4" aria-hidden="true" />}
-                      label={saving ? t('action.saving') : t('page.shared.saveChanges')}
-                    />
-                    {/* The visible half of the reason: a disabled button's tooltip never appears
-                        on a touch screen, and a screen reader cannot focus it to hear it. */}
-                    <DisabledHint reason={incomeMissing ? t('page.settings.amountRequired') : undefined} />
-
-                    {savedNow && incomeIsSet && (
-                      <div className="flex flex-wrap items-center gap-2 pt-1">
-                        <p className="text-sm text-slate-600">{t('page.settings.nextStep')}</p>
-                        <Button
-                          size="sm"
-                          icon={<CreditCard className="w-4 h-4" aria-hidden="true" />}
-                          label={t('page.settings.goToWallets')}
-                          onClick={() => navigate('/cards')}
-                        />
-                      </div>
-                    )}
-                  </div>
-                </form>
-              </Tile>
-
-              {/* Read-only twin of the write-once control below: the value is worth seeing at a
-                  glance, the irreversible input is not. */}
-              <Tile
-                span={6} as="section"
-                className={settings.refreshing ? 'opacity-60 transition-opacity' : ''}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <p className="text-label uppercase text-slate-500">{t('page.settings.trackingStartHeading')}</p>
-                  {trackingLock && (
-                    <span className="inline-flex shrink-0 items-center gap-1 rounded-chip bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">
-                      <Lock className="w-3 h-3" aria-hidden="true" />
-                      {t('page.settings.trackingLockedNote')}
-                    </span>
+            // The page's one hero: the single figure everything else on it is derived from.
+            <Tile span={6} rows={2} padding="hero" as="section">
+              <form onSubmit={handleIncomeSubmit} className="flex h-full flex-col gap-4">
+                <div>
+                  <h2 className="text-label uppercase text-slate-500">{t('shell.settings.income')}</h2>
+                  {incomeIsSet ? (
+                    <p className="mt-2 text-hero text-slate-900 tabular-nums" title={moneyExact(savedIncome)}>
+                      {money(savedIncome)}
+                    </p>
+                  ) : (
+                    <p className="mt-2 text-title text-slate-900">{t('page.settings.firstRunHeading')}</p>
                   )}
                 </div>
-                {trackingLock ? (
-                  <p className="mt-2 text-stat text-slate-900 tabular-nums">
-                    {formatMonth(trackingLock.slice(0, 7), lang)}
-                  </p>
-                ) : (
-                  <p className="mt-2 text-title text-slate-900">{t('page.settings.notSetYet')}</p>
-                )}
-                <p className="mt-1 text-sm text-slate-600">
-                  {trackingLock ? t('page.settings.trackingDescPre') : t('page.settings.trackingNotSet')}
-                </p>
-                {settings.data?.updatedAt && (
-                  <p className="mt-3 text-xs text-slate-500 tabular-nums">
-                    {t('page.shared.lastUpdated', { date: formatDate(settings.data.updatedAt, lang, 'time') })}
-                  </p>
-                )}
-              </Tile>
-            </>
+
+                <Field
+                  id="settings-income"
+                  label={t('page.settings.amountLabel')}
+                  help={t('shell.settings.incomeHelp')}
+                  error={error ?? undefined}
+                >
+                  <AmountInput
+                    value={income} onChange={setIncome} currency="UZS"
+                    suffix="UZS" className={`${INPUT} pr-14`}
+                  />
+                </Field>
+
+                <div className="mt-auto space-y-2">
+                  <Button
+                    type="submit" variant="primary" loading={saving}
+                    disabled={incomeMissing}
+                    disabledReason={incomeMissing ? t('page.settings.amountRequired') : undefined}
+                    icon={<Save className="w-4 h-4" aria-hidden="true" />}
+                    label={saving ? t('action.saving') : t('page.shared.saveChanges')}
+                  />
+                  {/* The visible half of the reason: a disabled button's tooltip never appears
+                      on a touch screen, and a screen reader cannot focus it to hear it. */}
+                  <DisabledHint reason={incomeMissing ? t('page.settings.amountRequired') : undefined} />
+
+                  {savedNow && incomeIsSet && (
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <p className="text-sm text-slate-600">{t('page.settings.nextStep')}</p>
+                      <Button
+                        size="sm"
+                        icon={<CreditCard className="w-4 h-4" aria-hidden="true" />}
+                        label={t('page.settings.goToWallets')}
+                        onClick={() => navigate('/wallets')}
+                      />
+                    </div>
+                  )}
+                </div>
+              </form>
+            </Tile>
           )}
 
-          {/* Advanced — the irreversible control and the bot plumbing, one deliberate tap away.
-              Developer left the sidebar when the shell landed; this is its entry point. */}
+          {/* Categories have their own page; this is the way in. */}
+          <Tile span={6} as="section" padding="none">
+            <Link
+              to="/settings/categories"
+              className="focus-ring flex min-h-[64px] items-center gap-3 rounded-tile px-5 py-4 transition-colors hover:bg-slate-50"
+            >
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-chip bg-slate-100 text-slate-500">
+                <Tags className="h-4 w-4" aria-hidden="true" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold text-slate-900">{t('nav.categories')}</span>
+                <span className="block text-xs leading-snug text-slate-500">{t('shell.settings.categoriesHelp')}</span>
+              </span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
+            </Link>
+          </Tile>
+
+          {/* Advanced — rarely needed, one deliberate tap away. Developer left the sidebar when the
+              shell landed; this is its entry point. */}
           <Tile span={6} as="section">
             <Disclosure
               id="settings-advanced"
               open={advancedOpen}
               onToggle={() => setAdvancedOpen(o => !o)}
-              icon={<Sliders className="w-4 h-4 text-slate-400" aria-hidden="true" />}
+              icon={<Sliders className="w-4 h-4 text-slate-500" aria-hidden="true" />}
               title={t('page.settings.advanced')}
-              help={t('page.settings.advancedHelp')}
+              help={t('shell.settings.advancedHelp')}
             >
               <div className="space-y-6">
+                {/* Read-only: it is write-once on the server, and nothing on the web sets it any more. */}
                 <section>
                   <div className="flex items-center gap-2">
-                    <CalendarClock className="w-4 h-4 text-slate-400" aria-hidden="true" />
-                    <h3 className="text-sm font-semibold text-slate-900">{t('page.settings.trackingStartHeading')}</h3>
+                    <CalendarClock className="w-4 h-4 text-slate-500" aria-hidden="true" />
+                    <h3 className="text-sm font-semibold text-slate-900">{t('shell.settings.countingFrom')}</h3>
                   </div>
-
-                  {incomeIsSet ? (
-                    <form onSubmit={handleTrackSubmit} className="mt-2 space-y-3">
-                      <Field
-                        id="settings-track-start"
-                        label={t('page.settings.trackFromMonthLabel')}
-                        help={`${t('page.settings.trackingDescPre')} ${t('page.settings.trackingLockedNote')} ${t('page.settings.trackingDescPost')}`}
-                        error={trackError ?? undefined}
-                      >
-                        <input
-                          type="month" value={trackStart}
-                          onChange={e => setTrackStart(e.target.value)}
-                          disabled={!!trackingLock}
-                          className={`${INPUT} disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed`}
-                        />
-                      </Field>
-
-                      {trackingLock ? (
-                        <p className="flex items-center gap-1.5 text-xs text-slate-500">
-                          <Lock className="w-3 h-3" aria-hidden="true" />
-                          {t('page.settings.lockedSetTo', { month: formatMonth(trackingLock.slice(0, 7), lang) })}
-                        </p>
-                      ) : (
-                        <div className="space-y-2">
-                          <Button
-                            type="submit" loading={savingTrack}
-                            disabled={!trackStart}
-                            disabledReason={!trackStart ? t('page.settings.trackMonthRequired') : undefined}
-                            icon={<Save className="w-4 h-4" aria-hidden="true" />}
-                            label={savingTrack ? t('action.saving') : t('page.shared.saveChanges')}
-                          />
-                          <DisabledHint reason={!trackStart ? t('page.settings.trackMonthRequired') : undefined} />
-                        </div>
-                      )}
-                    </form>
-                  ) : (
-                    // A write-once lock a brand-new account can trip before it has recorded
-                    // anything is a trap, so the control appears only once step 1 is done.
-                    <p className="mt-2 text-sm text-slate-600">{t('income.requiredTitle')}</p>
+                  <p className="mt-1 text-sm text-slate-900">
+                    {trackingLock ? formatMonth(trackingLock.slice(0, 7), lang) : t('page.settings.notSetYet')}
+                  </p>
+                  {trackingLock && (
+                    <p className="mt-1 flex items-center gap-1.5 text-xs text-slate-500">
+                      <Lock className="w-3 h-3" aria-hidden="true" />
+                      {t('page.settings.trackingLockedNote')}
+                    </p>
                   )}
                 </section>
 
                 <section className="border-t border-hairline pt-5">
-                  <h3 className="text-sm font-semibold text-slate-900">{t('page.developer')}</h3>
+                  <div className="flex items-center gap-2">
+                    <Send className="w-4 h-4 text-slate-500" aria-hidden="true" />
+                    <h3 className="text-sm font-semibold text-slate-900">{t('shell.settings.telegram')}</h3>
+                  </div>
                   <p className="mt-0.5 mb-4 text-sm text-slate-600">{t('page.developer.subtitle')}</p>
                   <DeveloperSettings />
                 </section>
@@ -326,7 +251,7 @@ export function Settings() {
               id="settings-danger"
               open={dangerOpen}
               onToggle={() => setDangerOpen(o => !o)}
-              icon={<AlertTriangle className="w-4 h-4 text-slate-400" aria-hidden="true" />}
+              icon={<AlertTriangle className="w-4 h-4 text-slate-500" aria-hidden="true" />}
               title={t('page.settings.dangerZone')}
               help={t('page.settings.dangerZoneBold')}
             >
@@ -411,7 +336,7 @@ function Disclosure({ id, open, onToggle, icon, title, help, children }: {
           {help && <span className="block text-xs text-slate-500 leading-snug">{help}</span>}
         </span>
         <ChevronDown
-          className={`w-4 h-4 shrink-0 text-slate-400 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+          className={`w-4 h-4 shrink-0 text-slate-500 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
           aria-hidden="true"
         />
       </button>

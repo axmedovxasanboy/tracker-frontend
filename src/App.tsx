@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { BackendStatusProvider } from './context/BackendStatusContext'
 import { ToastProvider } from './context/ToastContext'
 import { ConfirmProvider } from './context/ConfirmContext'
@@ -12,14 +12,12 @@ import { MobileNavProvider, useAppBarMounted } from './components/ui/PageHeader'
 import { Sidebar } from './components/layout/Sidebar'
 import { OfflineBanner } from './components/ui/OfflineBanner'
 import { Spinner } from './components/ui/Spinner'
-import { Dashboard } from './pages/Dashboard'
 import { Advisor } from './pages/Advisor'
-import { Transactions } from './pages/Transactions'
-import { Categories } from './pages/Categories'
+import { History } from './pages/History'
 import { Cards } from './pages/Cards'
-import { Finance } from './pages/Finance'
-import { Overview } from './pages/Overview'
-import { Months } from './pages/Months'
+import { Savings } from './pages/Savings'
+import { Loans } from './pages/Loans'
+import { Categories } from './pages/Categories'
 import { Settings } from './pages/Settings'
 import { Developer } from './pages/Developer'
 import { Login } from './pages/Login'
@@ -55,6 +53,15 @@ function FallbackMenuButton({ onOpenMenu, hidden }: { onOpenMenu: () => void; hi
       <Menu className="w-5 h-5" />
     </button>
   )
+}
+
+/**
+ * An old address, kept working. The query string travels with it, so a bookmarked
+ * `/transactions?type=INCOME` still opens History filtered to income.
+ */
+function Moved({ to }: { to: string }) {
+  const { search, hash } = useLocation()
+  return <Navigate to={{ pathname: to, search, hash }} replace />
 }
 
 function AppRoutes() {
@@ -128,22 +135,30 @@ function AppRoutes() {
               <OfflineBanner />
             </div>
             <Routes>
+              {/* The six places (2026-09 rebuild). */}
               <Route path="/" element={<Advisor currency={currency} />} />
-              <Route path="/summary" element={<Dashboard currency={currency} />} />
-              <Route path="/transactions" element={<Transactions currency={currency} />} />
-              <Route path="/cards" element={<Cards />} />
-              <Route path="/categories" element={<Categories />} />
-              <Route path="/finance" element={<Navigate to="/finance/overview" replace />} />
-              <Route path="/finance/investments" element={<Navigate to="/overview/investments" replace />} />
-              <Route path="/finance/donations" element={<Navigate to="/overview/donations" replace />} />
-              <Route path="/finance/:tab" element={<Finance />} />
-              <Route path="/overview" element={<Navigate to="/overview/dashboard" replace />} />
-              <Route path="/overview/:tab" element={<Overview currency={currency} />} />
-              <Route path="/months" element={<Months currency={currency} />} />
+              <Route path="/history" element={<History currency={currency} />} />
+              <Route path="/wallets" element={<Cards />} />
+              <Route path="/savings" element={<Savings />} />
+              <Route path="/loans" element={<Loans />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/settings/categories" element={<Categories />} />
               {/* Developer is out of the nav — Settings › Advanced is the way in — but the
                   route stays so bookmarks and the Telegram web-view URL keep working. */}
               <Route path="/developer" element={<Developer />} />
+              {/* Old addresses: bookmarks, the bot's links and muscle memory still land somewhere. */}
+              <Route path="/summary" element={<Moved to="/history" />} />
+              <Route path="/transactions" element={<Moved to="/history" />} />
+              <Route path="/months" element={<Moved to="/history" />} />
+              <Route path="/cards" element={<Moved to="/wallets" />} />
+              <Route path="/overview" element={<Moved to="/" />} />
+              <Route path="/overview/dashboard" element={<Moved to="/" />} />
+              <Route path="/overview/investments" element={<Moved to="/savings" />} />
+              <Route path="/overview/donations" element={<Moved to="/savings" />} />
+              <Route path="/overview/emergencies" element={<Moved to="/savings" />} />
+              <Route path="/finance" element={<Moved to="/loans" />} />
+              <Route path="/finance/*" element={<Moved to="/loans" />} />
+              <Route path="/categories" element={<Moved to="/settings/categories" />} />
               {/* Already signed in — bounce the auth screens back to the app. */}
               <Route path="/login" element={<Navigate to="/" replace />} />
               <Route path="/signup" element={<Navigate to="/" replace />} />

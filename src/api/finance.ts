@@ -9,7 +9,6 @@ import type {
   InvestmentRequest, InvestmentResponse,
   InvestmentContributeRequest, InvestmentValueRequest,
   RepaymentRequest,
-  MarkPaidRequest, MarkPaidResponse,
   Transaction,
 } from '../types'
 
@@ -18,7 +17,6 @@ const base = '/finance'
 export const financeApi = {
   // Debts
   getDebts: () => apiClient.get<DebtResponse[]>(`${base}/debts`),
-  createDebt: (d: DebtRequest) => apiClient.post<DebtResponse>(`${base}/debts`, d),
   updateDebt: (id: number, d: DebtRequest) => apiClient.put<DebtResponse>(`${base}/debts/${id}`, d),
   deleteDebt: (id: number) => apiClient.delete(`${base}/debts/${id}`),
 
@@ -32,9 +30,6 @@ export const financeApi = {
   getLoansTaken: () => apiClient.get<LoanTakenResponse[]>(`${base}/loans-taken`),
   createLoanTaken: (d: LoanTakenRequest) => apiClient.post<LoanTakenResponse>(`${base}/loans-taken`, d),
   updateLoanTaken: (id: number, d: LoanTakenRequest) => apiClient.put<LoanTakenResponse>(`${base}/loans-taken/${id}`, d),
-  /** Change only the monthly repayment plan; null clears it back to the default rule. */
-  setLoanTakenPlan: (id: number, plannedMonthlyPayment: number | null) =>
-    apiClient.put<LoanTakenResponse>(`${base}/loans-taken/${id}/plan`, { plannedMonthlyPayment }),
   deleteLoanTaken: (id: number) => apiClient.delete(`${base}/loans-taken/${id}`),
 
   // Bank Loans
@@ -58,7 +53,6 @@ export const financeApi = {
   // Donations
   getDonations: () => apiClient.get<DonationResponse[]>(`${base}/donations`),
   createDonation: (d: DonationRequest) => apiClient.post<DonationResponse>(`${base}/donations`, d),
-  updateDonation: (id: number, d: DonationRequest) => apiClient.put<DonationResponse>(`${base}/donations/${id}`, d),
   deleteDonation: (id: number) => apiClient.delete(`${base}/donations/${id}`),
 
   // Investments
@@ -66,13 +60,11 @@ export const financeApi = {
   createInvestment: (d: InvestmentRequest) => apiClient.post<InvestmentResponse>(`${base}/investments`, d),
   updateInvestment: (id: number, d: InvestmentRequest) => apiClient.put<InvestmentResponse>(`${base}/investments/${id}`, d),
   deleteInvestment: (id: number) => apiClient.delete(`${base}/investments/${id}`),
-  // Savings-goal / investment contribute + growth + history.
+  // Savings-goal / investment contribute + growth.
   contributeInvestment: (id: number, d: InvestmentContributeRequest) =>
     apiClient.post<InvestmentResponse>(`${base}/investments/${id}/contribute`, d),
   setInvestmentValue: (id: number, d: InvestmentValueRequest) =>
     apiClient.post<InvestmentResponse>(`${base}/investments/${id}/value`, d),
-  getInvestmentContributions: (id: number) =>
-    apiClient.get<Transaction[]>(`${base}/investments/${id}/contributions`),
 
   // Repayments
   repayLoanTaken: (id: number, d: RepaymentRequest) =>
@@ -81,19 +73,6 @@ export const financeApi = {
     apiClient.post<DebtResponse>(`${base}/debts/${id}/repay`, d),
   markLoanGivenReturned: (id: number, d: RepaymentRequest) =>
     apiClient.post<LoanGivenResponse>(`${base}/loans-given/${id}/mark-returned`, d),
-
-  // "Already paid" — mark satisfied for the month with no transaction / money movement.
-  //
-  // A mark is the only "paid" figure with no transaction behind it, so it is also the only one
-  // the user cannot find in any history list. That is how a mistyped amount silently inflates
-  // Paid on Home and Plan for good, which is why the list and the undo belong here beside it.
-  markPaid: (d: MarkPaidRequest) =>
-    apiClient.post<MarkPaidResponse>(`${base}/mark-paid`, d),
-  /** @param month YYYY-MM; omit for the current month. */
-  listMarks: (month?: string) =>
-    apiClient.get<MarkPaidResponse[]>(`${base}/mark-paid`, { params: { month: month ?? '' } }),
-  /** Undo a mark. Reverses the paidAmount bump for PERSONAL_LOAN / DEBT; refused once the month is closed. */
-  deleteMark: (id: number) => apiClient.delete(`${base}/mark-paid/${id}`),
 
   // Payment history per loan/debt — newest first by transactionDate.
   getLoanTakenRepayments: (id: number) =>

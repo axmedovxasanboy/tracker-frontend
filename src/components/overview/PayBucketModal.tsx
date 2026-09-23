@@ -1,19 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
+import { ChevronDown, ChevronUp } from 'lucide-react'
 import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
 import { AmountInput } from '../ui/AmountInput'
 import { useLang } from '../../i18n/LanguageContext'
 import { useToast } from '../../context/ToastContext'
-import { cardsApi } from '../../api/cards'
-import { categoriesApi } from '../../api/categories'
 import { emergenciesApi } from '../../api/emergencies'
 import { financeApi } from '../../api/finance'
 import { extractErrorMessage } from '../../api/client'
-import { money, moneyFull, todayLocal } from '../../utils/format'
-import type { Bucket, CardResponse, Category, Currency, InvestmentResponse, InvestmentType, TransactionSubType } from '../../types'
-
-const INPUT = 'w-full border border-slate-200 rounded-control px-3 py-2.5 text-sm text-slate-900 focus-ring'
+import { moneyFull, todayLocal } from '../../utils/format'
+import { CompactDate, CONTROL, CONTROL_INVALID, LINK, MONEY_INPUT, MONEY_INPUT_INVALID, useOptional } from '../transactions/formParts'
+import { WalletPicker } from '../transactions/WalletPicker'
+import { defaultWallet, rememberWallet, useWalletChoice, useWallets } from '../transactions/wallets'
+import type { Bucket, Currency, InvestmentResponse, InvestmentType } from '../../types'
 
 interface Props {
   open: boolean
@@ -22,37 +22,39 @@ interface Props {
   bucket: Bucket | null
   /** Currency shown to the user. Saved record uses this currency too. */
   currency: Currency
-  /** Pre-fill amount (e.g. min-amount or split-share). */
+  /** Pre-fill amount — what this month still asks for. */
   suggestedAmount?: number
-  /** Default month from the picker (YYYY-MM). The date input starts at month-01. */
+  /** Default month (YYYY-MM). The date starts on today when it falls in it, else on the 1st. */
   defaultMonth: string
 }
 
 const INVESTMENT_TYPES: InvestmentType[] = ['REAL_ESTATE', 'BONDS', 'MUTUAL_FUND', 'GOLD', 'OTHER']
 
-// The two non-numeric values of the target select; everything else is an existing investment's id.
-/** EMERGENCY only: the Emergency-fund tab's own row (an `Emergency` + its mirrored transaction). */
+// The two non-numeric values of the target select; everything else is an existing holding's id.
+/** EMERGENCY only: a plain emergency-fund contribution (an `Emergency` + its mirrored transaction). */
 const FUND = 'fund'
 /** Open a new holding instead of adding to one that exists. */
 const NEW = 'new'
 
-// The transaction sub-type each bucket books against — drives the category filter + auto-pick.
-const BUCKET_SUBTYPE: Record<Bucket, TransactionSubType> = {
-  DONATION:    'DONATION',
-  EMERGENCY:   'EMERGENCY_CONTRIBUTION',
-  INVESTMENTS: 'INVESTMENT',
-}
+type Invalid = 'amount' | 'wallet' | 'name' | null
 
+/**
+ * Put money into a donation, the emergency fund or investments.
+ *
+ * A donation asks for the amount, the date, the wallet — and, only if the owner wants, who it went
+ * to and a note. The emergency fund and investments first ask where it goes: an account that
+ * already exists is the default, a new one is the last option.
+ */
 export function PayBucketModal({ open, onClose, onSaved, bucket, currency, suggestedAmount, defaultMonth }: Props) {
-  const { t, categoryName } = useLang()
+  const { t } = useLang()
+  const optional = useOptional()
   const { showSuccess } = useToast()
-  const BUCKET_TITLES: Record<Bucket, string> = {
+  const TITLES: Record<Bucket, string> = {
     DONATION:    t('cmp.payBucket.titleDonation'),
     EMERGENCY:   t('cmp.payBucket.titleEmergency'),
     INVESTMENTS: t('cmp.payBucket.titleInvestments'),
   }
-  // The short name for the confirmation — the dialog title is a sentence, a toast is not.
-  const BUCKET_NAMES: Record<Bucket, string> = {
+  const NAMES: Record<Bucket, string> = {
     DONATION:    t('cmp.bucket.donation'),
     EMERGENCY:   t('cmp.bucket.emergency'),
     INVESTMENTS: t('cmp.bucket.investments'),
@@ -66,70 +68,52 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
   }
   const [amount, setAmount] = useState(0)
   const [date, setDate] = useState(todayLocal())
-  const [description, setDescription] = useState('')
-
-  // Donation-specific
+  const [note, setNote] = useState('')
   const [recipientName, setRecipientName] = useState('')
-  const [anonymous, setAnonymous] = useState(false)
 
-  // Only needed when a NEW holding is being opened (name doubles as the new fund's name).
+  // Only for a NEW holding (the name doubles as the new account's name).
   const [name, setName] = useState('')
   const [invType, setInvType] = useState<InvestmentType>('OTHER')
   const [broker, setBroker] = useState('')
+  const [moreOpen, setMoreOpen] = useState(false)
 
-  /**
-   * Where this payment lands: an existing holding's id, `NEW`, or — for Emergency — `FUND`.
-   *
-   * Almost every set-aside is money going into an account that already exists, and the owner's
-   * emergency fund IS an investment flagged as one. This dialog used to have no way to say that
-   * for the Investments bucket at all: it called `createInvestment` every time, so recording from
-   * the Plan opened a second "Gold", a third, a fourth. So the existing accounts are loaded and
-   * the newest one is the default; opening a new holding is one option away, and Emergency keeps
-   * its fund-tab row as a third choice (it is listed and edited in a different tab).
-   */
   const [holdings, setHoldings] = useState<InvestmentResponse[]>([])
   const [target, setTarget] = useState<string>(NEW)
-  /** True once the owner has picked a target themselves, so the load below cannot overrule them. */
+  /** True once the owner picked a target, so the list landing late cannot overrule them. */
   const targetTouched = useRef(false)
-
-  // Funding source: 'cash' | 'none' (record only, no wallet) | card id string. "None" is offered
-  // only for the investment / emergency-fund buckets (they record an entity that can exist without
-  // a wallet movement); donations always move money from a wallet.
-  const [source, setSource] = useState<string>('cash')
-  const [cards, setCards] = useState<CardResponse[]>([])
-
-  // Category — auto-picked to the bucket's matching category, overridable by the user.
-  const [categories, setCategories] = useState<Category[]>([])
-  const [categoryId, setCategoryId] = useState<number | undefined>()
 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [invalid, setInvalid] = useState<Invalid>(null)
+
+  const creatingNew = target === NEW
+  const toFund = bucket === 'EMERGENCY' && target === FUND
+  const toHolding = /^\d+$/.test(target)
+  // "Not from a wallet" only exists where a record can stand without a money movement.
+  const allowNone = bucket !== 'DONATION' && !toFund
+
+  const wallets = useWallets(open && !!bucket, currency)
+  const choice = useWalletChoice({
+    open: open && !!bucket,
+    cards: wallets.cards,
+    cashBalance: wallets.cashBalance,
+    loaded: wallets.loaded,
+    amount,
+  })
 
   useEffect(() => {
     if (!open || !bucket) return
     setAmount(suggestedAmount ?? 0)
-    // Default date: today if it falls in the displayed month, otherwise the 1st. `todayLocal`
-    // reads the viewer's clock — toISOString() named yesterday before 05:00 in Tashkent, which
-    // filed a late-night payment into the previous month's bucket.
     const cur = todayLocal()
     setDate(cur.startsWith(defaultMonth) ? cur : `${defaultMonth}-01`)
-    setDescription('')
+    setNote('')
     setRecipientName('')
-    setAnonymous(false)
     setName('')
     setInvType('OTHER')
     setBroker('')
-    setSource('cash')
+    setMoreOpen(false)
     setError(null)
-    cardsApi.getAll().then(r => setCards(r.data)).catch(() => {})
-    // Load categories matching this bucket's sub-type; default to the first (the seeded one).
-    setCategories([]); setCategoryId(undefined)
-    categoriesApi.getAll('EXPENSE', BUCKET_SUBTYPE[bucket]).then(r => {
-      setCategories(r.data)
-      if (r.data.length > 0) setCategoryId(r.data[0].id)
-    }).catch(() => {})
-    // Both holding buckets: load what already exists and aim at it. Emergency falls back to its
-    // fund-tab row, Investments to a new holding, until the list arrives (or when it is empty).
+    setInvalid(null)
     setHoldings([])
     setTarget(bucket === 'EMERGENCY' ? FUND : NEW)
     targetTouched.current = false
@@ -137,152 +121,113 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
       financeApi.getInvestments().then(r => {
         const mine = r.data.filter(i =>
           i.currency === currency && !i.openingBalance
-          // An emergency-flagged holding funds the Emergency bucket; a savings goal funds neither
-          // (it has its own tracking), so it is never offered here.
+          // An emergency-flagged holding takes emergency money; a goal takes neither here.
           && (bucket === 'EMERGENCY' ? i.emergencyFund : !i.emergencyFund && !i.savingsGoal))
         setHoldings(mine)
-        // The API returns them newest purchase first, which is the account most likely meant.
-        // Skipped if the owner got there first — the list can land a moment after the dialog.
+        // Newest first from the API — the account most likely meant.
         if (mine.length > 0 && !targetTouched.current) setTarget(String(mine[0].id))
       }).catch(() => {})
     }
   }, [open, bucket, suggestedAmount, defaultMonth, currency])
 
-  const matchingCards = cards.filter(c => c.currency === currency)
-  const creatingNew = target === NEW
-  const toFund = bucket === 'EMERGENCY' && target === FUND
-  const toHolding = /^\d+$/.test(target)
-  // The target select only has something to choose while a choice exists.
-  const showTarget = bucket === 'EMERGENCY' || (bucket === 'INVESTMENTS' && holdings.length > 0)
-  // "None" records the entity without moving money, which only the investment endpoints support.
-  // A contribution to the fund itself is always a real wallet movement, so the option is not
-  // offered there — and offering it would be a trap anyway: with no transaction behind it the
-  // payment would not count toward the Emergency bucket the dialog was opened to satisfy.
-  const allowNone = bucket !== 'DONATION' && !toFund
-  const sourceCardId = /^\d+$/.test(source) ? Number(source) : undefined
-  const sourceNone = allowNone && source === 'none'
+  // Leaving a target that accepts "Not from a wallet" must not leave that answer standing.
+  const { value: walletValue, choose: chooseWallet } = choice
+  useEffect(() => {
+    if (allowNone || walletValue !== 'none') return
+    chooseWallet(defaultWallet(wallets.cards, wallets.cashBalance, amount) ?? 'cash')
+    // Only the switch of target is the trigger; the balances are read as they stand.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allowNone, walletValue, chooseWallet])
 
   if (!bucket) return null
 
-  /** One confirmation for both write paths, so neither can be added without the other. */
-  const confirmSaved = () => {
-    showSuccess(t('cmp.payBucket.recordedToast', {
-      bucket: BUCKET_NAMES[bucket], amount: moneyFull(amount, currency),
-    }))
-    onSaved(); onClose()
-  }
+  const showTarget = bucket === 'EMERGENCY' || (bucket === 'INVESTMENTS' && holdings.length > 0)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (amount <= 0) { setError(t('cmp.err.amountPositive')); return }
-    setSaving(true); setError(null)
+    if (amount <= 0) { setInvalid('amount'); setError(t('cmp.err.amountPositive')); return }
+    if (creatingNew && bucket !== 'DONATION' && !name.trim()) {
+      setInvalid('name')
+      setError(t(bucket === 'EMERGENCY' ? 'cmp.err.nameFund' : 'cmp.err.investmentNameRequired'))
+      return
+    }
+    const wallet = choice.value
+    if (wallet == null || (wallet === 'none' && !allowNone)) {
+      setInvalid('wallet'); setError(t('cmp.err.pickCardOrCash')); return
+    }
+    const cardId = typeof wallet === 'number' ? wallet : undefined
+    const noWallet = wallet === 'none'
+    setSaving(true); setError(null); setInvalid(null)
+    // No category is sent: the server files each one under the category made for its kind
+    // (donation, emergency fund, investment), which is what the owner would expect to see.
     try {
       if (bucket === 'DONATION') {
-        if (!anonymous && !recipientName.trim()) {
-          setError(t('cmp.err.recipientRequired'))
-          setSaving(false); return
-        }
+        const recipient = recipientName.trim()
         await financeApi.createDonation({
-          recipientName: anonymous ? 'Anonymous' : recipientName.trim(),
+          // The recipient is optional; left blank, the donation is saved without one.
+          recipientName: recipient || 'Anonymous',
+          anonymous: !recipient,
           amount, currency, donationDate: date,
-          description: description || undefined,
-          anonymous, cardId: sourceCardId, categoryId,
+          description: note.trim() || undefined,
+          cardId,
         })
       } else if (toHolding) {
-        // The common case: more money into an account that already exists.
         await financeApi.contributeInvestment(Number(target), {
           amount, currency, date,
-          cardId: sourceCardId, noWallet: sourceNone, categoryId,
-          description: description || undefined,
+          cardId, noWallet,
+          description: note.trim() || undefined,
         })
       } else if (toFund) {
-        // The record the Emergency fund tab lists, edits and deletes. The backend mirrors it to
-        // the same EMERGENCY_CONTRIBUTION transaction the bucket counts, so the plan tile and
-        // the tab move together instead of quoting two totals for the same money.
+        // The contribution the emergency fund lists; mirrored to the same transaction the
+        // month counts, so both move together.
         await emergenciesApi.create({
           amount, currency, date,
-          description: description || undefined,
-          cardId: sourceCardId, categoryId,
+          description: note.trim() || undefined,
+          cardId,
         })
       } else {
         const isEmergency = bucket === 'EMERGENCY'
-        if (!name.trim()) {
-          setError(t(isEmergency ? 'cmp.err.nameFund' : 'cmp.err.investmentNameRequired'))
-          setSaving(false); return
-        }
         await financeApi.createInvestment({
           name: name.trim(),
           type: isEmergency ? 'OTHER' : invType,
           investedAmount: amount, currency, purchaseDate: date,
           emergencyFund: isEmergency,
-          broker: isEmergency ? undefined : broker || undefined,
-          description: description || undefined,
-          cardId: sourceCardId, openingBalance: sourceNone, categoryId,
+          broker: isEmergency ? undefined : broker.trim() || undefined,
+          description: note.trim() || undefined,
+          cardId, openingBalance: noWallet,
         })
       }
-      confirmSaved()
+      rememberWallet(wallet)
+      showSuccess(t('cmp.payBucket.recordedToast', { bucket: NAMES[bucket], amount: moneyFull(amount, currency) }))
+      onSaved(); onClose()
     } catch (err) {
       setError(extractErrorMessage(err))
     } finally { setSaving(false) }
   }
 
-  const markAlreadyPaid = async () => {
-    if (amount <= 0) { setError(t('cmp.err.amountPositive')); return }
-    setSaving(true); setError(null)
-    try {
-      await financeApi.markPaid({ kind: 'BUCKET', bucket, amount, currency, month: date.slice(0, 7) })
-      confirmSaved()
-    } catch (err) {
-      setError(extractErrorMessage(err))
-    } finally { setSaving(false) }
-  }
+  const fieldError = (f: Exclude<Invalid, null>) => (invalid === f ? error ?? undefined : undefined)
 
   const footer = (
-    <div className="space-y-2">
-      {/* Was a `title` on the "Already paid" button — a tooltip no touch user could reach. */}
-      <p className="text-xs text-slate-500">{t('cmp.hint.countBucketNoTx')}</p>
-      <div className="flex flex-wrap gap-3">
-        <Button label={t('action.cancel')} onClick={onClose} className="flex-1 min-w-[8rem]" />
-        <Button label={t('cmp.action.alreadyPaid')} onClick={markAlreadyPaid} disabled={saving}
-          className="flex-1 min-w-[8rem]" />
-        <Button type="submit" form="pay-bucket-form" variant="primary" loading={saving}
-          label={saving
-            ? t('action.saving')
-            // "Add money" is the top-up verb; adding to the fund itself, or opening a new holding,
-            // is the app's one write verb.
-            : toHolding ? t('cmp.action.topUp') : t('action.record')}
-          className="flex-1 min-w-[8rem]" />
-      </div>
+    <div className="flex gap-3">
+      <Button label={t('action.cancel')} onClick={onClose} className="flex-1" />
+      <Button type="submit" form="pay-bucket-form" variant="primary" loading={saving}
+        label={saving ? t('action.saving') : t('action.add')}
+        className="flex-1" />
     </div>
   )
 
   return (
-    <Modal open={open} onClose={onClose} title={BUCKET_TITLES[bucket]} maxWidth="max-w-lg" footer={footer}>
-      <form id="pay-bucket-form" onSubmit={handleSubmit} className="space-y-3">
-        {/* Which account this goes into. Existing ones first, newest first, and one of them is
-            already selected — opening a new holding is the last option, not the default. */}
+    <Modal open={open} onClose={onClose} title={TITLES[bucket]} maxWidth="max-w-lg" footer={footer}>
+      <form id="pay-bucket-form" noValidate onSubmit={handleSubmit} className="space-y-4">
+        {/* Where it goes: existing accounts first (one already chosen), a new one last. */}
         {showTarget && (
-          <Field id="pb-target"
-            label={t(bucket === 'EMERGENCY' ? 'cmp.payBucket.emergencyTarget' : 'cmp.payBucket.investmentTarget')}
-            help={toFund ? t('cmp.payBucket.emergencyTargetFundHint')
-              : toHolding && bucket === 'EMERGENCY' ? t('cmp.payBucket.emergencyTargetHoldingHint')
-              : toHolding ? t('cmp.payBucket.investmentTopUpHint')
-              : undefined}>
+          <Field id="pb-target" label={t('home.form.addTo')}>
             <select value={target}
-              onChange={e => {
-                const next = e.target.value
-                targetTouched.current = true
-                setTarget(next)
-                // "None" only exists on the investment paths; leaving it selected after a switch
-                // back to the fund would silently fall through to cash.
-                if (next === FUND && source === 'none') setSource('cash')
-              }}
-              className={`${INPUT} bg-white`}>
+              onChange={e => { targetTouched.current = true; setTarget(e.target.value); setInvalid(null); setError(null) }}
+              className={CONTROL}>
               {holdings.map(i => (
                 <option key={i.id} value={String(i.id)}>
-                  {t('cmp.payBucket.emergencyHoldingOption', {
-                    name: i.name, amount: moneyFull(i.currentValue ?? i.investedAmount, i.currency),
-                  })}
+                  {i.name} · {moneyFull(i.currentValue ?? i.investedAmount, i.currency)}
                 </option>
               ))}
               {bucket === 'EMERGENCY' && (
@@ -295,111 +240,85 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
           </Field>
         )}
 
-        {/* Amount */}
-        <Field id="pb-amount" required label={t('cmp.field.amountWithCurrency', { currency })}>
-          <AmountInput required value={amount} currency={currency}
-            onChange={v => setAmount(v)}
-            className={INPUT} suffix={currency} />
+        {creatingNew && bucket !== 'DONATION' && (
+          <Field id="pb-name" required error={fieldError('name')}
+            label={t(bucket === 'EMERGENCY' ? 'home.form.fundName' : 'cat.name')}>
+            <input value={name}
+              onChange={e => { setName(e.target.value); if (invalid === 'name') { setInvalid(null); setError(null) } }}
+              className={invalid === 'name' ? CONTROL_INVALID : CONTROL}
+              placeholder={t(bucket === 'EMERGENCY' ? 'cmp.payBucket.fundNamePlaceholder' : 'cmp.payBucket.investmentNamePlaceholder')} />
+          </Field>
+        )}
+
+        <Field id="pb-amount" required label={t('tx.amount')} error={fieldError('amount')}>
+          <AmountInput value={amount} currency={currency}
+            onChange={v => { setAmount(v); if (invalid === 'amount') { setInvalid(null); setError(null) } }}
+            className={invalid === 'amount' ? MONEY_INPUT_INVALID : MONEY_INPUT} suffix={currency} />
         </Field>
-        {suggestedAmount != null && suggestedAmount > 0 && (
-          <p className="-mt-2 text-xs text-slate-500 tabular-nums">
-            {t('cmp.payBucket.suggested')} {moneyFull(suggestedAmount, currency)}
-            {amount !== suggestedAmount && (
-              <button type="button" onClick={() => setAmount(suggestedAmount)}
-                className="ml-2 font-semibold text-indigo-600 hover:underline rounded-chip focus-ring">
-                {t('cmp.action.useThis')}
-              </button>
-            )}
+        {suggestedAmount != null && suggestedAmount > 0 && Math.abs(amount - suggestedAmount) > 0.001 && (
+          <p className="-mt-2 text-xs tabular-nums text-slate-500">
+            {t('home.form.suggested', { amount: moneyFull(suggestedAmount, currency) })}{' '}
+            <button type="button" onClick={() => setAmount(suggestedAmount)} className={LINK}>
+              {t('cmp.action.useThis')}
+            </button>
           </p>
         )}
 
-        {/* Date */}
-        <Field id="pb-date" required label={t('cmp.field.dateRequired')}>
-          <input required type="date" value={date} onChange={e => setDate(e.target.value)} className={INPUT} />
-        </Field>
+        <WalletPicker
+          id="pb-wallet"
+          label={t('home.wallet.from')}
+          cards={wallets.cards}
+          cashBalance={wallets.cashBalance}
+          currency={currency}
+          loaded={wallets.loaded}
+          failed={wallets.failed}
+          onRetry={wallets.reload}
+          value={choice.value}
+          onChange={v => { choice.choose(v); if (invalid === 'wallet') { setInvalid(null); setError(null) } }}
+          noneLabel={allowNone ? t(creatingNew ? 'home.wallet.alreadyOwn' : 'home.wallet.none') : undefined}
+          help={choice.value === 'none' ? t('home.wallet.noneHelp') : undefined}
+          error={fieldError('wallet')}
+        />
 
-        {/* Payment source. "None" (record only) offered for investment / emergency buckets. */}
-        <Field id="pb-source" label={t('cmp.field.source')}
-          help={sourceNone
-            ? t(bucket === 'EMERGENCY' ? 'cmp.payBucket.noWalletHintFund' : 'cmp.payBucket.noWalletHintInvested')
-            : undefined}>
-          <select value={source}
-            onChange={e => setSource(e.target.value)}
-            className={`${INPUT} bg-white`}>
-            {allowNone && <option value="none">{t('cmp.source.noneOption')}</option>}
-            <option value="cash">{t('tx.cash')}</option>
-            {matchingCards.map(c => (
-              <option key={c.id} value={String(c.id)}>
-                {c.name} •••• {c.lastFourDigits} · {moneyFull(c.currentBalance, c.currency)}
-              </option>
-            ))}
-          </select>
-        </Field>
+        <CompactDate id="pb-date" label={t('tx.date')} value={date} onChange={setDate} />
 
-        {/* Category — auto-picked for this bucket; change it if you'd rather file it elsewhere. */}
-        {categories.length > 0 && !sourceNone && (
-          <Field id="pb-category" label={t('tx.category')}>
-            <select value={categoryId ?? ''}
-              onChange={e => setCategoryId(e.target.value ? Number(e.target.value) : undefined)}
-              className={`${INPUT} bg-white`}>
-              {categories.map(c => <option key={c.id} value={c.id}>{categoryName(c)}</option>)}
-            </select>
-          </Field>
-        )}
-
-        {/* Bucket-specific fields */}
         {bucket === 'DONATION' && (
-          <>
-            <Field id="pb-recipient" label={t('cmp.payBucket.recipient')}>
-              <input value={recipientName} disabled={anonymous}
-                onChange={e => setRecipientName(e.target.value)}
-                className={`${INPUT} ${anonymous ? 'opacity-60' : ''}`}
-                placeholder={anonymous ? t('cmp.payBucket.anonymous') : t('cmp.payBucket.recipientPlaceholder')} />
-            </Field>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={anonymous}
-                onChange={e => setAnonymous(e.target.checked)}
-                className="w-4 h-4 rounded text-indigo-600 focus-ring" />
-              <span className="text-sm text-slate-600">{t('cmp.payBucket.anonymous')}</span>
-            </label>
-          </>
-        )}
-
-        {/* A new emergency fund needs a name. */}
-        {creatingNew && bucket === 'EMERGENCY' && (
-          <Field id="pb-fund-name" required label={t('cmp.payBucket.fundNameRequired')}>
-            <input required value={name} onChange={e => setName(e.target.value)}
-              className={INPUT} placeholder={t('cmp.payBucket.fundNamePlaceholder')} />
+          <Field id="pb-recipient" label={optional(t('cmp.payBucket.recipient'))}>
+            <input value={recipientName}
+              onChange={e => setRecipientName(e.target.value)}
+              className={CONTROL}
+              placeholder={t('cmp.payBucket.recipientPlaceholder')} />
           </Field>
         )}
 
-        {creatingNew && bucket === 'INVESTMENTS' && (
-          <>
-            <Field id="pb-inv-name" required label={t('cmp.payBucket.nameRequired')}>
-              <input required value={name} onChange={e => setName(e.target.value)}
-                className={INPUT} placeholder={t('cmp.payBucket.investmentNamePlaceholder')} />
-            </Field>
-            <Field id="pb-inv-type" required label={t('cmp.payBucket.typeRequired')}>
-              <select value={invType} onChange={e => setInvType(e.target.value as InvestmentType)}
-                className={`${INPUT} bg-white`}>
-                {INVESTMENT_TYPES.map(it =>
-                  <option key={it} value={it}>{INVESTMENT_TYPE_LABELS[it]}</option>
-                )}
-              </select>
-            </Field>
-            <Field id="pb-broker" label={t('cmp.payBucket.brokerPlatform')}>
-              <input value={broker} onChange={e => setBroker(e.target.value)} className={INPUT} />
-            </Field>
-          </>
-        )}
-
-        <Field id="pb-description" label={t('tx.description')}>
-          <textarea rows={2} value={description}
-            onChange={e => setDescription(e.target.value)}
-            className={`${INPUT} resize-none`} />
+        <Field id="pb-note" label={optional(t('tx.note'))}>
+          <input value={note} onChange={e => setNote(e.target.value)} className={CONTROL} />
         </Field>
 
-        {error && <p role="alert" className="text-sm text-expense">{error}</p>}
+        {/* A new investment's extra details — rarely needed, so folded away. */}
+        {creatingNew && bucket === 'INVESTMENTS' && (
+          <div>
+            <button type="button" onClick={() => setMoreOpen(v => !v)} aria-expanded={moreOpen}
+              className="focus-ring flex min-h-[44px] items-center gap-1.5 rounded-control text-sm font-medium text-slate-600 hover:text-slate-900">
+              {moreOpen ? <ChevronUp className="h-4 w-4" aria-hidden="true" /> : <ChevronDown className="h-4 w-4" aria-hidden="true" />}
+              {t('ui.more')}
+            </button>
+            {moreOpen && (
+              <div className="mt-2 space-y-4">
+                <Field id="pb-inv-type" label={t('tx.type')}>
+                  <select value={invType} onChange={e => setInvType(e.target.value as InvestmentType)} className={CONTROL}>
+                    {INVESTMENT_TYPES.map(it => <option key={it} value={it}>{INVESTMENT_TYPE_LABELS[it]}</option>)}
+                  </select>
+                </Field>
+                <Field id="pb-broker" label={optional(t('cmp.payBucket.brokerPlatform'))}>
+                  <input value={broker} onChange={e => setBroker(e.target.value)} className={CONTROL} />
+                </Field>
+              </div>
+            )}
+          </div>
+        )}
+
+        {error && !invalid && <p role="alert" className="text-sm text-expense">{error}</p>}
       </form>
     </Modal>
   )

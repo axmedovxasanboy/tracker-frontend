@@ -1,26 +1,28 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowDownRight, ArrowUpRight, ChevronRight, Info, Plus, Wallet, X } from 'lucide-react'
+import { ArrowDownRight, ArrowUpRight, Plus, X } from 'lucide-react'
 import { Sheet } from '../ui/Sheet'
 import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
+import { AmountInput } from '../ui/AmountInput'
 import { useLang } from '../../i18n/LanguageContext'
-import { AllocationPreviewPanel } from './AllocationPreviewPanel'
 import { useToast } from '../../context/ToastContext'
 import { useConfirm } from '../../context/ConfirmContext'
-import { overviewApi } from '../../api/overview'
 import { categoriesApi } from '../../api/categories'
-import { cardsApi } from '../../api/cards'
 import { transactionsApi } from '../../api/transactions'
 import { financeApi } from '../../api/finance'
-import { cashBalancesApi } from '../../api/cashBalances'
 import { extractErrorMessage } from '../../api/client'
 import { moneyFull, todayLocal } from '../../utils/format'
-import { AmountInput } from '../ui/AmountInput'
+import { BalanceTransferModal } from './BalanceTransferModal'
+import { CashPart, ChipGroup, CompactDate, CONTROL, CONTROL_INVALID, LINK_BLOCK, useOptional } from './formParts'
+import { WalletPicker } from './WalletPicker'
+import {
+  readLastChild, readLastType, rememberChild, rememberType, rememberWallet, useWalletChoice, useWallets,
+} from './wallets'
+import type { WalletValue } from './wallets'
 import type {
-  CardResponse, Category, CategoryRequest, CategoryType,
-  Currency, InvestmentType, LoanTakenResponse, Transaction, TransactionRequest,
-  TransactionSubType, TransactionType,
+  Category, CategoryType, Currency, DonationResponse, InvestmentResponse, InvestmentType,
+  LoanGivenResponse, Transaction, TransactionRequest, TransactionSubType, TransactionType,
 } from '../../types'
 
 interface Props {
@@ -29,65 +31,60 @@ interface Props {
   onSaved: () => void
   transaction?: Transaction | null
   defaultCurrency: Currency
-  /** Pre-select this card for a NEW transaction (e.g. the per-card quick-add on the Cards page). */
-  preselectCardId?: number
-  /** Open a NEW transaction already set to Income or Expense (the +Income / +Expense shortcuts). */
+  /**
+   * Open a NEW transaction already set to Income or Expense. Without it the form starts on the
+   * direction the owner used last, else Expense.
+   */
   presetType?: TransactionType
 }
 
 const NEEDS_COUNTERPARTY = new Set<TransactionSubType>([
-  'LOAN_RECEIVED','LOAN_RETURNED_TO_ME','LOAN_GIVEN','LOAN_REPAYMENT','BANK_LOAN_PAYMENT','INVESTMENT','DONATION',
+  'LOAN_RECEIVED', 'LOAN_RETURNED_TO_ME', 'LOAN_GIVEN', 'LOAN_REPAYMENT', 'BANK_LOAN_PAYMENT', 'INVESTMENT', 'DONATION',
 ])
-const AUTO_CREATES = new Set<TransactionSubType>(['LOAN_RECEIVED','LOAN_GIVEN','INVESTMENT','DONATION'])
-const COLORS = ['#10b981','#f43f5e','#6366f1','#f59e0b','#06b6d4','#a855f7','#ec4899','#14b8a6','#3b82f6','#ef4444','#8b5cf6','#6b7280']
+/** Kinds whose counterparty is taken from the linked record, so the form never asks for it. */
+const COUNTERPARTY_OPTIONAL = new Set<TransactionSubType>(['LOAN_REPAYMENT', 'LOAN_RETURNED_TO_ME'])
+/** A new category gets the next of these, so the owner is not asked to pick a colour. */
+const COLORS = ['#10b981', '#f43f5e', '#6366f1', '#f59e0b', '#06b6d4', '#a855f7', '#ec4899', '#14b8a6', '#3b82f6', '#ef4444', '#8b5cf6', '#6b7280']
 
 /** The submit button lives in the sheet's sticky footer, outside the <form> it submits. */
 const FORM_ID = 'tx-form'
 
-const CONTROL = 'w-full h-11 rounded-control border border-slate-200 bg-white px-3 text-sm text-slate-900 focus-ring'
-const CONTROL_INVALID = 'w-full h-11 rounded-control border border-expense bg-white px-3 text-sm text-slate-900 focus-ring'
-const LINK = 'focus-ring cursor-pointer rounded-chip font-semibold text-indigo-600 hover:underline'
 /**
- * One option row inside the three suggestion popovers (borrowers, banks, descriptions).
- * Those containers clip — overflow-y-auto for the scrolling one, overflow-hidden to keep the
- * 12px corners on the others — and a plain .focus-ring paints its ring outside the button's
- * border box, so on a full-width row the left and right bands were cut away entirely and only
- * the top and bottom survived (the first and last row losing even one of those). ring-inset
- * moves the indicator inside the row where nothing can clip it, and ring-offset-0 drops the
- * second, white band that inset would otherwise paint white-on-white over the row itself.
- * Same fix, same reason as ListRow inside its overflow-hidden ListTile.
+ * One option row inside the suggestion popovers. ring-inset keeps the focus indicator inside a
+ * row that its clipping container would otherwise cut in half (same fix as ListRow).
  */
 const POPOVER_ITEM =
   'focus-ring focus-visible:ring-inset focus-visible:ring-offset-0 w-full cursor-pointer px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 hover:text-indigo-700'
 
 const SEGMENT_TRACK = 'flex gap-1 rounded-control bg-slate-100 p-1'
 const SEGMENT_BASE =
-  'flex-1 min-h-[44px] md:min-h-[38px] rounded-chip px-2 text-xs font-semibold transition-colors focus-ring cursor-pointer disabled:cursor-not-allowed disabled:opacity-40'
-/**
- * The direction control is the form's first decision, so it is a size up from the other
- * segmented controls: 44px at every width (never the 38px desktop shrink) and body-sized text,
- * because everything below it — which categories exist, what the amount means — reads off it.
- */
+  'flex-1 min-h-[44px] md:min-h-[38px] rounded-chip px-2 text-xs font-semibold transition-colors focus-ring cursor-pointer'
 const DIRECTION_OPTION =
-  'flex flex-1 min-h-[44px] items-center justify-center gap-2 rounded-chip px-3 text-sm font-semibold transition-colors focus-ring cursor-pointer'
+  'flex flex-1 min-h-[44px] items-center justify-center gap-2 rounded-chip px-3 text-sm font-semibold transition-colors focus-ring cursor-pointer disabled:cursor-default'
 
 /** Which control the current validation message belongs to, so it renders beside it. */
 type ErrorField =
-  | 'category' | 'subCategory' | 'investment' | 'card' | 'amount' | 'split'
-  | 'description' | 'counterparty' | 'date'
+  | 'amount' | 'split' | 'category' | 'subCategory' | 'investment' | 'counterparty'
+  | 'card' | 'description' | 'date'
 
-const defaultForm = (currency: Currency): TransactionRequest => ({
-  type: 'EXPENSE', amount: 0, currency, description: '',
-  transactionDate: todayLocal(), subType: 'REGULAR_EXPENSE',
-})
-
-/** First day of next month as YYYY-MM (for the "payment starts" month picker default). */
-function nextMonthStr() {
-  const d = new Date()
-  d.setDate(1)
-  d.setMonth(d.getMonth() + 1)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+/** Where focus goes when a check fails — the control the message is about. */
+const FIELD_TARGET: Record<ErrorField, string> = {
+  amount: '#tx-amount',
+  split: '#tx-cash-part',
+  category: '#tx-category',
+  subCategory: '#tx-subcategory [role="radio"]',
+  investment: '#tx-investment',
+  counterparty: '#tx-counterparty',
+  card: '#tx-wallet [role="radio"]',
+  description: '#tx-description',
+  date: '#tx-date',
 }
+
+const defaultForm = (currency: Currency, type: TransactionType = 'EXPENSE'): TransactionRequest => ({
+  type, amount: 0, currency, description: '',
+  transactionDate: todayLocal(),
+  subType: type === 'INCOME' ? 'REGULAR_INCOME' : 'REGULAR_EXPENSE',
+})
 
 /**
  * The borrower a LOAN_GIVEN top-up was booked against. The wire response carries it
@@ -100,27 +97,63 @@ function linkedLoanGivenId(tx: Transaction): number | undefined {
   return (tx as Transaction & { loanGivenId?: number | null }).loanGivenId ?? undefined
 }
 
+/**
+ * The donation a DONATION row mirrors. The wire carries no link between the two, so it is found the
+ * way they were made: the same day, amount and currency — and, when two match, the title the server
+ * gave the row. Null when it cannot be told apart.
+ */
+function linkedDonation(tx: Transaction, donations: DonationResponse[]): DonationResponse | null {
+  const same = donations.filter(d => d.donationDate === tx.transactionDate
+    && d.currency === tx.currency && Math.abs(d.amount - tx.amount) < 0.005)
+  if (same.length <= 1) return same[0] ?? null
+  const title = (tx.description ?? '').trim()
+  const named = same.filter(d =>
+    (d.description?.trim() || `Donation to ${d.anonymous ? 'Anonymous' : d.recipientName}`) === title)
+  return named.length === 1 ? named[0] : null
+}
 
-export function TransactionModal({ open, onClose, onSaved, transaction, defaultCurrency, preselectCardId, presetType }: Props) {
-  // Aliased to `translate` — this file uses `t` as a local loop variable in a couple of
-  // .map() callbacks (income/expense toggle, investment-type select), so binding the hook
-  // itself to `t` would shadow those and silently break translation calls made inside them.
+/**
+ * The wallet an existing row was paid from, and whether it was split. A row with no card, or on a
+ * legacy CASH-type card, is cash; a card row that also carries a cash part is a split.
+ */
+function walletOf(tx: Transaction): { wallet: WalletValue; split: boolean; cash: number } {
+  const cash = tx.cashAmount ?? 0
+  const cardPortion = (tx.amount ?? 0) - cash
+  const realCard = !!tx.card && tx.card.type !== 'CASH'
+  if (realCard && cardPortion > 0) return { wallet: tx.card!.id, split: cash > 0, cash }
+  return { wallet: 'cash', split: false, cash: 0 }
+}
+
+/**
+ * Add (or edit) one money movement: Income/Expense, the amount, a category, the wallet, an
+ * optional note, the date — in that order, amount focused.
+ *
+ * Everything that can be remembered is: the direction used last, the wallet used last (else the
+ * card holding the most), the sub-category last used under each category. A new entry is always a
+ * plain income or expense; the special kinds are recorded where they live — linked from the foot
+ * of the form — and an existing special row keeps its kind, shown read-only.
+ */
+export function TransactionModal({ open, onClose, onSaved, transaction, defaultCurrency, presetType }: Props) {
+  // Aliased to `translate` — this file uses `t` as a local loop variable in a couple of callbacks.
   const { t: translate, categoryName } = useLang()
   const navigate = useNavigate()
   const confirm = useConfirm()
-  const INCOME_SUB_TYPES: { value: TransactionSubType; label: string }[] = [
-    { value: 'REGULAR_INCOME',      label: translate('cmp.txModal.subType.regularIncome') },
-    { value: 'LOAN_RECEIVED',       label: translate('cmp.txModal.subType.loanReceived') },
-    { value: 'LOAN_RETURNED_TO_ME', label: translate('cmp.txModal.subType.loanReturnedToMe') },
-  ]
-  const EXPENSE_SUB_TYPES: { value: TransactionSubType; label: string }[] = [
-    { value: 'REGULAR_EXPENSE',   label: translate('cmp.txModal.subType.regularExpense') },
-    { value: 'LOAN_GIVEN',        label: translate('cmp.txModal.subType.loanGiven') },
-    { value: 'LOAN_REPAYMENT',    label: translate('cmp.txModal.subType.loanRepayment') },
-    { value: 'BANK_LOAN_PAYMENT', label: translate('cmp.txModal.subType.bankLoanPayment') },
-    { value: 'INVESTMENT',        label: translate('cmp.txModal.subType.investment') },
-    { value: 'DONATION',          label: translate('cmp.txModal.subType.donation') },
-  ]
+  const optional = useOptional()
+  const { showSuccess } = useToast()
+
+  const SUB_TYPE_LABEL: Partial<Record<TransactionSubType, string>> = {
+    LOAN_RECEIVED: translate('cmp.txModal.subType.loanReceived'),
+    LOAN_RETURNED_TO_ME: translate('cmp.txModal.subType.loanReturnedToMe'),
+    LOAN_GIVEN: translate('cmp.txModal.subType.loanGiven'),
+    LOAN_REPAYMENT: translate('cmp.txModal.subType.loanRepayment'),
+    BANK_LOAN_PAYMENT: translate('cmp.txModal.subType.bankLoanPayment'),
+    INVESTMENT: translate('cmp.txModal.subType.investment'),
+    DONATION: translate('cmp.txModal.subType.donation'),
+    EMERGENCY_CONTRIBUTION: translate('cmp.bucket.emergency'),
+    EVERYDAY_SPENDING: translate('home.form.everydaySpending'),
+    TRANSFER_IN: translate('shell.wallets.moveMoney'),
+    TRANSFER_OUT: translate('shell.wallets.moveMoney'),
+  }
   const COUNTERPARTY_LABEL: Partial<Record<TransactionSubType, string>> = {
     LOAN_RECEIVED: translate('cmp.txModal.counterparty.lenderName'),
     LOAN_RETURNED_TO_ME: translate('cmp.txModal.counterparty.debtorName'),
@@ -137,199 +170,129 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
     GOLD: translate('cmp.investmentType.gold'),
     OTHER: translate('cmp.investmentType.other'),
   }
-  const { showSuccess } = useToast()
+
   const [form, setForm] = useState<TransactionRequest>(defaultForm(defaultCurrency))
   const [rootCategories, setRootCategories] = useState<Category[]>([])
   const [subCategories, setSubCategories] = useState<Category[]>([])
   const [selectedRootId, setSelectedRootId] = useState<number | undefined>()
-  const [cards, setCards] = useState<CardResponse[]>([])
+  /** The root whose sub-categories are wanted — a late response for another root is dropped. */
+  const wantedRootRef = useRef<number | undefined>()
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isBalanceError, setIsBalanceError] = useState(false)
   const [validationError, setValidationError] = useState<string | null>(null)
   const [invalidField, setInvalidField] = useState<ErrorField | null>(null)
+  // Set by the owner's own edits only — auto-picks write to `form` without it.
+  const [touched, setTouched] = useState(false)
+  const [categoryCleared, setCategoryCleared] = useState(false)
 
-  // Autocomplete
+  // "What for" autocomplete
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
   const suggestTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // New root category inline form
+  // New category / sub-category, inline — a name is all they ask.
   const [showNewCat, setShowNewCat] = useState(false)
-  const [newCat, setNewCat] = useState<CategoryRequest>({ name: '', type: 'EXPENSE', color: '#6366f1' })
+  const [newCatName, setNewCatName] = useState('')
   const [creatingCat, setCreatingCat] = useState(false)
-  // The server's refusal, kept beside the inline form that caused it: the dialog's own error strip
-  // sits at the very bottom of a long scrolling form, where a user looking at the category picker
-  // would never see it.
   const [newCatError, setNewCatError] = useState<string | null>(null)
-
-  // New sub-category inline form (inside sub-category column)
   const [showNewSubCat, setShowNewSubCat] = useState(false)
-  const [newSubCat, setNewSubCat] = useState<CategoryRequest>({ name: '', type: 'EXPENSE', color: '#6366f1' })
+  const [newSubCatName, setNewSubCatName] = useState('')
   const [creatingSubCat, setCreatingSubCat] = useState(false)
   const [newSubCatError, setNewSubCatError] = useState<string | null>(null)
 
-  // Existing investments — used when sub-type === INVESTMENT
-  const [existingInvestments, setExistingInvestments] = useState<import('../../types').InvestmentResponse[]>([])
+  // Edit-only: the records a special row is linked to.
+  const [existingInvestments, setExistingInvestments] = useState<InvestmentResponse[]>([])
   const [selectedInvestmentId, setSelectedInvestmentId] = useState<number | undefined>()
   const [investmentMode, setInvestmentMode] = useState<'existing' | 'new'>('existing')
-
-  // Active borrowed loans — used when sub-type === LOAN_REPAYMENT
-  const [activeLoans, setActiveLoans] = useState<LoanTakenResponse[]>([])
-  const [selectedLoanId, setSelectedLoanId] = useState<number | undefined>()
-
-  // Active lent loans — used when sub-type === LOAN_RETURNED_TO_ME
-  const [activeLoansGiven, setActiveLoansGiven] = useState<import('../../types').LoanGivenResponse[]>([])
-  const [selectedLoanGivenId, setSelectedLoanGivenId] = useState<number | undefined>()
-
-  // Payment method: card-only, cash-only (no card touched), or both (split). The default is
-  // decided once the card list lands — "Card only" cannot be satisfied with an empty wallet.
-  type PaymentMode = 'CARD' | 'CASH' | 'BOTH'
-  const [paymentMode, setPaymentMode] = useState<PaymentMode>('CARD')
-  const [cashInput, setCashInput] = useState<number>(0)
-  const [cardInput, setCardInput] = useState<number>(0)
-
-  // Bank-name autocomplete (BANK_LOAN_PAYMENT counterparty).
+  const [allLoansGiven, setAllLoansGiven] = useState<LoanGivenResponse[]>([])
+  const [donation, setDonation] = useState<DonationResponse | null>(null)
   const [bankOptions, setBankOptions] = useState<string[]>([])
-  // All loans given (settled ones included) — the borrower picker for LOAN_GIVEN.
-  const [allLoansGiven, setAllLoansGiven] = useState<import('../../types').LoanGivenResponse[]>([])
   const [showBorrowerPopover, setShowBorrowerPopover] = useState(false)
   const [showBankPopover, setShowBankPopover] = useState(false)
 
-  // Current cash balance for the active currency — shown next to the Cash source.
-  const [cashBalance, setCashBalance] = useState<number | null>(null)
+  // Split: the amount above is the total, this is the cash part, the card carries the rest.
+  const [split, setSplit] = useState(false)
+  const [cashPart, setCashPart] = useState(0)
 
-  // A failed card fetch and an empty wallet used to be the same screen. They are not the same
-  // problem, and only one of them is fixed by adding a card.
-  const [cardsLoaded, setCardsLoaded] = useState(false)
-  const [cardsFailed, setCardsFailed] = useState(false)
+  // Move money opens on top of this form; saving it closes both.
+  const [transferOpen, setTransferOpen] = useState(false)
 
-  // Everything past Amount / Category / Card / Date lives behind this.
-  // Set by the user's own edits only. The auto-select effects write to `form` on their own, so
-  // comparing snapshots would report an untouched form as dirty the moment a category loads.
-  const [touched, setTouched] = useState(false)
-  // The root the sub-type picked on the user's behalf, and whether they asked to override it.
-  const [autoPickedRootId, setAutoPickedRootId] = useState<number | undefined>()
-  const [categoryUnlocked, setCategoryUnlocked] = useState(false)
-  // Why the category picker went empty. The two causes read differently to the user — "income
-  // and expense keep different lists" is not "this special type files itself" — and now that the
-  // direction control is the first thing in the form, the first one is what they will hit.
-  const [categoryCleared, setCategoryCleared] = useState<'direction' | 'subType' | null>(null)
-  const directionRef = useRef<HTMLButtonElement>(null)
   const amountRef = useRef<HTMLInputElement>(null)
-
-  // The three suggestion popovers close on focus leaving them. Tabbing from the input INTO the
-  // list is focus leaving the input, so the handler has to know where focus landed — hence a ref
-  // per list rather than a blanket timer that would unmount the options under a keyboard user.
   const borrowerPopoverRef = useRef<HTMLDivElement>(null)
   const bankPopoverRef = useRef<HTMLDivElement>(null)
   const suggestionsPopoverRef = useRef<HTMLDivElement>(null)
   const counterpartyRef = useRef<HTMLInputElement>(null)
   const descriptionRef = useRef<HTMLInputElement>(null)
-  // Raised while focus is being handed back to a field after its list was dismissed, so the
-  // field's own onFocus does not reopen the list the user just closed.
+  // Raised while focus is handed back to a field after its list closed, so the field's own onFocus
+  // does not reopen the list the owner just dismissed.
   const restoringFocus = useRef(false)
-
-  // A counterparty name is never stored on a transaction, so an edit reopens with the field
-  // blank. It is filled once from the linked finance record; the flag keeps a later re-render
-  // from typing it back in after the user has deliberately cleared it.
+  // The counterparty of an edited row is filled once from its linked record — never again, so a
+  // name the owner cleared on purpose is not typed back in.
   const counterpartySeeded = useRef(false)
+  // Likewise once: an anonymous donation's "Anonymous" sub-category (see below).
+  const anonymitySeeded = useRef(false)
+  // The row the dialog is open on, so a late answer for another one is dropped.
+  const openTxId = useRef<number | null>(null)
 
-  // CASH cards are legacy — they're migrated to CashBalance on the backend on next boot.
-  // Defensively exclude them so "Card only" never offers a cash wallet. Filtered on
-  // `defaultCurrency`, which is also what the payload is saved with, rather than on
-  // `form.currency`, which a loan or investment selection can overwrite mid-form.
-  const usableCards = cards.filter(c => c.currency === defaultCurrency && c.type !== 'CASH')
-  const noUsableCards = cardsLoaded && !cardsFailed && usableCards.length === 0
+  const incoming = form.type === 'INCOME'
+  // An existing special row keeps its direction as well as its kind: turning borrowed money into an
+  // expense, say, would unpick the loan record behind it.
+  const directionLocked = !!transaction && transaction.subType != null
+    && transaction.subType !== 'REGULAR_INCOME' && transaction.subType !== 'REGULAR_EXPENSE'
+  const wallets = useWallets(open, defaultCurrency)
+  const fixedWallet: WalletValue = transaction ? walletOf(transaction).wallet : null
+  const walletChoice = useWalletChoice({
+    open,
+    cards: wallets.cards,
+    cashBalance: wallets.cashBalance,
+    loaded: wallets.loaded,
+    amount: form.amount || 0,
+    incoming,
+    allowCash: !split,
+    fixed: fixedWallet,
+  })
+  const wallet = walletChoice.value
 
-  // The two sub-types that bypass transactionsApi.create for an atomic finance update. That
-  // endpoint books the whole amount to one source, so a split there is silently discarded.
-  const atomicLoanPath = !transaction && (
-    (form.subType === 'LOAN_REPAYMENT' && !!selectedLoanId) ||
-    (form.subType === 'LOAN_RETURNED_TO_ME' && !!selectedLoanGivenId)
-  )
-
-  const loadCards = useCallback(() => {
-    setCardsFailed(false)
-    return cardsApi.getAll()
-      .then(r => { setCards(r.data); setCardsFailed(false) })
-      .catch(() => setCardsFailed(true))
-      .finally(() => setCardsLoaded(true))
-  }, [])
-
-  const loadRoots = useCallback(async (type?: CategoryType, subType?: TransactionSubType) => {
+  const loadRoots = useCallback(async (type: CategoryType, subType?: TransactionSubType) => {
     const res = await categoriesApi.getAll(type, subType).catch(() => null)
     if (res) setRootCategories(res.data)
   }, [])
 
-  const loadSubs = useCallback(async (parentId: number) => {
+  /**
+   * The children of `parentId`. On a new entry the one last used under this parent is picked for
+   * the owner (or the only one there is), so the required sub-category is usually already filled.
+   */
+  const loadSubs = useCallback(async (parentId: number, preselect: boolean) => {
+    wantedRootRef.current = parentId
     const res = await categoriesApi.getSubCategories(parentId).catch(() => null)
-    setSubCategories(res?.data ?? [])
+    if (wantedRootRef.current !== parentId) return
+    const subs = res?.data ?? []
+    setSubCategories(subs)
+    if (!preselect || subs.length === 0) return
+    const last = readLastChild(parentId)
+    const pick = subs.find(s => s.id === last) ?? (subs.length === 1 ? subs[0] : undefined)
+    if (pick) setForm(prev => (prev.categoryId === parentId ? { ...prev, categoryId: pick.id } : prev))
   }, [])
 
-  // Auto-select the root category for the chosen sub-type. An exact `applicableSubType` match
-  // wins over a bare count, so adding a second Donation category does not break the pick.
   useEffect(() => {
-    if (transaction || selectedRootId) return
-    const exact = rootCategories.filter(c => c.applicableSubType === form.subType)
-    const only = exact.length === 1 ? exact[0] : rootCategories.length === 1 ? rootCategories[0] : undefined
-    if (!only) return
-    setSelectedRootId(only.id)
-    setForm(prev => ({ ...prev, categoryId: only.id }))
-    setAutoPickedRootId(only.id)
-    setCategoryCleared(null)
-    loadSubs(only.id)
-  }, [rootCategories, transaction, selectedRootId, form.subType, loadSubs])
-
-  // Auto-select the sub-category when exactly one exists under the chosen root.
-  useEffect(() => {
-    if (transaction) return
-    if (subCategories.length === 1 && selectedRootId && form.categoryId === selectedRootId) {
-      setForm(prev => ({ ...prev, categoryId: subCategories[0].id }))
-    }
-  }, [subCategories, transaction, selectedRootId, form.categoryId])
-
-  // Sync form.amount + form.cashAmount + form.cardId whenever the user moves Cash/Card/Both.
-  // Cash is no longer a "wallet card" — cash transactions are stored with cardId=null and the
-  // running total is tracked by the CashBalance entity per currency.
-  useEffect(() => {
-    if (paymentMode === 'CARD') {
-      setForm(prev => ({ ...prev, cashAmount: 0 }))
-    } else if (paymentMode === 'CASH') {
-      // Pure cash → no card link. Backend tracks via CashBalance for the currency.
-      setForm(prev => ({ ...prev, cashAmount: prev.amount, cardId: undefined }))
-    } else {
-      // BOTH — form.amount = cashInput + cardInput; form.cashAmount = cashInput.
-      const total = (cashInput || 0) + (cardInput || 0)
-      setForm(prev => ({ ...prev, amount: total, cashAmount: cashInput || 0 }))
-    }
-  }, [paymentMode, cashInput, cardInput])
-
-  useEffect(() => {
-    if (!open) return
-    setCardsLoaded(false)
-    loadCards()
-    // Load existing investments for INVESTMENT sub-type
-    financeApi.getInvestments().then(r => setExistingInvestments(r.data)).catch(() => {})
-    setSelectedInvestmentId(undefined)
+    if (!open) { setTransferOpen(false); return }
+    setError(null); setIsBalanceError(false); setValidationError(null); setInvalidField(null)
+    setShowNewCat(false); setNewCatName(''); setNewCatError(null)
+    setShowNewSubCat(false); setNewSubCatName(''); setNewSubCatError(null)
+    setSuggestions([]); setShowSuggestions(false)
+    setShowBankPopover(false); setShowBorrowerPopover(false); setBankOptions([])
+    setTouched(false); setCategoryCleared(false)
+    counterpartySeeded.current = false
+    anonymitySeeded.current = false
+    openTxId.current = transaction?.id ?? null
+    setDonation(null)
     setInvestmentMode('existing')
-    // Load active borrowed loans for LOAN_REPAYMENT
-    financeApi.getLoansTaken()
-      .then(r => setActiveLoans(r.data.filter(l => l.status !== 'PAID')))
-      .catch(() => {})
-    setSelectedLoanId(undefined)
-    // Load active lent loans for LOAN_RETURNED_TO_ME
-    financeApi.getLoansGiven()
-      .then(r => {
-        setActiveLoansGiven(r.data.filter(l => l.status !== 'PAID'))
-        setAllLoansGiven(r.data)
-      })
-      .catch(() => {})
-    setSelectedLoanGivenId(undefined)
+
     if (transaction) {
       const f: TransactionRequest = {
         type: transaction.type, amount: transaction.amount,
-        // Currency follows the global selector — no per-tx override anymore.
+        // Currency follows the app — no per-row override any more.
         currency: defaultCurrency,
         categoryId: transaction.category?.id, cardId: transaction.card?.id,
         description: transaction.description ?? '',
@@ -344,100 +307,57 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
         loanGivenId: linkedLoanGivenId(transaction),
       }
       setForm(f)
+      const w = walletOf(transaction)
+      setSplit(w.split); setCashPart(w.cash)
       const cat = transaction.category
       const rootId = cat?.parentId ?? cat?.id
       setSelectedRootId(rootId)
+      setSubCategories([])
       loadRoots(transaction.type === 'INCOME' ? 'INCOME' : 'EXPENSE', f.subType)
-      if (rootId) loadSubs(rootId)
-    } else {
-      // New transaction — optionally pre-target a card (per-card quick-add on the Cards page).
-      const type = presetType ?? 'EXPENSE'
-      const subType = type === 'INCOME' ? 'REGULAR_INCOME' : 'REGULAR_EXPENSE'
-      setForm({ ...defaultForm(defaultCurrency), type, subType, cardId: preselectCardId })
-      setSelectedRootId(undefined); setSubCategories([])
-      loadRoots(type, subType)
-    }
-    setError(null); setIsBalanceError(false); setValidationError(null); setInvalidField(null)
-    setShowNewCat(false); setShowNewSubCat(false); setSuggestions([])
-    // The picker mirrors form.investmentId, so an edited contribution reopens on the fund it
-    // was booked against instead of on an empty "Select an investment".
-    setSelectedInvestmentId(transaction?.investmentId ?? undefined)
-    setInvestmentMode('existing')
-    counterpartySeeded.current = false
-    setTouched(false)
-    setAutoPickedRootId(undefined); setCategoryUnlocked(false); setCategoryCleared(null)
-    // Initialize payment mode from the transaction being edited, else default to Card-only —
-    // which the effect below downgrades to Cash if the wallet turns out to be empty.
-    // A transaction with cardId=null represents pure cash (tracked via CashBalance).
-    // Legacy: a transaction linked to an old CASH-type card also represents cash —
-    // detected and surfaced as CASH mode so the round-trip stays honest.
-    if (transaction) {
-      const cash = transaction.cashAmount ?? 0
-      const cardPortion = (transaction.amount ?? 0) - cash
-      const legacyCashWalletAttached = transaction.card?.type === 'CASH'
-      const isCashless = !transaction.card
-      if (cash > 0 && cardPortion > 0) {
-        setPaymentMode('BOTH')
-        setCashInput(cash); setCardInput(cardPortion)
-      } else if (cash > 0 && cardPortion === 0) {
-        setPaymentMode('CASH'); setCashInput(cash); setCardInput(0)
-      } else if (legacyCashWalletAttached || isCashless) {
-        setPaymentMode('CASH'); setCashInput(transaction.amount ?? 0); setCardInput(0)
-      } else {
-        setPaymentMode('CARD'); setCashInput(0); setCardInput(transaction.amount ?? 0)
+      if (rootId) loadSubs(rootId, false)
+      setSelectedInvestmentId(transaction.investmentId ?? undefined)
+      // The linked records, only for the kinds that show them.
+      if (transaction.subType === 'INVESTMENT') {
+        financeApi.getInvestments().then(r => setExistingInvestments(r.data)).catch(() => {})
+      }
+      if (transaction.subType === 'LOAN_GIVEN') {
+        financeApi.getLoansGiven().then(r => setAllLoansGiven(r.data)).catch(() => {})
+      }
+      if (transaction.subType === 'BANK_LOAN_PAYMENT') {
+        financeApi.getBankNameSuggestions('').then(r => setBankOptions(r.data)).catch(() => {})
+      }
+      if (transaction.subType === 'DONATION') {
+        financeApi.getDonations()
+          .then(r => { if (openTxId.current === transaction.id) setDonation(linkedDonation(transaction, r.data)) })
+          .catch(() => {})
       }
     } else {
-      setPaymentMode('CARD'); setCashInput(0); setCardInput(0)
+      const type = presetType ?? readLastType() ?? 'EXPENSE'
+      setForm(defaultForm(defaultCurrency, type))
+      setSplit(false); setCashPart(0)
+      setSelectedRootId(undefined); setSubCategories([]); wantedRootRef.current = undefined
+      setSelectedInvestmentId(undefined)
+      loadRoots(type, type === 'INCOME' ? 'REGULAR_INCOME' : 'REGULAR_EXPENSE')
     }
-    setBankOptions([]); setShowBankPopover(false); setShowBorrowerPopover(false)
     return () => { if (suggestTimer.current) clearTimeout(suggestTimer.current) }
-  }, [open, transaction, defaultCurrency, preselectCardId, presetType, loadCards, loadRoots, loadSubs])
+  }, [open, transaction, defaultCurrency, presetType, loadRoots, loadSubs])
 
-  // With no card there is nothing "Card only" can point at, and the message that would explain
-  // it is a native validation bubble the user never sees. Gated on `cardsLoaded` so an empty
-  // list mid-flight cannot flip the mode, on `!cardsFailed` so a fetch that failed is not read
-  // as an empty wallet, and on `!transaction` so editing a card transaction is never silently
-  // rewritten to cash.
+  // A new entry whose kind has exactly one root category gets it picked for it — the same rule the
+  // form always had: an exact `applicableSubType` match wins over a bare count.
   useEffect(() => {
-    if (!open || transaction || !cardsLoaded || cardsFailed) return
-    if (usableCards.length === 0) setPaymentMode('CASH')
-  }, [open, transaction, cardsLoaded, cardsFailed, usableCards.length])
+    if (!open || transaction || selectedRootId) return
+    const exact = rootCategories.filter(c => c.applicableSubType === form.subType)
+    const only = exact.length === 1 ? exact[0] : rootCategories.length === 1 ? rootCategories[0] : undefined
+    if (!only) return
+    setSelectedRootId(only.id)
+    setForm(prev => ({ ...prev, categoryId: only.id }))
+    loadSubs(only.id, true)
+  }, [open, rootCategories, transaction, selectedRootId, form.subType, loadSubs])
 
-  // The atomic repayment endpoints book the whole amount to one source, so fold a split back
-  // into a single figure rather than letting the user type one that will be thrown away.
-  useEffect(() => {
-    if (!atomicLoanPath || paymentMode !== 'BOTH') return
-    const total = (cashInput || 0) + (cardInput || 0)
-    if (usableCards.length === 0) { setPaymentMode('CASH'); setCashInput(total); setCardInput(0) }
-    else { setPaymentMode('CARD'); setCardInput(total); setCashInput(0) }
-  }, [atomicLoanPath, paymentMode, usableCards.length, cashInput, cardInput])
-
-  // Load bank suggestions for BANK_LOAN_PAYMENT sub-type.
-  useEffect(() => {
-    if (!open || form.subType !== 'BANK_LOAN_PAYMENT') { setBankOptions([]); return }
-    financeApi.getBankNameSuggestions('')
-      .then(r => setBankOptions(r.data))
-      .catch(() => {})
-  }, [open, form.subType])
-
-  // Current cash balance for the active currency.
-  useEffect(() => {
-    if (!open) { setCashBalance(null); return }
-    cashBalancesApi.getAll()
-      .then(r => {
-        const match = r.data.find(b => b.currency === defaultCurrency)
-        setCashBalance(match ? match.currentBalance : null)
-      })
-      .catch(() => setCashBalance(null))
-  }, [open, defaultCurrency])
-
-  // A counterparty name is only ever used to name the finance record a transaction creates, so
-  // it is not stored on the transaction and an edit reopens with the field empty — while the
-  // form still demands it. Retyping it is what breaks a top-up: the borrower input drops
-  // `loanGivenId` the moment the text stops matching the linked borrower, so by the time the
-  // name is typed out again the link is gone and the save opens a duplicate record. Fill it
-  // from the linked record instead, once, and without marking the form dirty — the user did
-  // not type this, so it must not turn a Cancel into a "discard changes?" prompt.
+  // A counterparty name is never stored on a transaction, so an edit reopens with the field blank
+  // while the form still demands it — and retyping it is what breaks a top-up (the borrower input
+  // drops `loanGivenId` the moment the text stops matching). Fill it from the linked record, once,
+  // without marking the form dirty.
   useEffect(() => {
     if (!open || !transaction || counterpartySeeded.current) return
     const sub = transaction.subType
@@ -445,25 +365,35 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
       ? allLoansGiven.find(l => l.id === linkedLoanGivenId(transaction))?.debtorName
       : sub === 'INVESTMENT'
         ? existingInvestments.find(i => i.id === transaction.investmentId)?.name
-        : undefined
+        : sub === 'DONATION' && donation && !donation.anonymous
+          ? donation.recipientName
+          : undefined
     if (!name) return
     counterpartySeeded.current = true
     setForm(prev => ({
       ...prev,
       counterpartyName: prev.counterpartyName || name,
-      // A description that is nothing but this name was written by the server — a row saved with
-      // Description blank is named after its counterparty. Left in the field it would stop
-      // following the name, so moving the loan to another borrower would keep the old one's name
-      // as its title. Cleared, it previews as "will be saved as …" and tracks the field above.
+      // A description that is nothing but this name was written by the server; left in the field
+      // it would stop following the name.
       description: (prev.description ?? '').trim() === name.trim() ? '' : prev.description,
     }))
-  }, [open, transaction, allLoansGiven, existingInvestments])
+  }, [open, transaction, allLoansGiven, existingInvestments, donation])
 
-  /**
-   * Give focus back to the input a suggestion list belongs to. Closing the list unmounts the
-   * option the keyboard user activated it from, and focus would otherwise fall to <body> — the
-   * next Tab then restarts at the top of the dialog.
-   */
+  // The short Donate form files a donation on its root category, and the server reads anonymity off
+  // the category on every edit — so an anonymous one saved from here as it stands would come back
+  // named. Its root's "Anonymous" sub-category (the server keeps one under Donation) carries the
+  // anonymity instead: picked for the owner, in plain sight, without marking the form dirty.
+  useEffect(() => {
+    if (!open || !transaction || transaction.subType !== 'DONATION' || anonymitySeeded.current) return
+    const cat = transaction.category
+    if (!donation?.anonymous || !cat || cat.anonymizes) return
+    if (cat.id !== selectedRootId) { anonymitySeeded.current = true; return }
+    const anon = subCategories.find(c => c.anonymizes)
+    if (!anon) return
+    anonymitySeeded.current = true
+    setForm(prev => (prev.categoryId === selectedRootId ? { ...prev, categoryId: anon.id } : prev))
+  }, [open, transaction, donation, subCategories, selectedRootId])
+
   const returnFocus = (el: HTMLInputElement | null) => {
     restoringFocus.current = true
     el?.focus()
@@ -475,237 +405,192 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
     setForm(prev => ({ ...prev, [key]: value }))
   }
 
-  /** Point the message at its own control. Every control is on screen, in a fixed order, so
-      there is no longer a panel to open first. */
+  const clearFieldError = (field: ErrorField) => {
+    if (invalidField === field) { setInvalidField(null); setValidationError(null) }
+  }
+
   const fail = (field: ErrorField, message: string) => {
     setInvalidField(field)
     setValidationError(message)
+    // After the render that marks it invalid, so the control is focused in its error state.
+    setTimeout(() => {
+      const el = document.querySelector<HTMLElement>(FIELD_TARGET[field])
+      el?.focus()
+    }, 0)
   }
   const fieldError = (field: ErrorField) => (invalidField === field ? validationError ?? undefined : undefined)
 
-  const switchType = (t: TransactionType) => {
-    // Pressing the direction that is already on used to clear the category, the sub-type and the
-    // Loan/Investment link all the same. That was survivable while this control was buried in
-    // More options; as the form's first control it takes initial focus, so one stray Space would
-    // empty a form the user had already filled in.
-    if (t === form.type) return
-    const st: TransactionSubType = t === 'INCOME' ? 'REGULAR_INCOME' : 'REGULAR_EXPENSE'
-    setTouched(true)
-    setForm(prev => ({ ...prev, type: t, subType: st, categoryId: undefined, investmentId: undefined, loanGivenId: undefined,
+  const switchType = (next: TransactionType) => {
+    // Pressing the direction already on used to clear the category all the same.
+    if (next === form.type || directionLocked) return
+    const st: TransactionSubType = next === 'INCOME' ? 'REGULAR_INCOME' : 'REGULAR_EXPENSE'
+    // Switching direction is not typing: on a new entry it does not make the form "dirty".
+    if (transaction) setTouched(true)
+    setForm(prev => ({
+      ...prev, type: next, subType: st, categoryId: undefined, investmentId: undefined, loanGivenId: undefined,
       currency: defaultCurrency,
-      // The amount itself survives the switch, so the cash half of it has to survive too:
-      // zeroing it here left a cash transaction posting cashAmount 0 with no card attached,
-      // and the effect that owns this field only re-runs when the payment method changes.
-      cashAmount: paymentMode === 'CASH' ? prev.amount : paymentMode === 'BOTH' ? (cashInput || 0) : 0 }))
-    // The categories a type offers are not the categories the other type offers, so the pick has
-    // to go — but silently dropping it is what makes it feel like a bug. Say so instead.
-    setCategoryCleared(selectedRootId ? 'direction' : null)
-    setSelectedRootId(undefined); setSubCategories([])
-    setAutoPickedRootId(undefined); setCategoryUnlocked(false)
+    }))
+    // Income and expense keep different category lists, so the pick has to go — and say so.
+    setCategoryCleared(!!selectedRootId)
+    setSelectedRootId(undefined); setSubCategories([]); wantedRootRef.current = undefined
     setShowNewCat(false); setShowNewSubCat(false)
     setSelectedInvestmentId(undefined); setInvestmentMode('existing')
-    loadRoots(t === 'INCOME' ? 'INCOME' : 'EXPENSE', st)
-    setNewCat(p => ({ ...p, type: t === 'INCOME' ? 'INCOME' : 'EXPENSE' }))
-    // Direction first, amount next: with nothing typed yet, hand the caret straight to the field
-    // the user was heading for. Once a figure exists, the control that needs attention is the
-    // category this switch just cleared, so focus stays put rather than landing on a field that
-    // is already right. Never in BOTH mode, where the total is derived and the input read-only.
-    if (!transaction && paymentMode !== 'BOTH' && (form.amount || 0) === 0) amountRef.current?.focus()
+    if (invalidField === 'category' || invalidField === 'subCategory') { setInvalidField(null); setValidationError(null) }
+    loadRoots(next === 'INCOME' ? 'INCOME' : 'EXPENSE', st)
   }
 
   const selectRoot = (id: number | undefined) => {
     setTouched(true)
     setSelectedRootId(id); setSubCategories([])
     setForm(prev => ({ ...prev, categoryId: id }))
-    setCategoryCleared(null)
+    setCategoryCleared(false)
     setShowNewSubCat(false)
-    if (id) loadSubs(id)
+    clearFieldError('category'); clearFieldError('subCategory')
+    if (id) loadSubs(id, !transaction)
+    else wantedRootRef.current = undefined
   }
 
   const handleDescriptionChange = (value: string) => {
     set('description', value)
+    clearFieldError('description')
     if (suggestTimer.current) clearTimeout(suggestTimer.current)
     if (value.length < 2) { setSuggestions([]); return }
     suggestTimer.current = setTimeout(async () => {
-      // Scope suggestions to the selected (sub-)category so recommendations
-      // are per-sub-category, not per-parent.
+      // Scoped to the chosen (sub-)category, so the suggestions are that category's own.
       const res = await transactionsApi.getSuggestions(value, form.categoryId).catch(() => null)
       if (res) { setSuggestions(res.data.filter(s => s !== value)); setShowSuggestions(true) }
     }, 250)
   }
 
-  // Create new ROOT category
   const handleCreateCategory = async () => {
-    if (!newCat.name.trim()) return
+    const name = newCatName.trim()
+    if (!name) return
     setCreatingCat(true); setNewCatError(null)
     try {
-      const res = await categoriesApi.create({ ...newCat, applicableSubType: form.subType })
-      const created = res.data
-      setRootCategories(prev => [...prev, created])
-      selectRoot(created.id)
-      setShowNewCat(false)
-      setNewCat({ name: '', type: form.type === 'INCOME' ? 'INCOME' : 'EXPENSE', color: '#6366f1' })
+      const res = await categoriesApi.create({
+        name,
+        type: form.type === 'INCOME' ? 'INCOME' : 'EXPENSE',
+        color: COLORS[rootCategories.length % COLORS.length],
+        applicableSubType: form.subType,
+      })
+      setRootCategories(prev => [...prev, res.data])
+      selectRoot(res.data.id)
+      setShowNewCat(false); setNewCatName('')
     } catch (err: unknown) {
       setNewCatError(extractErrorMessage(err))
     } finally { setCreatingCat(false) }
   }
 
-  // Create new SUB-CATEGORY under the selected root
   const handleCreateSubCategory = async () => {
-    if (!newSubCat.name.trim() || !selectedRootId) return
+    const name = newSubCatName.trim()
+    if (!name || !selectedRootId) return
     setCreatingSubCat(true); setNewSubCatError(null)
     try {
+      const parent = rootCategories.find(c => c.id === selectedRootId)
       const res = await categoriesApi.create({
-        ...newSubCat,
+        name,
         parentId: selectedRootId,
         applicableSubType: form.subType,
         type: form.type === 'INCOME' ? 'INCOME' : 'EXPENSE',
+        color: parent?.color ?? COLORS[subCategories.length % COLORS.length],
       })
-      const created = res.data
-      setSubCategories(prev => [...prev, created])
-      set('categoryId', created.id)
-      setShowNewSubCat(false)
-      setNewSubCat({ name: '', type: form.type === 'INCOME' ? 'INCOME' : 'EXPENSE', color: '#6366f1' })
+      setSubCategories(prev => [...prev, res.data])
+      set('categoryId', res.data.id)
+      clearFieldError('subCategory')
+      setShowNewSubCat(false); setNewSubCatName('')
     } catch (err: unknown) {
       setNewSubCatError(extractErrorMessage(err))
     } finally { setCreatingSubCat(false) }
   }
 
+  const selectedRoot = rootCategories.find(c => c.id === selectedRootId)
+  const hasSubs = subCategories.length > 0
+  const activeCategory: Category | undefined =
+    (form.categoryId && form.categoryId !== selectedRootId
+      ? subCategories.find(c => c.id === form.categoryId)
+      : undefined)
+    ?? selectedRoot
+
+  // The category may name its own label for "What for" and make it required; the default is
+  // optional — left blank, the server names the row after the category.
+  const descriptionLabel = activeCategory?.descriptionLabel || translate('cmp.txModal.label.whatFor')
+  const descriptionRequired = activeCategory?.descriptionRequired ?? false
+
+  const isAnonymousDonation =
+    form.subType === 'DONATION' &&
+    (Boolean(activeCategory?.anonymizes) ||
+      (activeCategory?.parentId != null && Boolean(selectedRoot?.anonymizes)))
+  const hasCounterparty = !!form.subType && NEEDS_COUNTERPARTY.has(form.subType)
+  const isSpecialSubType = !!form.subType
+    && form.subType !== 'REGULAR_INCOME' && form.subType !== 'REGULAR_EXPENSE'
+  // A row already saved on its root category (the quick Pay and Add forms file it there) may stay
+  // there: an edit does not have to pick a sub-category it never had.
+  const keepsRoot = !!transaction && selectedRootId != null
+    && transaction.category?.id === selectedRootId && form.categoryId === selectedRootId
+
+  const total = form.amount || 0
+  const cardPart = total - (cashPart || 0)
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // The form is noValidate: the browser's bubble is untranslated, and it fires on controls the
-    // disclosure may have unmounted. Everything `required` below is checked here instead.
-    if (!selectedRootId) {
-      fail('category', translate('cmp.txModal.err.selectCategory'))
-      return
+    // In the order the fields appear, so the first message is about the first thing to fix.
+    if (total <= 0) { fail('amount', translate('cmp.err.amountPositive')); return }
+    if (split && ((cashPart || 0) <= 0 || cardPart <= 0)) {
+      fail('split', translate('home.form.err.splitParts')); return
     }
-    // Sub-category mandatory when available
-    if (subCategories.length > 0 && form.categoryId === selectedRootId) {
-      fail('subCategory', translate('cmp.txModal.err.selectSubCategory'))
-      return
+    if (!selectedRootId) { fail('category', translate('cmp.txModal.err.selectCategory')); return }
+    if (hasSubs && form.categoryId === selectedRootId && !keepsRoot) {
+      fail('subCategory', translate('cmp.txModal.err.selectSubCategory')); return
     }
-    // Investment validation
     if (form.subType === 'INVESTMENT' && investmentMode === 'existing' && !selectedInvestmentId && existingInvestments.length > 0) {
-      fail('investment', translate('cmp.txModal.err.selectInvestment'))
-      return
+      fail('investment', translate('cmp.txModal.err.selectInvestment')); return
     }
-    // Payment mode-driven validation
-    if (paymentMode === 'CARD' && !form.cardId) {
-      fail('card', translate('cmp.txModal.err.selectCardOrSwitch')); return
+    if (hasCounterparty && !isAnonymousDonation && !COUNTERPARTY_OPTIONAL.has(form.subType!)
+        && !(form.counterpartyName && form.counterpartyName.trim())) {
+      fail('counterparty', translate('cmp.txModal.err.fieldRequired', {
+        field: COUNTERPARTY_LABEL[form.subType!] ?? translate('cmp.txModal.counterparty.generic'),
+      })); return
     }
-    if (paymentMode === 'BOTH') {
-      if (!form.cardId) { fail('card', translate('cmp.err.pickCardForPortion')); return }
-      if ((cashInput || 0) <= 0 || (cardInput || 0) <= 0) {
-        fail('split', translate('cmp.txModal.err.enterBothAmounts')); return
-      }
+    if (wallet == null || wallet === 'none' || (split && typeof wallet !== 'number')) {
+      fail('card', translate(split ? 'cmp.err.pickCardForPortion' : 'cmp.txModal.err.selectCardOrSwitch')); return
     }
-    if ((form.amount || 0) <= 0) {
-      fail('amount', translate('cmp.err.amountPositive')); return
-    }
-    // Was covered by the browser's own `required` until this form went noValidate; the date can
-    // still be cleared by hand, and an empty one would post a transaction with no month.
-    if (!form.transactionDate) {
-      fail('date', translate('cmp.txModal.err.selectDate')); return
-    }
-
-    // Description requirement honours the selected category's flag.
     if (descriptionRequired && !(form.description && form.description.trim())) {
       fail('description', translate('cmp.txModal.err.fillInField', { field: descriptionLabel.toLowerCase() })); return
     }
-
-    // Counterparty rules — skip when the donation is anonymous (auto-filled below).
-    if (form.subType && NEEDS_COUNTERPARTY.has(form.subType)
-        && !isAnonymousDonation
-        && !(['LOAN_REPAYMENT','LOAN_RETURNED_TO_ME'] as TransactionSubType[]).includes(form.subType)
-        && !(form.counterpartyName && form.counterpartyName.trim())) {
-      fail('counterparty', translate('cmp.txModal.err.fieldRequired', { field: COUNTERPARTY_LABEL[form.subType] ?? translate('cmp.txModal.counterparty.generic') })); return
-    }
+    if (!form.transactionDate) { fail('date', translate('cmp.txModal.err.selectDate')); return }
 
     setValidationError(null); setInvalidField(null)
     setSaving(true); setError(null); setIsBalanceError(false)
+    const onCard = typeof wallet === 'number'
+    const payload: TransactionRequest = {
+      ...form,
+      amount: total,
+      currency: defaultCurrency,
+      description: form.description ?? '',
+      cardId: onCard ? wallet : undefined,
+      // The cash part of the amount: all of it for cash, none for a card, the typed part for a split.
+      cashAmount: split ? (cashPart || 0) : onCard ? 0 : total,
+      // Only for a kind that has a counterparty — neither a direction switch nor a kind change
+      // clears this field, and a stray name would become the title of a plain expense.
+      counterpartyName: !hasCounterparty ? undefined
+        : isAnonymousDonation ? 'Anonymous' : form.counterpartyName,
+      // Edit only ever keeps the stored month; the payment-start month is set in Loans & bills.
+      paymentStartDate: undefined,
+      loanGivenId: form.subType === 'LOAN_GIVEN' ? form.loanGivenId : undefined,
+    }
     try {
-      // LOAN_REPAYMENT with a specific loan → atomic repay (expense + loan update)
-      if (form.subType === 'LOAN_REPAYMENT' && selectedLoanId && !transaction) {
-        const loan = activeLoans.find(l => l.id === selectedLoanId)
-        if (loan && form.amount > loan.remainingAmount) {
-          setError(translate('cmp.txModal.err.cannotExceedRemainingBalance', { amount: moneyFull(loan.remainingAmount, loan.currency as Currency) }))
-          setSaving(false); return
-        }
-        await financeApi.repayLoanTaken(selectedLoanId, {
-          amount: form.amount, paymentDate: form.transactionDate,
-          cardId: form.cardId, categoryId: form.categoryId,
-        })
-      // LOAN_RETURNED_TO_ME with a specific lent loan → atomic mark-returned (income + loan update)
-      } else if (form.subType === 'LOAN_RETURNED_TO_ME' && selectedLoanGivenId && !transaction) {
-        const loan = activeLoansGiven.find(l => l.id === selectedLoanGivenId)
-        if (loan && form.amount > loan.pendingAmount) {
-          setError(translate('cmp.txModal.err.cannotExceedPendingAmount', { amount: moneyFull(loan.pendingAmount, loan.currency as Currency) }))
-          setSaving(false); return
-        }
-        await financeApi.markLoanGivenReturned(selectedLoanGivenId, {
-          amount: form.amount, paymentDate: form.transactionDate,
-          cardId: form.cardId, categoryId: form.categoryId,
-        })
+      if (transaction) {
+        await transactionsApi.update(transaction.id, payload)
       } else {
-        // Effective payload — auto-fill anonymous donor name so backend never sees blank.
-        // For BOTH mode the useEffect already populated form.amount = cash+card and
-        // form.cashAmount = cashInput, so we save a single row.
-        const payload: TransactionRequest = {
-          ...form,
-          currency: defaultCurrency,
-          description: form.description ?? '',
-          // Only for a sub-type that has a counterparty. Neither the direction nor the sub-type
-          // switch clears this field, and the backend now names a row left without a description
-          // after its counterparty — so a borrower typed for a Lent entry and then abandoned
-          // would otherwise become the title of the regular expense it turned into.
-          counterpartyName: !hasCounterparty ? undefined
-            : isAnonymousDonation ? 'Anonymous' : form.counterpartyName,
-          // Payment-start only applies to a NEW Loan Received (drives when the borrowed
-          // money starts counting toward the tier). On edit we leave it untouched so the
-          // backend keeps the stored month; edit it from Finance → Loan Borrowed.
-          paymentStartDate: form.subType === 'LOAN_RECEIVED' && !transaction
-            ? (form.paymentStartDate || `${nextMonthStr()}-01`)
-            : undefined,
-          loanGivenId: form.subType === 'LOAN_GIVEN' ? form.loanGivenId : undefined,
-        }
-        if (transaction) {
-          await transactionsApi.update(transaction.id, payload)
-        } else {
-          await transactionsApi.create(payload)
-        }
+        await transactionsApi.create(payload)
+        // The next entry starts where this one ended.
+        rememberType(form.type)
+        rememberWallet(wallet)
+        if (activeCategory?.parentId != null) rememberChild(activeCategory.parentId, activeCategory.id)
       }
       // The raw onClose, not the guard: the work is saved, so there is nothing left to discard.
       onSaved(); onClose()
       showSuccess(transaction ? translate('tx.updated') : translate('tx.saved'))
-      // Post-save summary: re-ask the server where the bucket now stands. Sent with
-      // amount 0 because the transaction is already recorded — passing the amount again
-      // would count it twice.
-      if (!transaction && form.subType) {
-        overviewApi.previewAllocation(
-          {
-            subType: form.subType,
-            amount: 0,
-            transactionDate: form.transactionDate,
-            investmentId: form.subType === 'INVESTMENT' && investmentMode === 'existing'
-              ? selectedInvestmentId : undefined,
-          },
-          form.currency,
-        )
-          .then(r => {
-            const p = r.data
-            if (!p.applicable || !p.label) return
-            showSuccess(p.bucketNotRecommended
-              ? translate('cmp.txModal.recordedUnder', { label: p.label })
-              : translate('cmp.txModal.progressSummary', {
-                  label: p.label,
-                  before: moneyFull(Number(p.paidBefore ?? 0), form.currency),
-                  recommended: moneyFull(Number(p.recommended ?? 0), form.currency),
-                }) + (Number(p.remainingAfter ?? 0) > 0
-                    ? translate('cmp.txModal.progressRemaining', { amount: moneyFull(Number(p.remainingAfter), form.currency) })
-                    : translate('cmp.txModal.progressFullyCovered')))
-          })
-          .catch(() => { /* summary is a nicety; never surface its failure */ })
-      }
     } catch (err: unknown) {
       const msg = extractErrorMessage(err)
       setError(msg)
@@ -713,9 +598,16 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
     } finally { setSaving(false) }
   }
 
-  const isDirty = touched && !saving
+  // A new entry asks before throwing away only what the owner actually typed — an amount or some
+  // text. Flipping Income/Expense or tapping a category is one tap to redo, not work to protect.
+  const typedSomething = transaction
+    ? touched
+    : total > 0 || (cashPart || 0) > 0
+      || !!form.description?.trim() || !!form.counterpartyName?.trim()
+      || (showNewCat && !!newCatName.trim()) || (showNewSubCat && !!newSubCatName.trim())
+  const isDirty = typedSomething && !saving
 
-  /** Shared by Cancel and by the "add a card" escape hatch — both leave the form behind. */
+  /** Shared by Cancel and the links out of the form — each leaves the form behind. */
   const confirmDiscard = async () => {
     if (!isDirty) return true
     return confirm({
@@ -731,123 +623,70 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
     if (await confirmDiscard()) onClose()
   }
 
-  /** Leave the form for another screen, asking first when there is typed input to lose. */
   const goTo = async (path: string) => {
     if (!(await confirmDiscard())) return
     onClose()
     navigate(path)
   }
-  const goToWallets = () => goTo('/cards')
 
-  const subTypes = form.type === 'INCOME' ? INCOME_SUB_TYPES : EXPENSE_SUB_TYPES
-  const subTypeLabel = subTypes.find(s => s.value === form.subType)?.label
-  const selectedCard = cards.find(c => c.id === form.cardId)
-  const hasSubs = subCategories.length > 0
-  // selected sub-category value for the select
-  const subCatValue = (form.categoryId && form.categoryId !== selectedRootId) ? form.categoryId : ''
+  const toggleSplit = (next: boolean) => {
+    setTouched(true)
+    setSplit(next)
+    clearFieldError('split')
+    if (next) {
+      // A split needs a card beside the cash; start on the one already chosen, else the fullest.
+      if (typeof wallet !== 'number' && wallets.cards.length > 0) {
+        const best = wallets.cards.reduce((a, c) => ((c.currentBalance ?? 0) > (a.currentBalance ?? 0) ? c : a))
+        walletChoice.choose(best.id)
+      }
+    } else {
+      setCashPart(0)
+    }
+  }
 
-  const selectedRoot = rootCategories.find(c => c.id === selectedRootId)
-
-  // The most-specific selected category — sub-category if picked, else root.
-  const activeCategory: Category | undefined =
-    (form.categoryId && form.categoryId !== selectedRootId
-      ? subCategories.find(c => c.id === form.categoryId)
-      : undefined)
-    ?? selectedRoot
-
-  // Description label / requiredness flow from the most-specific selected category. The default
-  // is now OPTIONAL: the column is null on every seeded category, the wire contract has no
-  // @NotBlank, and the backend already synthesises "Parent — Category" when it is blank — so
-  // `?? true` was making the user type a sentence the server was about to overwrite anyway.
-  const descriptionLabel = activeCategory?.descriptionLabel || translate('cmp.txModal.label.whatFor')
-  const descriptionRequired = activeCategory?.descriptionRequired ?? false
-
-  // Donation anonymity — the selected sub-category (or its parent) declares it.
-  const isAnonymousDonation =
-    form.subType === 'DONATION' &&
-    (Boolean(activeCategory?.anonymizes) ||
-      (activeCategory?.parentId != null && Boolean(selectedRoot?.anonymizes)))
-
-  const hasCounterparty = !!form.subType && NEEDS_COUNTERPARTY.has(form.subType)
-
-  // What the server will write when Description is left blank — shown so the default is a
-  // choice rather than a surprise. It mirrors TransactionService.resolveDescription: the
-  // counterparty first (the borrower, the lender, the recipient), then the category. An anonymous
-  // donation keeps the category, because "Anonymous" as a title says less than the category does.
-  const counterpartyTitle = hasCounterparty && !isAnonymousDonation
-    ? (form.counterpartyName ?? '').trim()
-    : ''
-  const derivedDescription = counterpartyTitle && counterpartyTitle.toLowerCase() !== 'anonymous'
-    ? counterpartyTitle
-    : !activeCategory
-      ? ''
-      : selectedRoot && activeCategory.id !== selectedRoot.id
-        ? `${categoryName(selectedRoot)} — ${categoryName(activeCategory)}`
-        : categoryName(activeCategory)
-
-  // Total when the user types separate cash + card amounts under "Both".
-  const splitTotal = (cashInput || 0) + (cardInput || 0)
-
-  const isSpecialSubType = !!form.subType
-    && form.subType !== 'REGULAR_INCOME' && form.subType !== 'REGULAR_EXPENSE'
-
-  // The category the sub-type chose on the user's behalf. Locked so the two facts stay one fact,
-  // with a way out — a Donation may legitimately be filed under a custom child category.
-  const categoryLocked = isSpecialSubType && !!selectedRootId
-    && selectedRootId === autoPickedRootId && !categoryUnlocked && !showNewCat
-  const lockedRoot = categoryLocked ? selectedRoot : undefined
-
-  const cardOptions = usableCards.map(c => (
-    <option key={c.id} value={c.id}>
-      {c.name} •••• {c.lastFourDigits} · {moneyFull(c.currentBalance ?? 0, c.currency)}
-    </option>
-  ))
+  const subTypeLabel = form.subType ? SUB_TYPE_LABEL[form.subType] : undefined
+  const walletLabel = translate(incoming ? 'home.wallet.to' : 'home.wallet.from')
 
   return (
-    <Sheet
-      open={open}
-      onClose={onClose}
-      title={transaction ? translate('tx.editTransaction') : translate('tx.newTransaction')}
-      dirty={isDirty}
-      // The direction decides which categories exist and what the amount means, so it is both
-      // the first control and the one focus lands on.
-      initialFocusRef={directionRef}
-      footer={
-        <div className="flex gap-3">
-          <Button label={translate('action.cancel')} onClick={handleCancel} className="flex-1" />
-          <Button
-            type="submit"
-            form={FORM_ID}
-            variant="primary"
-            loading={saving}
-            className="flex-1"
-            label={saving
-              ? translate('action.saving')
-              : transaction ? translate('action.update') : translate('action.create')}
-          />
-        </div>
-      }
-    >
-      <form id={FORM_ID} noValidate onSubmit={handleSubmit} className="space-y-4">
+    <>
+      <Sheet
+        open={open}
+        onClose={onClose}
+        title={transaction ? translate('action.edit') : translate('action.add')}
+        dirty={isDirty}
+        // The amount is what the owner came to type, so the form opens with the caret in it.
+        initialFocusRef={amountRef}
+        footer={
+          <div className="flex gap-3">
+            <Button label={translate('action.cancel')} onClick={handleCancel} className="flex-1" />
+            <Button
+              type="submit"
+              form={FORM_ID}
+              variant="primary"
+              loading={saving}
+              className="flex-1"
+              label={saving
+                ? translate('action.saving')
+                : transaction ? translate('action.save') : translate('action.add')}
+            />
+          </div>
+        }
+      >
+        <form id={FORM_ID} noValidate onSubmit={handleSubmit} className="space-y-4">
 
-        {/* 1. Money in or out. First, and focused on open: it decides which categories are
-            offered and what the figure below it means, so typing an amount before choosing is
-            typing into a field whose meaning has not been settled yet. */}
-        <div>
+          {/* 1. Money in or out. */}
           <div className={SEGMENT_TRACK} role="group" aria-label={translate('cmp.txModal.label.direction')}>
             {(['INCOME', 'EXPENSE'] as TransactionType[]).map(t => (
               <button
                 key={t}
                 type="button"
-                // The ref follows the selected option, so the sheet opens on the choice in force
-                // rather than always on Income.
-                ref={form.type === t ? directionRef : undefined}
                 onClick={() => switchType(t)}
                 aria-pressed={form.type === t}
+                disabled={directionLocked}
                 className={`${DIRECTION_OPTION} ${
                   form.type === t
                     ? t === 'INCOME' ? 'bg-income text-white' : 'bg-expense text-white'
-                    : 'text-slate-600 hover:text-slate-900'}`}>
+                    : directionLocked ? 'text-slate-400' : 'text-slate-600 hover:text-slate-900'}`}>
                 {t === 'INCOME'
                   ? <ArrowUpRight className="h-4 w-4 shrink-0" aria-hidden="true" />
                   : <ArrowDownRight className="h-4 w-4 shrink-0" aria-hidden="true" />}
@@ -855,887 +694,449 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
               </button>
             ))}
           </div>
-        </div>
 
-        {/* 2. The kind of record, when there is one to name. A new entry is always a plain
-            expense or a plain income — the special kinds are recorded where they live (see the
-            links at the foot of this form), so nothing here asks the owner to classify money
-            before they can type it. An existing special row shows its kind read-only: changing it
-            would mean creating or unpicking a loan / donation / holding behind the scenes. */}
-        {transaction && isSpecialSubType && subTypeLabel && (
-          <div className="flex items-center justify-between gap-3 rounded-control border border-hairline px-3 py-2">
-            <span className="text-xs font-medium text-slate-600">{translate('tx.type')}</span>
-            <span className="text-sm font-semibold text-slate-900">{subTypeLabel}</span>
-          </div>
-        )}
+          {/* An existing special row keeps its kind; changing it would mean creating or unpicking
+              a loan / donation / holding behind the scenes. */}
+          {transaction && isSpecialSubType && subTypeLabel && (
+            <div className="flex items-center justify-between gap-3 rounded-control border border-hairline px-3 py-2">
+              <span className="text-xs font-medium text-slate-600">{translate('tx.type')}</span>
+              <span className="text-sm font-semibold text-slate-900">{subTypeLabel}</span>
+            </div>
+          )}
 
-        {/* 3. Category + Sub-category — same row once a root is picked. */}
-        <div>
-          {showNewCat && (
-            <>
+          {/* 2. Amount — autofocused. */}
+          <Field id="tx-amount" label={translate('cmp.txModal.label.amount')} required error={fieldError('amount')}>
+            <AmountInput
+              ref={amountRef}
+              value={total}
+              currency={defaultCurrency}
+              onChange={v => { set('amount', v); clearFieldError('amount') }}
+              className={`w-full rounded-control border bg-white py-3 pl-3 pr-20 text-stat tabular-nums text-slate-900 focus-ring ${
+                fieldError('amount') || isBalanceError ? 'border-expense' : 'border-slate-200'
+              }`}
+              placeholder="0"
+              suffix={defaultCurrency}
+              suffixClassName="text-sm"
+            />
+          </Field>
+
+          {/* 3. Category, then its sub-categories as chips. */}
+          {showNewCat ? (
+            <div>
               <div className="mb-1 flex items-center justify-between">
                 <label htmlFor="tx-new-category" className="text-xs font-medium text-slate-600">
                   {translate('cmp.txModal.newCategory')}
                 </label>
                 <Button
-                  size="sm"
-                  variant="ghost"
-                  icon={<X className="h-3.5 w-3.5" />}
+                  size="sm" variant="ghost" iconOnly
+                  icon={<X className="h-3.5 w-3.5" aria-hidden="true" />}
                   label={translate('action.cancel')}
-                  onClick={() => { setShowNewCat(false); setNewCatError(null) }}
+                  onClick={() => { setShowNewCat(false); setNewCatName(''); setNewCatError(null) }}
                 />
               </div>
-              <div className="space-y-2 rounded-control border border-slate-200 p-3">
-                <input id="tx-new-category" value={newCat.name}
-                  onChange={e => setNewCat(p => ({ ...p, name: e.target.value }))}
+              <div className="flex gap-2">
+                <input
+                  id="tx-new-category" value={newCatName} autoFocus
+                  onChange={e => setNewCatName(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleCreateCategory() } }}
                   className={CONTROL}
-                  placeholder={translate('cmp.txModal.categoryNamePlaceholder')} autoFocus />
-                <div className="flex items-center gap-2">
-                  {/* The dot stays 24px; the button around it is a 44px touch target. Growing
-                      the dot itself would turn twelve swatches into a wall of colour. */}
-                  <div className="flex flex-1 flex-wrap">
-                    {COLORS.map(c => (
-                      <button key={c} type="button" onClick={() => setNewCat(p => ({ ...p, color: c }))}
-                        aria-label={c}
-                        title={c}
-                        aria-pressed={newCat.color === c}
-                        className="focus-ring group flex h-11 w-11 cursor-pointer items-center justify-center rounded-control">
-                        <span aria-hidden="true"
-                          className={`h-6 w-6 rounded-full transition-transform ${
-                            newCat.color === c ? 'scale-110 ring-2 ring-slate-400 ring-offset-1' : 'group-hover:scale-110'}`}
-                          style={{ backgroundColor: c }} />
-                      </button>
-                    ))}
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    icon={<Plus className="h-3.5 w-3.5" />}
-                    loading={creatingCat}
-                    disabled={!newCat.name.trim()}
-                    onClick={handleCreateCategory}
-                    label={translate('action.create')}
-                  />
-                </div>
-                {newCatError && (
-                  <p role="alert" className="text-sm text-expense">{newCatError}</p>
-                )}
+                  placeholder={translate('cmp.txModal.categoryNamePlaceholder')}
+                />
+                <Button
+                  variant="secondary" icon={<Plus className="h-4 w-4" aria-hidden="true" />}
+                  loading={creatingCat} disabled={!newCatName.trim()}
+                  onClick={handleCreateCategory} label={translate('action.add')}
+                  className="shrink-0"
+                />
               </div>
-            </>
+              {newCatError && <p role="alert" className="mt-1 text-xs text-expense">{newCatError}</p>}
+            </div>
+          ) : (
+            <div>
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <label htmlFor="tx-category" className="text-xs font-medium text-slate-600">
+                  {translate('cmp.txModal.label.category')}
+                  <span aria-hidden="true" className="text-expense"> *</span>
+                </label>
+                <Button
+                  size="sm" variant="ghost"
+                  icon={<Plus className="h-3.5 w-3.5" aria-hidden="true" />}
+                  label={translate('cmp.txModal.new')}
+                  onClick={() => { setShowNewCat(true); setNewCatError(null) }}
+                />
+              </div>
+              <select
+                id="tx-category"
+                aria-required="true"
+                aria-invalid={fieldError('category') ? true : undefined}
+                aria-describedby={fieldError('category') ? 'tx-category-error' : undefined}
+                value={selectedRootId ?? ''}
+                onChange={e => selectRoot(e.target.value ? Number(e.target.value) : undefined)}
+                className={fieldError('category') ? CONTROL_INVALID : CONTROL}>
+                <option value="">{translate('home.form.pickCategory')}</option>
+                {rootCategories.map(c => <option key={c.id} value={c.id}>{categoryName(c)}</option>)}
+              </select>
+              {fieldError('category') && (
+                <p id="tx-category-error" role="alert" className="mt-1 text-xs text-expense">{fieldError('category')}</p>
+              )}
+              {!fieldError('category') && categoryCleared && !selectedRootId && (
+                <p className="mt-1 text-xs text-slate-500">{translate('cmp.txModal.categoryClearedByDirection')}</p>
+              )}
+            </div>
           )}
 
-          {!showNewCat && (
-            <div className={`grid gap-2 ${selectedRootId ? 'grid-cols-2' : 'grid-cols-1'}`}>
-              {/* Category column */}
-              <div className="min-w-0">
-                <div className="mb-1 flex items-center justify-between gap-2">
-                  {/* A <label> only while the select it names exists; the locked state has a chip
-                      instead of a control, and htmlFor pointing at nothing is worse than a span. */}
-                  {lockedRoot ? (
-                    <span className="text-xs font-medium text-slate-600">
-                      {translate('cmp.txModal.label.category')}
-                      <span aria-hidden="true" className="text-expense"> *</span>
-                    </span>
-                  ) : (
-                    <label htmlFor="tx-category" className="text-xs font-medium text-slate-600">
-                      {translate('cmp.txModal.label.category')}
-                      <span aria-hidden="true" className="text-expense"> *</span>
-                    </label>
-                  )}
-                  {!categoryLocked && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      icon={<Plus className="h-3.5 w-3.5" />}
-                      label={translate('cmp.txModal.new')}
-                      onClick={() => { setShowNewCat(true); setNewCatError(null) }}
-                    />
-                  )}
+          {selectedRootId && hasSubs && !showNewCat && (
+            showNewSubCat ? (
+              <div>
+                <div className="mb-1 flex items-center justify-between">
+                  <label htmlFor="tx-new-subcategory" className="text-xs font-medium text-slate-600">
+                    {translate('cmp.txModal.label.subCategory')}
+                  </label>
+                  <Button
+                    size="sm" variant="ghost" iconOnly
+                    icon={<X className="h-3.5 w-3.5" aria-hidden="true" />}
+                    label={translate('action.cancel')}
+                    onClick={() => { setShowNewSubCat(false); setNewSubCatName(''); setNewSubCatError(null) }}
+                  />
                 </div>
-
-                {lockedRoot ? (
-                  <>
-                    <div className="flex h-11 items-center justify-between gap-2 rounded-control border border-slate-200 pl-3 pr-1">
-                      <span className="flex min-w-0 items-center gap-2">
-                        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: lockedRoot.color }} />
-                        <span className="truncate text-sm text-slate-900">{categoryName(lockedRoot)}</span>
-                      </span>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        label={translate('cmp.txModal.change')}
-                        onClick={() => setCategoryUnlocked(true)}
-                      />
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <select
-                      id="tx-category"
-                      aria-required="true"
-                      aria-invalid={fieldError('category') ? true : undefined}
-                      value={selectedRootId ?? ''}
-                      onChange={e => selectRoot(e.target.value ? Number(e.target.value) : undefined)}
-                      className={fieldError('category') ? CONTROL_INVALID : CONTROL}>
-                      <option value="">{translate('cmp.txModal.selectCategory')}</option>
-                      {rootCategories.map(c => <option key={c.id} value={c.id}>{categoryName(c)}</option>)}
-                    </select>
-                    {fieldError('category') && (
-                      <p role="alert" className="mt-1 text-xs text-expense">{fieldError('category')}</p>
-                    )}
-                    {!fieldError('category') && categoryCleared && !selectedRootId && (
-                      <p className="mt-1 text-xs text-slate-500">
-                        {translate(categoryCleared === 'direction'
-                          ? 'cmp.txModal.categoryClearedByDirection'
-                          : 'cmp.txModal.categoryClearedByType')}
-                      </p>
-                    )}
-                  </>
-                )}
+                <div className="flex gap-2">
+                  <input
+                    id="tx-new-subcategory" value={newSubCatName} autoFocus
+                    onChange={e => setNewSubCatName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleCreateSubCategory() } }}
+                    className={CONTROL}
+                    placeholder={translate('cmp.txModal.subCategoryNamePlaceholder')}
+                  />
+                  <Button
+                    variant="secondary" icon={<Plus className="h-4 w-4" aria-hidden="true" />}
+                    loading={creatingSubCat} disabled={!newSubCatName.trim()}
+                    onClick={handleCreateSubCategory} label={translate('action.add')}
+                    className="shrink-0"
+                  />
+                </div>
+                {newSubCatError && <p role="alert" className="mt-1 text-xs text-expense">{newSubCatError}</p>}
               </div>
+            ) : (
+              <ChipGroup<number>
+                id="tx-subcategory"
+                compact
+                label={translate('cmp.txModal.label.subCategory')}
+                required={!keepsRoot}
+                options={subCategories.map(c => ({ value: c.id, label: categoryName(c) }))}
+                value={form.categoryId && form.categoryId !== selectedRootId ? form.categoryId : null}
+                onChange={id => { set('categoryId', id); clearFieldError('subCategory') }}
+                error={fieldError('subCategory')}
+                trailing={
+                  <button
+                    type="button"
+                    onClick={() => { setShowNewSubCat(true); setNewSubCatError(null) }}
+                    aria-label={translate('cmp.txModal.addSubCategory')}
+                    title={translate('cmp.txModal.addSubCategory')}
+                    className="focus-ring flex h-11 w-11 items-center justify-center rounded-control border border-dashed border-slate-300 text-slate-500 transition-colors hover:border-indigo-300 hover:text-indigo-600"
+                  >
+                    <Plus className="h-4 w-4" aria-hidden="true" />
+                  </button>
+                }
+              />
+            )
+          )}
 
-              {/* Sub-category column — visible as soon as a root is selected. */}
-              {selectedRootId && (
-                <div className="min-w-0">
-                  <div className="mb-1 flex items-center justify-between gap-2">
-                    {/* Bound only when the sub-category select is the control on show — the
-                        inline creator and the dashed "add" button are not it. */}
-                    {hasSubs && !showNewSubCat ? (
-                      <label htmlFor="tx-subcategory" className="flex items-center gap-1 text-xs font-medium text-slate-600">
-                        <ChevronRight className="h-3 w-3 text-slate-400" />
-                        {translate('cmp.txModal.label.subCategory')}
-                        <span aria-hidden="true" className="text-expense">*</span>
-                      </label>
-                    ) : (
-                      <span className="flex items-center gap-1 text-xs font-medium text-slate-600">
-                        <ChevronRight className="h-3 w-3 text-slate-400" />
-                        {translate('cmp.txModal.label.subCategory')}
-                      </span>
-                    )}
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      icon={showNewSubCat ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
-                      iconOnly={showNewSubCat}
-                      label={showNewSubCat ? translate('action.cancel') : translate('cmp.txModal.new')}
-                      onClick={() => { setShowNewSubCat(v => !v); setNewSubCatError(null) }}
-                    />
-                  </div>
-
-                  {showNewSubCat ? (
-                    /* Inline sub-category creation — also captures custom description label/required. */
-                    <div className="space-y-2 rounded-control border border-slate-200 p-2.5">
-                      <input value={newSubCat.name} onChange={e => setNewSubCat(p => ({ ...p, name: e.target.value }))}
-                        className={CONTROL}
-                        aria-label={translate('cmp.txModal.subCategoryNamePlaceholder')}
-                        placeholder={translate('cmp.txModal.subCategoryNamePlaceholder')} autoFocus />
-                      <input value={newSubCat.descriptionLabel ?? ''}
-                        onChange={e => setNewSubCat(p => ({ ...p, descriptionLabel: e.target.value || undefined }))}
-                        className={CONTROL}
-                        aria-label={translate('cmp.txModal.descriptionLabelPlaceholder')}
-                        placeholder={translate('cmp.txModal.descriptionLabelPlaceholder')} />
-                      <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-600">
-                        <input type="checkbox"
-                          checked={newSubCat.descriptionRequired ?? true}
-                          onChange={e => setNewSubCat(p => ({ ...p, descriptionRequired: e.target.checked }))}
-                          className="focus-ring h-4 w-4 rounded text-indigo-600" />
-                        {translate('cmp.txModal.descriptionRequiredLabel')}
-                      </label>
-                      <div className="flex items-center gap-1.5">
-                        {/* 20px dots 4px apart were unhittable on a phone — same 44px target as
-                            the root-category picker above, dot size unchanged. */}
-                        <div className="flex flex-1 flex-wrap">
-                          {COLORS.map(c => (
-                            <button key={c} type="button" onClick={() => setNewSubCat(p => ({ ...p, color: c }))}
-                              aria-label={c}
-                              title={c}
-                              aria-pressed={newSubCat.color === c}
-                              className="focus-ring group flex h-11 w-11 cursor-pointer items-center justify-center rounded-control">
-                              <span aria-hidden="true"
-                                className={`h-5 w-5 rounded-full transition-transform ${
-                                  newSubCat.color === c ? 'scale-110 ring-2 ring-slate-400 ring-offset-1' : 'group-hover:scale-110'}`}
-                                style={{ backgroundColor: c }} />
-                            </button>
-                          ))}
-                        </div>
-                        <Button
-                          size="sm"
-                          variant="primary"
-                          icon={<Plus className="h-3.5 w-3.5" />}
-                          loading={creatingSubCat}
-                          disabled={!newSubCat.name.trim()}
-                          onClick={handleCreateSubCategory}
-                          label={translate('action.add')}
-                        />
-                      </div>
-                      {newSubCatError && (
-                        <p role="alert" className="text-sm text-expense">{newSubCatError}</p>
-                      )}
-                    </div>
-                  ) : hasSubs ? (
-                    <>
-                      <select
-                        id="tx-subcategory"
-                        aria-required="true"
-                        aria-invalid={fieldError('subCategory') ? true : undefined}
-                        value={subCatValue}
-                        onChange={e => set('categoryId', e.target.value ? Number(e.target.value) : selectedRootId)}
-                        className={fieldError('subCategory') ? CONTROL_INVALID : CONTROL}>
-                        <option value="">{translate('cmp.txModal.selectSubCategory')}</option>
-                        {subCategories.map(c => <option key={c.id} value={c.id}>{categoryName(c)}</option>)}
-                      </select>
-                      {fieldError('subCategory') && (
-                        <p role="alert" className="mt-1 text-xs text-expense">{fieldError('subCategory')}</p>
-                      )}
-                    </>
-                  ) : (
-                    <button type="button" onClick={() => { setShowNewSubCat(true); setNewSubCatError(null) }}
-                      className="focus-ring h-11 w-full cursor-pointer rounded-control border border-dashed border-slate-300 px-3 text-sm text-slate-500 transition-colors hover:border-indigo-300 hover:text-indigo-600">
-                      + {translate('cmp.txModal.addSubCategory')}
-                    </button>
-                  )}
+          {/* Edit only: whatever an existing special row is linked to. */}
+          {transaction && hasCounterparty && !isAnonymousDonation && (
+            <div className="relative">
+              <Field
+                id="tx-counterparty"
+                label={COUNTERPARTY_LABEL[form.subType!] ?? translate('cmp.txModal.counterparty.generic')}
+                required={!COUNTERPARTY_OPTIONAL.has(form.subType!)}
+                error={fieldError('counterparty')}
+              >
+                <input ref={counterpartyRef} value={form.counterpartyName ?? ''}
+                  onChange={e => {
+                    set('counterpartyName', e.target.value)
+                    clearFieldError('counterparty')
+                    // Typing away from the picked borrower means "someone new" again.
+                    if (form.subType === 'LOAN_GIVEN' && form.loanGivenId) {
+                      const linked = allLoansGiven.find(l => l.id === form.loanGivenId)
+                      if (!linked || linked.debtorName !== e.target.value) set('loanGivenId', undefined)
+                    }
+                    if (form.subType === 'LOAN_GIVEN') setShowBorrowerPopover(true)
+                  }}
+                  onFocus={() => {
+                    if (restoringFocus.current) { restoringFocus.current = false; return }
+                    if (form.subType === 'BANK_LOAN_PAYMENT' && bankOptions.length > 0) setShowBankPopover(true)
+                    if (form.subType === 'LOAN_GIVEN' && allLoansGiven.length > 0) setShowBorrowerPopover(true)
+                  }}
+                  onBlur={e => {
+                    const next = e.relatedTarget as Node | null
+                    if (next && (borrowerPopoverRef.current?.contains(next)
+                      || bankPopoverRef.current?.contains(next))) return
+                    setShowBankPopover(false); setShowBorrowerPopover(false)
+                  }}
+                  onKeyDown={e => {
+                    if (e.key !== 'Escape' || !(showBorrowerPopover || showBankPopover)) return
+                    e.stopPropagation()
+                    setShowBankPopover(false); setShowBorrowerPopover(false)
+                  }}
+                  className={fieldError('counterparty') ? CONTROL_INVALID : CONTROL}
+                  placeholder={translate('cmp.txModal.enterNamePlaceholder')} autoComplete="off" />
+              </Field>
+              {form.subType === 'LOAN_GIVEN' && showBorrowerPopover && allLoansGiven.length > 0 && (
+                <div
+                  ref={borrowerPopoverRef}
+                  onBlur={e => {
+                    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setShowBorrowerPopover(false)
+                  }}
+                  onKeyDown={e => {
+                    if (e.key !== 'Escape') return
+                    e.stopPropagation()
+                    setShowBorrowerPopover(false)
+                    returnFocus(counterpartyRef.current)
+                  }}
+                  className="absolute left-0 right-0 top-full z-10 mt-1 max-h-56 overflow-y-auto rounded-control border border-slate-200 bg-white shadow-tile-hover">
+                  <p className="bg-slate-50 px-3 py-1.5 text-label uppercase text-slate-500">
+                    {translate('cmp.txModal.existingBorrowers')}
+                  </p>
+                  {allLoansGiven
+                    .filter(l => !form.counterpartyName
+                      || l.debtorName.toLowerCase().includes(form.counterpartyName.toLowerCase()))
+                    .map(l => (
+                      <button key={l.id} type="button"
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => {
+                          set('counterpartyName', l.debtorName)
+                          set('loanGivenId', l.id)
+                          setShowBorrowerPopover(false)
+                          returnFocus(counterpartyRef.current)
+                        }}
+                        className={`${POPOVER_ITEM} flex items-center justify-between gap-2`}>
+                        <span className="truncate">{l.debtorName}</span>
+                        <span className="shrink-0 text-xs tabular-nums text-slate-500">
+                          {moneyFull(l.pendingAmount, l.currency)}
+                        </span>
+                      </button>
+                    ))}
+                </div>
+              )}
+              {form.subType === 'BANK_LOAN_PAYMENT' && showBankPopover && bankOptions.length > 0 && (
+                <div
+                  ref={bankPopoverRef}
+                  onBlur={e => {
+                    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setShowBankPopover(false)
+                  }}
+                  onKeyDown={e => {
+                    if (e.key !== 'Escape') return
+                    e.stopPropagation()
+                    setShowBankPopover(false)
+                    returnFocus(counterpartyRef.current)
+                  }}
+                  className="absolute left-0 right-0 top-full z-10 mt-1 overflow-hidden rounded-control border border-slate-200 bg-white shadow-tile-hover">
+                  {bankOptions
+                    .filter(b => !form.counterpartyName || b.toLowerCase().includes(form.counterpartyName.toLowerCase()))
+                    .map(b => (
+                      <button key={b} type="button"
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => {
+                          set('counterpartyName', b)
+                          setShowBankPopover(false)
+                          returnFocus(counterpartyRef.current)
+                        }}
+                        className={POPOVER_ITEM}>{b}</button>
+                    ))}
                 </div>
               )}
             </div>
           )}
-        </div>
 
-        {/* 4. Whatever the chosen type needs: the counterparty, the loan being repaid, the
-            investment being topped up, the month a repayment plan starts. */}
-        {form.subType === 'LOAN_REPAYMENT' && !transaction ? (
-          <div>
-            {activeLoans.length === 0
-              ? <p className="mb-1 text-xs font-medium text-slate-600">{translate('cmp.txModal.selectLoanToRepay')}</p>
-              : <label htmlFor="tx-loan" className="mb-1 block text-xs font-medium text-slate-600">{translate('cmp.txModal.selectLoanToRepay')}</label>}
-            {activeLoans.length === 0 ? (
-              <p className="rounded-control border border-dashed border-slate-300 px-3 py-3 text-center text-xs text-slate-500">
-                {translate('cmp.txModal.noActiveBorrowedLoans')}
-              </p>
-            ) : (
-              <>
-                <select id="tx-loan" value={selectedLoanId ?? ''}
-                  onChange={e => {
-                    const id = e.target.value ? Number(e.target.value) : undefined
-                    setSelectedLoanId(id)
-                    const loan = activeLoans.find(l => l.id === id)
-                    if (loan) {
-                      set('amount', loan.remainingAmount)
-                      set('currency', loan.currency as Currency)
-                      set('description', translate('cmp.txModal.loanRepaymentTo', { name: loan.lenderName }))
-                      set('counterpartyName', loan.lenderName)
-                    }
-                  }}
-                  className={CONTROL}>
-                  <option value="">{translate('cmp.txModal.selectLoanOrManual')}</option>
-                  {activeLoans.map(l => (
-                    <option key={l.id} value={l.id}>
-                      {l.lenderName} · {translate('cmp.repay.remaining')}{moneyFull(l.remainingAmount, l.currency as Currency)} · {l.status}
-                    </option>
-                  ))}
-                </select>
-                {selectedLoanId && (() => {
-                  const loan = activeLoans.find(l => l.id === selectedLoanId)
-                  return loan ? (
-                    <p className="mt-1.5 text-xs text-slate-500">
-                      {translate('cmp.txModal.maxPayable')}{' '}
-                      <span className="font-semibold tabular-nums text-slate-900">
-                        {moneyFull(loan.remainingAmount, loan.currency as Currency)}
-                      </span>
-                      <span className="ml-2 inline-flex rounded-chip bg-slate-100 px-1.5 py-0.5 font-medium text-slate-600">
-                        {loan.status}
-                      </span>
-                    </p>
-                  ) : null
-                })()}
-              </>
-            )}
-          </div>
-        ) : form.subType === 'LOAN_RETURNED_TO_ME' && !transaction ? (
-          <div>
-            {activeLoansGiven.length === 0
-              ? <p className="mb-1 text-xs font-medium text-slate-600">{translate('cmp.txModal.selectLoanReturned')}</p>
-              : <label htmlFor="tx-loan-given" className="mb-1 block text-xs font-medium text-slate-600">{translate('cmp.txModal.selectLoanReturned')}</label>}
-            {activeLoansGiven.length === 0 ? (
-              <p className="rounded-control border border-dashed border-slate-300 px-3 py-3 text-center text-xs text-slate-500">
-                {translate('cmp.txModal.noActiveLentLoans')}
-              </p>
-            ) : (
-              <>
-                <select id="tx-loan-given" value={selectedLoanGivenId ?? ''}
-                  onChange={e => {
-                    const id = e.target.value ? Number(e.target.value) : undefined
-                    setSelectedLoanGivenId(id)
-                    const loan = activeLoansGiven.find(l => l.id === id)
-                    if (loan) {
-                      set('amount', loan.pendingAmount)
-                      set('currency', loan.currency as Currency)
-                      set('description', translate('cmp.txModal.loanReturnedBy', { name: loan.debtorName }))
-                      set('counterpartyName', loan.debtorName)
-                    }
-                  }}
-                  className={CONTROL}>
-                  <option value="">{translate('cmp.txModal.selectLoanOrManual')}</option>
-                  {activeLoansGiven.map(l => (
-                    <option key={l.id} value={l.id}>
-                      {l.debtorName} · {translate('cmp.txModal.pending')} {moneyFull(l.pendingAmount, l.currency as Currency)} · {l.status}
-                    </option>
-                  ))}
-                </select>
-                {selectedLoanGivenId && (() => {
-                  const loan = activeLoansGiven.find(l => l.id === selectedLoanGivenId)
-                  return loan ? (
-                    <p className="mt-1.5 text-xs text-slate-500">
-                      {translate('cmp.txModal.maxReceivable')}{' '}
-                      <span className="font-semibold tabular-nums text-slate-900">
-                        {moneyFull(loan.pendingAmount, loan.currency as Currency)}
-                      </span>
-                      <span className="ml-2 inline-flex rounded-chip bg-slate-100 px-1.5 py-0.5 font-medium text-slate-600">
-                        {loan.status}
-                      </span>
-                    </p>
-                  ) : null
-                })()}
-              </>
-            )}
-          </div>
-        ) : form.subType && NEEDS_COUNTERPARTY.has(form.subType) && !isAnonymousDonation ? (
-          <div className="relative">
-            <Field
-              id="tx-counterparty"
-              label={COUNTERPARTY_LABEL[form.subType] ?? translate('cmp.txModal.counterparty.generic')}
-              required
-              error={fieldError('counterparty')}
-            >
-              <input required ref={counterpartyRef} value={form.counterpartyName ?? ''}
-                onChange={e => {
-                  set('counterpartyName', e.target.value)
-                  // Typing away from the picked borrower means "someone new" again.
-                  if (form.subType === 'LOAN_GIVEN' && form.loanGivenId) {
-                    const linked = allLoansGiven.find(l => l.id === form.loanGivenId)
-                    if (!linked || linked.debtorName !== e.target.value) set('loanGivenId', undefined)
-                  }
-                  if (form.subType === 'LOAN_GIVEN') setShowBorrowerPopover(true)
-                }}
-                onFocus={() => {
-                  if (restoringFocus.current) { restoringFocus.current = false; return }
-                  if (form.subType === 'BANK_LOAN_PAYMENT' && bankOptions.length > 0) setShowBankPopover(true)
-                  if (form.subType === 'LOAN_GIVEN' && allLoansGiven.length > 0) setShowBorrowerPopover(true)
-                }}
-                // Tabbing from the input into the list is a blur of the input, so close only
-                // when focus actually left the list too — a bare timer used to unmount the
-                // options 150 ms after a keyboard user reached them.
-                onBlur={e => {
-                  const next = e.relatedTarget as Node | null
-                  if (next && (borrowerPopoverRef.current?.contains(next)
-                    || bankPopoverRef.current?.contains(next))) return
-                  setShowBankPopover(false); setShowBorrowerPopover(false)
-                }}
-                // Escape dismisses the list, not the whole sheet. Sheet listens on `document`,
-                // which the event only reaches after React's root, so stopping it here wins.
-                onKeyDown={e => {
-                  if (e.key !== 'Escape' || !(showBorrowerPopover || showBankPopover)) return
-                  e.stopPropagation()
-                  setShowBankPopover(false); setShowBorrowerPopover(false)
-                }}
-                className={fieldError('counterparty') ? CONTROL_INVALID : CONTROL}
-                placeholder={translate('cmp.txModal.enterNamePlaceholder')} autoComplete="off" />
-            </Field>
-            {form.subType === 'LOAN_GIVEN' && showBorrowerPopover && allLoansGiven.length > 0 && (
-              <div
-                ref={borrowerPopoverRef}
-                onBlur={e => {
-                  if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setShowBorrowerPopover(false)
-                }}
-                onKeyDown={e => {
-                  if (e.key !== 'Escape') return
-                  e.stopPropagation()
-                  setShowBorrowerPopover(false)
-                  returnFocus(counterpartyRef.current)
-                }}
-                className="absolute left-0 right-0 top-full z-10 mt-1 max-h-56 overflow-y-auto rounded-control border border-slate-200 bg-white shadow-tile-hover">
-                <p className="bg-slate-50 px-3 py-1.5 text-label uppercase text-slate-500">
-                  {translate('cmp.txModal.existingBorrowers')}
-                </p>
-                {allLoansGiven
-                  .filter(l => !form.counterpartyName
-                    || l.debtorName.toLowerCase().includes(form.counterpartyName.toLowerCase()))
-                  .map(l => (
-                    <button key={l.id} type="button"
-                      // Enter and Space on a <button> dispatch click, never mousedown, so the
-                      // handler lives on onClick. onMouseDown only suppresses the pointer's
-                      // blur, which would otherwise close the list before the click lands.
-                      onMouseDown={e => e.preventDefault()}
-                      onClick={() => {
-                        set('counterpartyName', l.debtorName)
-                        set('loanGivenId', l.id)
-                        setShowBorrowerPopover(false)
-                        returnFocus(counterpartyRef.current)
-                      }}
-                      className={`${POPOVER_ITEM} flex items-center justify-between gap-2`}>
-                      <span className="truncate">{l.debtorName}</span>
-                      <span className="shrink-0 text-xs tabular-nums text-slate-500">
-                        {moneyFull(l.pendingAmount, l.currency as Currency)}
-                      </span>
-                    </button>
-                  ))}
+          {transaction && form.subType === 'INVESTMENT' && (
+            <div className="space-y-2">
+              <div className={SEGMENT_TRACK} role="group" aria-label={translate('cmp.txModal.label.investment')}>
+                <button type="button"
+                  // Mirrors the picker rather than clearing it: the two are one fact.
+                  onClick={() => { setTouched(true); setInvestmentMode('existing'); set('investmentId', selectedInvestmentId) }}
+                  aria-pressed={investmentMode === 'existing'}
+                  className={`${SEGMENT_BASE} ${investmentMode === 'existing' ? 'bg-white text-slate-900 shadow-tile' : 'text-slate-600 hover:text-slate-900'}`}>
+                  {translate('cmp.txModal.addToExisting')}
+                </button>
+                <button type="button"
+                  onClick={() => { setTouched(true); setInvestmentMode('new'); setSelectedInvestmentId(undefined); set('investmentId', undefined) }}
+                  aria-pressed={investmentMode === 'new'}
+                  className={`${SEGMENT_BASE} ${investmentMode === 'new' ? 'bg-white text-slate-900 shadow-tile' : 'text-slate-600 hover:text-slate-900'}`}>
+                  {translate('cmp.txModal.createNew')}
+                </button>
               </div>
-            )}
-            {form.subType === 'LOAN_GIVEN' && (() => {
-              const linked = allLoansGiven.find(l => l.id === form.loanGivenId)
-              return linked ? (
-                <p className="mt-1.5 flex items-center justify-between gap-2 text-xs text-slate-500">
-                  <span>
-                    {translate('cmp.txModal.toppingUp', { name: linked.debtorName })} · {translate('cmp.txModal.outstandingNow')}{' '}
-                    <span className="font-semibold tabular-nums text-slate-900">
-                      {moneyFull(linked.pendingAmount, linked.currency as Currency)}
-                    </span>
-                  </span>
-                  <button type="button" onClick={() => set('loanGivenId', undefined)}
-                    className="focus-ring shrink-0 cursor-pointer text-indigo-600 underline hover:no-underline">
-                    {translate('cmp.txModal.newLoanInstead')}
-                  </button>
-                </p>
-              ) : null
-            })()}
-            {form.subType === 'BANK_LOAN_PAYMENT' && showBankPopover && bankOptions.length > 0 && (
-              <div
-                ref={bankPopoverRef}
-                onBlur={e => {
-                  if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setShowBankPopover(false)
-                }}
-                onKeyDown={e => {
-                  if (e.key !== 'Escape') return
-                  e.stopPropagation()
-                  setShowBankPopover(false)
-                  returnFocus(counterpartyRef.current)
-                }}
-                className="absolute left-0 right-0 top-full z-10 mt-1 overflow-hidden rounded-control border border-slate-200 bg-white shadow-tile-hover">
-                {bankOptions
-                  .filter(b => !form.counterpartyName || b.toLowerCase().includes(form.counterpartyName.toLowerCase()))
-                  .map(b => (
-                    <button key={b} type="button"
-                      onMouseDown={e => e.preventDefault()}
-                      onClick={() => {
-                        set('counterpartyName', b)
-                        setShowBankPopover(false)
-                        returnFocus(counterpartyRef.current)
-                      }}
-                      className={POPOVER_ITEM}>{b}</button>
-                  ))}
-              </div>
-            )}
-          </div>
-        ) : isAnonymousDonation ? (
-          <p className="text-xs text-slate-500">{translate('cmp.txModal.anonymousDonationNotice')}</p>
-        ) : null}
-
-        {/* Investment: top up an existing one, or create a new record. */}
-        {form.subType === 'INVESTMENT' && (
-          <div className="space-y-2">
-            <div className={SEGMENT_TRACK} role="group" aria-label={translate('cmp.txModal.label.investment')}>
-              <button type="button"
-                // Mirrors the picker rather than clearing it: the two are one fact, and a
-                // second press on the tab you are already on used to blank the posted id
-                // while the select still showed the fund — which is what makes the save
-                // reverse the contribution and open a duplicate record.
-                onClick={() => { setTouched(true); setInvestmentMode('existing'); set('investmentId', selectedInvestmentId) }}
-                aria-pressed={investmentMode === 'existing'}
-                className={`${SEGMENT_BASE} ${investmentMode === 'existing' ? 'bg-white text-slate-900 shadow-tile' : 'text-slate-600 hover:text-slate-900'}`}>
-                {translate('cmp.txModal.addToExisting')}
-              </button>
-              <button type="button"
-                onClick={() => { setTouched(true); setInvestmentMode('new'); setSelectedInvestmentId(undefined); set('investmentId', undefined) }}
-                aria-pressed={investmentMode === 'new'}
-                className={`${SEGMENT_BASE} ${investmentMode === 'new' ? 'bg-white text-slate-900 shadow-tile' : 'text-slate-600 hover:text-slate-900'}`}>
-                {translate('cmp.txModal.createNew')}
-              </button>
-            </div>
-
-            {investmentMode === 'existing' ? (
-              existingInvestments.length === 0 ? (
-                <p className="rounded-control border border-dashed border-slate-300 px-3 py-3 text-center text-xs text-slate-500">
-                  {translate('cmp.txModal.noInvestmentsYet')}
-                </p>
-              ) : (
-                <>
-                  <Field
-                    id="tx-investment"
-                    label={translate('cmp.txModal.label.investment')}
-                    required
-                    error={fieldError('investment')}
-                  >
+              {investmentMode === 'existing' ? (
+                existingInvestments.length === 0 ? (
+                  <p className="rounded-control border border-dashed border-slate-300 px-3 py-3 text-center text-xs text-slate-500">
+                    {translate('cmp.txModal.noInvestmentsYet')}
+                  </p>
+                ) : (
+                  <Field id="tx-investment" label={translate('cmp.txModal.label.investment')} required error={fieldError('investment')}>
                     <select
                       value={selectedInvestmentId ?? ''}
                       onChange={e => {
                         const id = e.target.value ? Number(e.target.value) : undefined
                         setSelectedInvestmentId(id)
                         set('investmentId', id)
+                        clearFieldError('investment')
                         const inv = existingInvestments.find(i => i.id === id)
-                        if (inv) {
-                          set('currency', inv.currency as Currency)
-                          set('counterpartyName', inv.name)
-                          if (!form.description) set('description', translate('cmp.txModal.addFundsTo', { name: inv.name }))
-                        }
+                        if (inv) set('counterpartyName', inv.name)
                       }}
                       className={fieldError('investment') ? CONTROL_INVALID : CONTROL}
                     >
                       <option value="">{translate('cmp.txModal.selectAnInvestment')}</option>
                       {existingInvestments.map(i => (
                         <option key={i.id} value={i.id}>
-                          {i.name} · {INVESTMENT_TYPE_LABELS[i.type]} · {moneyFull(i.investedAmount, i.currency as Currency)}
+                          {i.name} · {moneyFull(i.investedAmount, i.currency)}
                         </option>
                       ))}
                     </select>
                   </Field>
-                  {selectedInvestmentId && (() => {
-                    const inv = existingInvestments.find(i => i.id === selectedInvestmentId)
-                    return inv ? (
-                      <p className="text-xs text-slate-500">
-                        {translate('cmp.txModal.currentTotal')}{' '}
-                        <span className="font-semibold tabular-nums text-slate-900">
-                          {moneyFull(inv.investedAmount, inv.currency as Currency)}
-                        </span>
-                        <span className="ml-2 inline-flex rounded-chip bg-slate-100 px-1.5 py-0.5 font-medium text-slate-600">
-                          {INVESTMENT_TYPE_LABELS[inv.type]}
-                        </span>
-                      </p>
-                    ) : null
-                  })()}
-                </>
-              )
-            ) : (
-              <Field id="tx-investment-type" label={translate('cmp.txModal.investmentType')}>
-                <select value={form.investmentType ?? 'OTHER'}
-                  onChange={e => set('investmentType', e.target.value as InvestmentType)}
-                  className={CONTROL}>
-                  {(['REAL_ESTATE','BONDS','MUTUAL_FUND','GOLD','OTHER'] as InvestmentType[]).map(it => (
-                    <option key={it} value={it}>{INVESTMENT_TYPE_LABELS[it]}</option>
-                  ))}
-                </select>
-              </Field>
+                )
+              ) : (
+                <Field id="tx-investment-type" label={translate('cmp.txModal.investmentType')}>
+                  <select value={form.investmentType ?? 'OTHER'}
+                    onChange={e => set('investmentType', e.target.value as InvestmentType)}
+                    className={CONTROL}>
+                    {(['REAL_ESTATE', 'BONDS', 'MUTUAL_FUND', 'GOLD', 'OTHER'] as InvestmentType[]).map(it => (
+                      <option key={it} value={it}>{INVESTMENT_TYPE_LABELS[it]}</option>
+                    ))}
+                  </select>
+                </Field>
+              )}
+            </div>
+          )}
+          {transaction && isAnonymousDonation && (
+            <p className="text-xs text-slate-500">{translate('cmp.txModal.anonymousDonationNotice')}</p>
+          )}
+
+          {/* 4. The wallet: one question — From for an expense, To for an income. */}
+          <WalletPicker
+            id="tx-wallet"
+            label={walletLabel}
+            cards={wallets.cards}
+            cashBalance={wallets.cashBalance}
+            currency={defaultCurrency}
+            loaded={wallets.loaded}
+            failed={wallets.failed}
+            onRetry={wallets.reload}
+            value={wallet}
+            onChange={v => { walletChoice.choose(v); setTouched(true); clearFieldError('card') }}
+            split={split}
+            onSplitChange={toggleSplit}
+            error={fieldError('card')}
+          />
+          {split && (
+            <CashPart
+              id="tx-cash-part"
+              total={total}
+              cash={cashPart}
+              onCash={v => { setTouched(true); setCashPart(v); clearFieldError('split') }}
+              currency={defaultCurrency}
+              error={fieldError('split')}
+            />
+          )}
+
+          {/* 5. What for — optional unless the category asks for it. */}
+          <div className="relative">
+            <Field
+              id="tx-description"
+              label={descriptionRequired ? descriptionLabel : optional(descriptionLabel)}
+              required={descriptionRequired}
+              error={fieldError('description')}
+            >
+              <input ref={descriptionRef} value={form.description ?? ''} onChange={e => handleDescriptionChange(e.target.value)}
+                onFocus={() => {
+                  if (restoringFocus.current) { restoringFocus.current = false; return }
+                  if (suggestions.length > 0) setShowSuggestions(true)
+                }}
+                // Close only once focus has left the options too, so tabbing into them works.
+                onBlur={e => {
+                  const next = e.relatedTarget as Node | null
+                  if (next && suggestionsPopoverRef.current?.contains(next)) return
+                  setShowSuggestions(false)
+                }}
+                onKeyDown={e => {
+                  if (e.key !== 'Escape' || !showSuggestions) return
+                  e.stopPropagation()
+                  setShowSuggestions(false)
+                }}
+                className={fieldError('description') ? CONTROL_INVALID : CONTROL}
+                placeholder={translate('cmp.txModal.descriptionPlaceholder', {
+                  example: descriptionLabel === translate('cmp.txModal.label.whatFor')
+                    ? translate(incoming ? 'cmp.txModal.descriptionExampleIncome' : 'cmp.txModal.descriptionExampleExpense')
+                    : descriptionLabel,
+                })}
+                autoComplete="off" />
+            </Field>
+            {showSuggestions && suggestions.length > 0 && (
+              <div
+                ref={suggestionsPopoverRef}
+                onBlur={e => {
+                  if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setShowSuggestions(false)
+                }}
+                onKeyDown={e => {
+                  if (e.key !== 'Escape') return
+                  e.stopPropagation()
+                  setShowSuggestions(false)
+                  returnFocus(descriptionRef.current)
+                }}
+                className="absolute left-0 right-0 top-full z-10 mt-1 overflow-hidden rounded-control border border-slate-200 bg-white shadow-tile-hover">
+                {suggestions.map(s => (
+                  <button key={s} type="button"
+                    onMouseDown={e => e.preventDefault()}
+                    onClick={() => {
+                      set('description', s)
+                      setSuggestions([]); setShowSuggestions(false)
+                      returnFocus(descriptionRef.current)
+                    }}
+                    className={POPOVER_ITEM}>{s}</button>
+                ))}
+              </div>
             )}
           </div>
-        )}
 
-        {/* Payment starts — when borrowed money begins counting toward the plan. */}
-        {form.subType === 'LOAN_RECEIVED' && !transaction && (
-          <Field
-            id="tx-payment-start"
-            label={translate('cmp.txModal.repaymentsStart')}
-          >
-            <input type="month"
-              value={form.paymentStartDate ? form.paymentStartDate.slice(0, 7) : nextMonthStr()}
-              onChange={e => set('paymentStartDate', e.target.value ? `${e.target.value}-01` : undefined)}
-              className={CONTROL} />
-          </Field>
-        )}
-
-        {form.subType && AUTO_CREATES.has(form.subType) && (
-          <p className="flex items-start gap-2 text-xs text-slate-500">
-            <Info className="mt-px h-3.5 w-3.5 shrink-0 text-slate-400" />
-            <span>
-              {form.subType === 'INVESTMENT'
-                ? investmentMode === 'existing' && selectedInvestmentId
-                  ? translate('cmp.txModal.fundsAddedToInvestment')
-                  : investmentMode === 'new'
-                    ? <>{translate('cmp.txModal.newInvestmentPrefix')} <strong className="font-semibold text-slate-700">{translate('cmp.txModal.investmentWord')}</strong>{translate('cmp.txModal.newInvestmentSuffix')}</>
-                    : null
-                : <>{translate('cmp.txModal.autoCreatePrefix')} <strong className="font-semibold text-slate-700">{subTypes.find(s => s.value === form.subType)?.label}</strong> {translate('cmp.txModal.autoCreateSuffix')}</>}
-            </span>
-          </p>
-        )}
-
-        {/* 5. Amount — the thing the user came here to type. One instance, mounted for the life
-            of the form, so switching payment method never loses a half-typed figure. */}
-        <Field
-          id="tx-amount"
-          label={translate('cmp.txModal.label.amount')}
-          required
-          error={fieldError('amount')}
-        >
-          <AmountInput
-            ref={amountRef}
-            required
-            value={form.amount || 0}
-            currency={defaultCurrency}
-            // In BOTH mode this is the sum of the two split fields. readOnly rather than
-            // disabled so it stays focusable — and so its onChange cannot fight the effect
-            // that recomputes the total.
-            readOnly={paymentMode === 'BOTH'}
-            onChange={v => {
-              set('amount', v)
-              if (paymentMode === 'CARD') setCardInput(v)
-              else if (paymentMode === 'CASH') setCashInput(v)
-            }}
-            // One colour class, not two: Tailwind emits text-slate-900 after text-slate-600, so
-            // stacking them would silently keep the darker ink in the derived state.
-            className={`w-full rounded-control border bg-white py-3 pl-3 pr-20 text-stat tabular-nums focus-ring ${
-              fieldError('amount') || isBalanceError ? 'border-expense' : 'border-slate-200'
-            } ${paymentMode === 'BOTH' ? 'text-slate-600' : 'text-slate-900'}`}
-            placeholder="0"
-            suffix={defaultCurrency}
-            suffixClassName="text-sm"
+          {/* 6. Date — today on the owner's clock, one line. */}
+          <CompactDate
+            id="tx-date"
+            label={translate('cmp.txModal.label.date')}
+            value={form.transactionDate}
+            onChange={v => { set('transactionDate', v); clearFieldError('date') }}
+            error={fieldError('date')}
           />
-        </Field>
 
-        {/* 6. What this draft transaction would do to the monthly allocation (create mode only —
-            editing an existing row would double-count it against what is already recorded). */}
-        {!transaction && (
-          <AllocationPreviewPanel
-            subType={form.subType}
-            amount={form.amount || 0}
-            transactionDate={form.transactionDate}
-            investmentId={form.subType === 'INVESTMENT' && investmentMode === 'existing'
-              ? selectedInvestmentId : undefined}
-            currency={form.currency}
-          />
-        )}
-
-        {/* 7. What for. Optional: left blank, the server writes the counterparty or the
-            category, and the hint under the field says which before you leave it empty. */}
-        <div className="relative">
-          <Field
-            id="tx-description"
-            label={descriptionLabel}
-            required={descriptionRequired}
-            error={fieldError('description')}
-          >
-            <input ref={descriptionRef} value={form.description ?? ''} onChange={e => handleDescriptionChange(e.target.value)}
-              onFocus={() => {
-                if (restoringFocus.current) { restoringFocus.current = false; return }
-                if (suggestions.length > 0) setShowSuggestions(true)
-              }}
-              // Same rule as the counterparty lists: only close once focus has left the
-              // options too, so tabbing into them does not unmount them.
-              onBlur={e => {
-                const next = e.relatedTarget as Node | null
-                if (next && suggestionsPopoverRef.current?.contains(next)) return
-                setShowSuggestions(false)
-              }}
-              onKeyDown={e => {
-                if (e.key !== 'Escape' || !showSuggestions) return
-                e.stopPropagation()
-                setShowSuggestions(false)
-              }}
-              required={descriptionRequired}
-              className={fieldError('description') ? CONTROL_INVALID : CONTROL}
-              placeholder={translate('cmp.txModal.descriptionPlaceholder', {
-                example: descriptionLabel === translate('cmp.txModal.label.whatFor')
-                  ? translate(form.type === 'INCOME'
-                      ? 'cmp.txModal.descriptionExampleIncome'
-                      : 'cmp.txModal.descriptionExampleExpense')
-                  : descriptionLabel,
-              })}
-              autoComplete="off" />
-          </Field>
-          {!(form.description ?? '').trim() && derivedDescription && !fieldError('description') && (
-            <p className="mt-1 text-xs text-slate-500">
-              {translate('cmp.txModal.descriptionDerived', { text: derivedDescription })}
+          {!transaction && (
+            <p className="flex flex-wrap items-center gap-x-4 border-t border-hairline pt-1 text-xs text-slate-500">
+              {translate('cmp.txModal.elseTitle')}
+              <button type="button" onClick={() => goTo('/loans')} className={LINK_BLOCK}>
+                {translate('cmp.txModal.elseLoans')}
+              </button>
+              <button type="button" onClick={() => goTo('/savings')} className={LINK_BLOCK}>
+                {translate('home.form.elseSavings')}
+              </button>
+              {/* Opens on top of this form and takes the amount along, so nothing typed is lost. */}
+              <button type="button" onClick={() => setTransferOpen(true)} className={LINK_BLOCK}>
+                {translate('cmp.txModal.elseTransfer')}
+              </button>
             </p>
           )}
-          {showSuggestions && suggestions.length > 0 && (
-            <div
-              ref={suggestionsPopoverRef}
-              onBlur={e => {
-                if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setShowSuggestions(false)
-              }}
-              onKeyDown={e => {
-                if (e.key !== 'Escape') return
-                e.stopPropagation()
-                setShowSuggestions(false)
-                returnFocus(descriptionRef.current)
-              }}
-              className="absolute left-0 right-0 top-full z-10 mt-1 overflow-hidden rounded-control border border-slate-200 bg-white shadow-tile-hover">
-              {suggestions.map(s => (
-                <button key={s} type="button"
-                  onMouseDown={e => e.preventDefault()}
-                  onClick={() => {
-                    set('description', s)
-                    setSuggestions([]); setShowSuggestions(false)
-                    returnFocus(descriptionRef.current)
-                  }}
-                  className={POPOVER_ITEM}>{s}</button>
-              ))}
+
+          {/* The one tinted alert on this form: the server said no. */}
+          {error && (
+            <div className="rounded-control border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-700" role="alert">
+              {isBalanceError && <p className="mb-0.5 font-semibold">{translate('cmp.txModal.insufficientBalance')}</p>}
+              {error}
             </div>
           )}
-        </div>
+        </form>
+      </Sheet>
 
-        {/* 8. How it was paid — card only unless you say otherwise — and the two inputs a
-            split needs. The wallet it comes out of is the block right below. */}
-        <div>
-          <p className="mb-1 text-xs font-medium text-slate-600">{translate('cmp.field.paymentMethod')}</p>
-          <div className={SEGMENT_TRACK} role="group" aria-label={translate('cmp.field.paymentMethod')}>
-            {([
-              { value: 'CARD', label: translate('cmp.txModal.cardOnly') },
-              { value: 'CASH', label: translate('cmp.txModal.cashOnly') },
-              { value: 'BOTH', label: translate('tx.both') },
-            ] as { value: PaymentMode; label: string }[]).map(opt => {
-              const needsCard = opt.value !== 'CASH'
-              const blockedByWallet = noUsableCards && needsCard
-              const blockedByLoanPath = atomicLoanPath && opt.value === 'BOTH'
-              const blocked = blockedByWallet || blockedByLoanPath
-              return (
-                <button key={opt.value} type="button"
-                  disabled={blocked}
-                  aria-pressed={paymentMode === opt.value}
-                  title={blockedByWallet
-                    ? translate('cmp.txModal.noCardsHint')
-                    : blockedByLoanPath ? translate('cmp.txModal.bothNotForLoanPath') : undefined}
-                  onClick={() => { setTouched(true); setPaymentMode(opt.value) }}
-                  className={`${SEGMENT_BASE} ${
-                    paymentMode === opt.value
-                      ? 'bg-white text-slate-900 shadow-tile'
-                      : 'text-slate-600 hover:text-slate-900'}`}>
-                  {opt.label}
-                </button>
-              )
-            })}
-          </div>
-          {noUsableCards && (
-            <p className="mt-1 text-xs text-slate-500">{translate('cmp.txModal.noCardsHint')}</p>
-          )}
-          {!noUsableCards && atomicLoanPath && (
-            <p className="mt-1 text-xs text-slate-500">{translate('cmp.txModal.bothNotForLoanPath')}</p>
-          )}
-        </div>
-
-        {paymentMode === 'BOTH' && (
-          <>
-            <div className="grid grid-cols-2 gap-3">
-              <Field
-                id="tx-cash-amount"
-                label={translate('cmp.txModal.label.cashAmount')}
-                required
-                error={fieldError('split')}
-              >
-                <AmountInput
-                  required
-                  value={cashInput || 0}
-                  currency={defaultCurrency}
-                  onChange={v => { setTouched(true); setCashInput(v) }}
-                  className={`${fieldError('split') ? CONTROL_INVALID : CONTROL} pr-14 tabular-nums`}
-                  placeholder="0"
-                  suffix={defaultCurrency}
-                />
-              </Field>
-              <Field
-                id="tx-card-amount"
-                label={translate('cmp.txModal.label.cardAmount')}
-                required
-              >
-                <AmountInput
-                  required
-                  value={cardInput || 0}
-                  currency={defaultCurrency}
-                  onChange={v => { setTouched(true); setCardInput(v) }}
-                  className={`${fieldError('split') ? CONTROL_INVALID : CONTROL} pr-14 tabular-nums`}
-                  placeholder="0"
-                  suffix={defaultCurrency}
-                />
-              </Field>
-            </div>
-            <div className="flex items-center justify-between gap-3 rounded-control border border-slate-200 px-3 py-2">
-              <span className="text-xs text-slate-500">{translate('cmp.payBucket.total')}</span>
-              <span className="text-sm font-semibold tabular-nums text-slate-900">{moneyFull(splitTotal, defaultCurrency)}</span>
-            </div>
-          </>
-        )}
-
-        {/* 9. The wallet itself, directly under the method that decides which one it can be. */}
-        {paymentMode === 'CASH' ? (
-          <div>
-            <p className="mb-1 text-xs font-medium text-slate-600">{translate('cmp.txModal.label.card')}</p>
-            <div className="flex h-11 items-center justify-between gap-2 rounded-control border border-slate-200 pl-3 pr-1">
-              <span className="flex min-w-0 items-center gap-2 text-sm text-slate-900">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-chip bg-slate-100 text-slate-600">
-                  <Wallet className="h-3.5 w-3.5" />
-                </span>
-                {translate('cmp.txModal.paidWithCash')}
-              </span>
-            </div>
-            {cashBalance !== null && (
-              <p className="mt-1 text-xs tabular-nums text-slate-500">
-                {translate('cmp.txModal.cashBalanceCaption', { amount: moneyFull(cashBalance, defaultCurrency) })}
-              </p>
-            )}
-            {noUsableCards && (
-              <p className="mt-1 text-xs text-slate-500">{translate('cmp.txModal.noCardsCashNotice')}</p>
-            )}
-          </div>
-        ) : cardsFailed ? (
-          <div>
-            <p className="mb-1 text-xs font-medium text-slate-600">{translate('cmp.txModal.label.card')}</p>
-            <div className="flex items-center justify-between gap-3 rounded-control border border-slate-200 px-3 py-2">
-              <p className="text-xs text-slate-500">{translate('cmp.txModal.cardsLoadFailed')}</p>
-              <Button
-                size="sm"
-                label={translate('ui.error.retry')}
-                onClick={() => { setCardsLoaded(false); loadCards() }}
-              />
-            </div>
-            {fieldError('card') && <p role="alert" className="mt-1 text-xs text-expense">{fieldError('card')}</p>}
-          </div>
-        ) : noUsableCards ? (
-          <div>
-            <p className="mb-1 text-xs font-medium text-slate-600">{translate('cmp.txModal.label.card')}</p>
-            <button type="button" onClick={goToWallets}
-              className="focus-ring w-full cursor-pointer rounded-control border border-dashed border-slate-300 px-3 py-3 text-sm text-slate-500 transition-colors hover:border-indigo-300 hover:text-indigo-600">
-              {translate('cmp.txModal.noCardsYet')}
-            </button>
-            {fieldError('card') && <p role="alert" className="mt-1 text-xs text-expense">{fieldError('card')}</p>}
-          </div>
-        ) : (
-          <Field
-            id="tx-card"
-            label={translate('cmp.txModal.label.card')}
-            required
-            error={fieldError('card')}
-          >
-            <select
-              value={form.cardId ?? ''}
-              onChange={e => set('cardId', e.target.value ? Number(e.target.value) : undefined)}
-              className={fieldError('card') || isBalanceError ? CONTROL_INVALID : CONTROL}>
-              <option value="">{translate('cmp.source.chooseCard')}</option>
-              {cardOptions}
-            </select>
-          </Field>
-        )}
-        {selectedCard && form.type === 'EXPENSE' && paymentMode !== 'CASH' && (
-          <p className="-mt-2 text-xs tabular-nums text-slate-500">
-            {translate('cmp.txModal.available')} {moneyFull(selectedCard.currentBalance ?? 0, selectedCard.currency)}
-          </p>
-        )}
-
-        {/* 10. Date — defaults to today on the viewer's clock, not UTC. */}
-        <Field id="tx-date" label={translate('cmp.txModal.label.date')} required error={fieldError('date')}>
-          <input required type="date" value={form.transactionDate}
-            onChange={e => set('transactionDate', e.target.value)}
-            className={fieldError('date') ? CONTROL_INVALID : CONTROL} />
-        </Field>
-
-        {!transaction && (
-          <p className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-hairline pt-3 text-xs text-slate-500">
-            {translate('cmp.txModal.elseTitle')}
-            <button type="button" onClick={() => goTo('/finance/overview')} className={LINK}>
-              {translate('cmp.txModal.elseLoans')}
-            </button>
-            <button type="button" onClick={() => goTo('/overview/dashboard')} className={LINK}>
-              {translate('cmp.txModal.elseSetAside')}
-            </button>
-            <button type="button" onClick={() => goTo('/cards')} className={LINK}>
-              {translate('cmp.txModal.elseTransfer')}
-            </button>
-          </p>
-        )}
-
-        {/* The one tinted alert on this form: the server said no. */}
-        {error && (
-          <div className="rounded-control border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-700" role="alert">
-            {isBalanceError && <p className="mb-0.5 font-semibold">{translate('cmp.txModal.insufficientBalance')}</p>}
-            {error}
-          </div>
-        )}
-      </form>
-    </Sheet>
+      {/* Move money, on top of the form: saving it closes both, cancelling returns here. */}
+      <BalanceTransferModal
+        open={open && transferOpen}
+        presetAmount={total > 0 ? total : undefined}
+        onClose={() => setTransferOpen(false)}
+        onSaved={() => { setTransferOpen(false); onSaved(); onClose() }}
+      />
+    </>
   )
 }

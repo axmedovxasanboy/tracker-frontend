@@ -9,199 +9,209 @@ import { AmountInput } from '../ui/AmountInput'
 import { useLang } from '../../i18n/LanguageContext'
 import { useToast } from '../../context/ToastContext'
 import { useApi } from '../../hooks/useApi'
-import { cardsApi } from '../../api/cards'
 import { financeApi } from '../../api/finance'
 import { transactionsApi } from '../../api/transactions'
 import { extractErrorMessage } from '../../api/client'
 import { money, moneyFull, todayLocal } from '../../utils/format'
-import type { BankLoanResponse, CardResponse } from '../../types'
-
-const INPUT = 'w-full border border-slate-200 rounded-control px-3 py-2.5 text-sm text-slate-900 focus-ring'
+import { CompactDate, MONEY_INPUT, MONEY_INPUT_INVALID } from '../transactions/formParts'
+import { WalletPicker } from '../transactions/WalletPicker'
+import { rememberWallet, useWalletChoice, useWallets } from '../transactions/wallets'
+import type { BankLoanResponse } from '../../types'
 
 interface Props {
   open: boolean
   onClose: () => void
   onSaved: () => void
   defaultMonth: string  // YYYY-MM
+  /** Open straight on this bank loan — "Pay" beside it on Home. The picker is then skipped. */
+  bankLoanId?: number
+  /** Start on this amount instead of the loan's monthly payment. */
+  defaultAmount?: number
 }
 
-export function PayBankInstallmentModal({ open, onClose, onSaved, defaultMonth }: Props) {
+const FORM_ID = 'pay-bank-form'
+
+/** Pay a bank loan's monthly payment: which loan (skipped when it is known), how much, from where. */
+export function PayBankInstallmentModal({ open, onClose, onSaved, defaultMonth, bankLoanId, defaultAmount }: Props) {
   const { t } = useLang()
   const { showSuccess } = useToast()
   const bankLoans = useApi(() => financeApi.getBankLoans(), [])
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [amount, setAmount] = useState(0)
   const [date, setDate] = useState(todayLocal())
-  const [cardId, setCardId] = useState<number | undefined>()
-  const [cards, setCards] = useState<CardResponse[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (!open) return
-    setSelectedId(null)
-    setAmount(0)
-    setError(null)
-    setCardId(undefined)
-    // The viewer's clock, not UTC: before 05:00 in Tashkent toISOString() named yesterday, which
-    // for a payment made just after midnight on the 1st filed it into the previous month.
-    const cur = todayLocal()
-    setDate(cur.startsWith(defaultMonth) ? cur : `${defaultMonth}-01`)
-    cardsApi.getAll().then(r => setCards(r.data)).catch(() => {})
-  }, [open, defaultMonth])
+  const [invalid, setInvalid] = useState<'amount' | 'wallet' | null>(null)
 
   const list = (bankLoans.data ?? []).filter(b => b.monthlyPayment != null && b.monthlyPayment > 0)
   const selected: BankLoanResponse | undefined = list.find(b => b.id === selectedId)
-  const matchingCards = selected ? cards.filter(c => c.currency === selected.currency) : []
+    // A loan opened by id may have no monthly payment set; it is still the one to pay.
+    ?? (bankLoanId != null && selectedId === bankLoanId
+      ? (bankLoans.data ?? []).find(b => b.id === bankLoanId)
+      : undefined)
+  const currency = selected?.currency ?? 'UZS'
 
-  // When a loan is picked, default the amount to its saved monthly payment.
+  const wallets = useWallets(open, currency)
+  const choice = useWalletChoice({
+    open,
+    cards: wallets.cards,
+    cashBalance: wallets.cashBalance,
+    loaded: wallets.loaded,
+    amount,
+  })
+
+  const refetchLoans = bankLoans.refetch
   useEffect(() => {
-    if (selected && amount === 0 && selected.monthlyPayment != null) {
-      setAmount(selected.monthlyPayment)
-    }
-  }, [selected])
+    if (!open) return
+    setSelectedId(bankLoanId ?? null)
+    setAmount(defaultAmount && defaultAmount > 0 ? defaultAmount : 0)
+    setError(null)
+    setInvalid(null)
+    // The viewer's clock, not UTC: before 05:00 in Tashkent toISOString() named yesterday.
+    const cur = todayLocal()
+    setDate(cur.startsWith(defaultMonth) ? cur : `${defaultMonth}-01`)
+    refetchLoans()
+  }, [open, defaultMonth, bankLoanId, defaultAmount, refetchLoans])
 
-  /** One confirmation for both write paths, so neither can be added without the other. */
-  const confirmSaved = (currency: BankLoanResponse['currency']) => {
-    showSuccess(t('cmp.payBankInstallment.recordedToast', { amount: moneyFull(amount, currency) }))
-    onSaved(); onClose()
-  }
+  // One loan and nothing picked: it is the one.
+  useEffect(() => {
+    if (!open || selectedId != null || list.length !== 1) return
+    setSelectedId(list[0].id)
+    // `list` is rebuilt every render; the payload it comes from is the real trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, selectedId, bankLoans.data])
+
+  // A picked loan fills in its monthly payment, unless an amount was handed in or typed.
+  useEffect(() => {
+    if (selected && amount === 0 && selected.monthlyPayment != null) setAmount(selected.monthlyPayment)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.id])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!selected) { setError(t('cmp.err.pickBankLoanToPay')); return }
-    if (amount <= 0) { setError(t('cmp.err.amountPositive')); return }
-    setSaving(true); setError(null)
+    if (amount <= 0) { setInvalid('amount'); setError(t('cmp.err.amountPositive')); return }
+    const wallet = choice.value
+    if (wallet == null || wallet === 'none') { setInvalid('wallet'); setError(t('cmp.err.pickCardOrCash')); return }
+    setSaving(true); setError(null); setInvalid(null)
     try {
-      // Record as a BANK_LOAN_PAYMENT Transaction. (Bank loans don't have a /repay
-      // endpoint today because they have no per-loan paid_amount column — the
-      // installment lives only as the recurring schedule on the BankLoan row.)
+      // Booked as a BANK_LOAN_PAYMENT transaction: bank loans keep no paid total of their own.
       await transactionsApi.create({
         type: 'EXPENSE',
         subType: 'BANK_LOAN_PAYMENT',
         amount, currency: selected.currency,
         description: `Bank installment — ${selected.bankName} (${selected.loanName})`,
         transactionDate: date,
-        cardId: cardId,
-        cashAmount: cardId ? 0 : amount,
+        cardId: typeof wallet === 'number' ? wallet : undefined,
+        cashAmount: typeof wallet === 'number' ? 0 : amount,
       })
-      confirmSaved(selected.currency)
+      rememberWallet(wallet)
+      showSuccess(t('cmp.payBankInstallment.recordedToast', { amount: moneyFull(amount, selected.currency) }))
+      onSaved(); onClose()
     } catch (err) {
       setError(extractErrorMessage(err))
     } finally { setSaving(false) }
   }
 
-  const markAlreadyPaid = async () => {
-    if (!selected) { setError(t('cmp.err.pickBankLoanToPay')); return }
-    if (amount <= 0) { setError(t('cmp.err.amountPositive')); return }
-    setSaving(true); setError(null)
-    try {
-      await financeApi.markPaid({
-        kind: 'BANK', refId: selected.id,
-        amount, currency: selected.currency, month: date.slice(0, 7),
-      })
-      confirmSaved(selected.currency)
-    } catch (err) {
-      setError(extractErrorMessage(err))
-    } finally { setSaving(false) }
-  }
+  const knownLoan = bankLoanId != null && !!selected
+  const nothingToPay = !bankLoans.loading && list.length === 0 && !knownLoan
 
-  const footer = list.length === 0 ? (
+  const footer = nothingToPay ? (
     <Button label={t('action.close')} onClick={onClose} className="w-full" />
   ) : (
-    <div className="space-y-2">
-      {/* Was a `title` on the "Already paid" button — a tooltip no touch user could reach. */}
-      <p className="text-xs text-slate-500">{t('cmp.hint.markInstallmentMetNoTx')}</p>
-      <div className="flex flex-wrap gap-3">
-        <Button label={t('action.cancel')} onClick={onClose} className="flex-1 min-w-[8rem]" />
-        <Button label={t('cmp.action.alreadyPaid')} onClick={markAlreadyPaid}
-          disabled={saving || !selected}
-          disabledReason={!selected ? t('cmp.err.pickBankLoanToPay') : undefined}
-          className="flex-1 min-w-[8rem]" />
-        <Button type="submit" form="pay-bank-form" variant="primary" loading={saving}
-          disabled={!selected}
-          disabledReason={!selected ? t('cmp.err.pickBankLoanToPay') : undefined}
-          label={saving ? t('action.saving') : t('cmp.action.recordInstallment')}
-          className="flex-1 min-w-[8rem]" />
-      </div>
+    <div className="flex gap-3">
+      <Button label={t('action.cancel')} onClick={onClose} className="flex-1" />
+      <Button type="submit" form={FORM_ID} variant="primary" loading={saving}
+        disabled={!selected}
+        disabledReason={!selected ? t('cmp.err.pickBankLoanToPay') : undefined}
+        label={saving ? t('action.saving') : t('page.shared.payButton')}
+        className="flex-1" />
     </div>
   )
 
   return (
     <Modal open={open} onClose={onClose} title={t('cmp.payBankInstallment.title')} maxWidth="max-w-lg" footer={footer}>
-      <form id="pay-bank-form" onSubmit={handleSubmit} className="space-y-4">
+      <form id={FORM_ID} noValidate onSubmit={handleSubmit} className="space-y-4">
         {bankLoans.loading && !bankLoans.data ? (
-          <Skeleton variant="row" count={3} bare />
+          <Skeleton variant="row" count={2} bare />
         ) : bankLoans.error && !bankLoans.data ? (
           <ErrorTile message={bankLoans.error} onRetry={bankLoans.refetch} />
-        ) : list.length === 0 ? (
-          <p className="text-sm text-slate-600">{t('cmp.payBankInstallment.noLoans')}</p>
+        ) : nothingToPay ? (
+          <p className="text-sm text-slate-600">{t('home.form.bank.none')}</p>
         ) : (
           <>
-            {/* Loan picker */}
-            <div className="space-y-2">
-              <p className="text-xs font-medium text-slate-600" id="pay-bank-picker">
-                {t('cmp.payBankInstallment.pickLoan')}
-              </p>
-              <div role="radiogroup" aria-labelledby="pay-bank-picker" className="space-y-1.5">
-                {list.map(b => (
-                  <button key={b.id} type="button"
-                    role="radio"
-                    aria-checked={selectedId === b.id}
-                    onClick={() => { setSelectedId(b.id); setAmount(b.monthlyPayment ?? 0) }}
-                    className={`w-full flex items-center gap-3 p-3 rounded-control border text-left
-                                cursor-pointer transition-colors focus-ring ${
-                      selectedId === b.id
-                        ? 'bg-indigo-50 border-indigo-300'
-                        : 'bg-white border-slate-200 hover:bg-slate-50'
-                    }`}>
-                    <div className="w-9 h-9 shrink-0 rounded-chip bg-slate-100 text-slate-500 flex items-center justify-center">
-                      <Landmark className="w-4 h-4" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-slate-900 truncate">{b.bankName} — {b.loanName}</p>
-                      <p className="text-xs text-slate-500 tabular-nums">
-                        {t('cmp.payBankInstallment.total')} {moneyFull(b.totalAmount, b.currency)}
+            {knownLoan || list.length === 1 ? (
+              selected && (
+                <div className="flex items-center gap-3 rounded-control border border-hairline px-3 py-2.5">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-chip bg-slate-100 text-slate-500">
+                    <Landmark className="w-4 h-4" aria-hidden="true" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-slate-900">{selected.bankName} — {selected.loanName}</p>
+                    {selected.monthlyPayment != null && (
+                      <p className="text-xs tabular-nums text-slate-500">
+                        {t('cmp.payBankInstallment.perMonth', { amount: moneyFull(selected.monthlyPayment, selected.currency) })}
                       </p>
-                    </div>
-                    <p className="shrink-0 text-sm font-semibold text-slate-900 tabular-nums whitespace-nowrap">
-                      {t('cmp.payBankInstallment.perMonth', { amount: money(b.monthlyPayment ?? 0, b.currency) })}
-                    </p>
-                  </button>
-                ))}
+                    )}
+                  </div>
+                </div>
+              )
+            ) : (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-slate-600" id="pay-bank-picker">
+                  {t('cmp.payBankInstallment.pickLoan')}
+                </p>
+                <div role="radiogroup" aria-labelledby="pay-bank-picker" className="space-y-1.5">
+                  {list.map(b => (
+                    <button key={b.id} type="button"
+                      role="radio"
+                      aria-checked={selectedId === b.id}
+                      onClick={() => { setSelectedId(b.id); setAmount(b.monthlyPayment ?? 0) }}
+                      className={`w-full flex items-center gap-3 p-3 rounded-control border text-left
+                                  cursor-pointer transition-colors focus-ring ${
+                        selectedId === b.id
+                          ? 'bg-indigo-50 border-indigo-300'
+                          : 'bg-white border-slate-200 hover:bg-slate-50'
+                      }`}>
+                      <div className="w-9 h-9 shrink-0 rounded-chip bg-slate-100 text-slate-500 flex items-center justify-center">
+                        <Landmark className="w-4 h-4" aria-hidden="true" />
+                      </div>
+                      <p className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900">{b.bankName} — {b.loanName}</p>
+                      <p className="shrink-0 text-sm font-semibold text-slate-900 tabular-nums whitespace-nowrap">
+                        {t('cmp.payBankInstallment.perMonth', { amount: money(b.monthlyPayment ?? 0, b.currency) })}
+                      </p>
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
             {selected && (
               <>
-                <Field id="pbank-amount" required label={t('cmp.field.amountRequired')}
-                  help={t('cmp.payBankInstallment.defaultHint', {
-                    amount: moneyFull(selected.monthlyPayment ?? 0, selected.currency),
-                  })}>
-                  <AmountInput required value={amount} currency={selected.currency}
-                    onChange={v => setAmount(v)}
-                    className={INPUT} suffix={selected.currency} />
+                <Field id="pbank-amount" required label={t('tx.amount')}
+                  error={invalid === 'amount' ? error ?? undefined : undefined}>
+                  <AmountInput value={amount} currency={selected.currency}
+                    onChange={v => { setAmount(v); if (invalid === 'amount') { setInvalid(null); setError(null) } }}
+                    className={invalid === 'amount' ? MONEY_INPUT_INVALID : MONEY_INPUT} suffix={selected.currency} />
                 </Field>
-                <Field id="pbank-date" required label={t('cmp.field.dateRequired')}>
-                  <input required type="date" value={date} onChange={e => setDate(e.target.value)} className={INPUT} />
-                </Field>
-                <Field id="pbank-source"
-                  label={`${t('cmp.field.source')} ${matchingCards.length === 0 ? t('cmp.source.cashNoMatchingCards') : ''}`}>
-                  <select value={cardId ?? ''}
-                    onChange={e => setCardId(e.target.value ? Number(e.target.value) : undefined)}
-                    className={`${INPUT} bg-white`}>
-                    <option value="">{t('cmp.source.cashOnly')}</option>
-                    {matchingCards.map(c => (
-                      <option key={c.id} value={c.id}>
-                        {c.name} •••• {c.lastFourDigits} · {moneyFull(c.currentBalance, c.currency)}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
+                <WalletPicker
+                  id="pbank-wallet"
+                  label={t('home.wallet.from')}
+                  cards={wallets.cards}
+                  cashBalance={wallets.cashBalance}
+                  currency={selected.currency}
+                  loaded={wallets.loaded}
+                  failed={wallets.failed}
+                  onRetry={wallets.reload}
+                  value={choice.value}
+                  onChange={v => { choice.choose(v); if (invalid === 'wallet') { setInvalid(null); setError(null) } }}
+                  error={invalid === 'wallet' ? error ?? undefined : undefined}
+                />
+                <CompactDate id="pbank-date" label={t('tx.date')} value={date} onChange={setDate} />
               </>
             )}
 
-            {error && <p role="alert" className="text-sm text-expense">{error}</p>}
+            {error && !invalid && <p role="alert" className="text-sm text-expense">{error}</p>}
           </>
         )}
       </form>

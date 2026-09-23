@@ -112,17 +112,6 @@ export function parseAmount(s: string | number | null | undefined): number {
   return Number.isFinite(n) ? n : NaN
 }
 
-/** Options for `money()`. The defaults are the tile case: unit shown, sign only when negative. */
-export interface MoneyOpts {
-  /**
-   * false drops the currency code AND the space before the k/M/B suffix ("29,5M").
-   * Chart axis ticks only — everywhere else the unit has to travel with the number.
-   */
-  unit?: boolean
-  /** true forces a leading '+' on positives, for ledger deltas that can go either way. */
-  signed?: boolean
-}
-
 /** Compact magnitudes, smallest first — the order `compactMagnitude` promotes through. */
 const COMPACT_UNITS: ReadonlyArray<readonly [number, string]> = [
   [1_000, 'k'],
@@ -160,26 +149,18 @@ function compactMagnitude(amount: number): { text: string; suffix: string } | nu
 }
 
 /**
- * Tiles, heroes, stat cards and chart tooltips: "29,5 M UZS".
+ * Tiles, heroes and stat cards: "29,5 M UZS".
  *
  * Compact by definition — thresholds ≥1e9 → B, ≥1e6 → M, ≥1e3 → k, plain below that,
  * one decimal at most. Never use it in a list or a detail row: those want the exact
  * figure from `moneyFull()`. Hang `moneyExact()` off a compact figure as its caption
  * or `title=` so the precise number is always one hover away.
  */
-export function money(amount: number, currency: Currency = 'UZS', opts: MoneyOpts = {}): string {
-  const { unit = true, signed = false } = opts
+export function money(amount: number, currency: Currency = 'UZS'): string {
   const snapped = snap(amount)
   const compact = compactMagnitude(snapped)
-
-  let text: string
-  if (compact) {
-    text = unit ? `${compact.text} ${compact.suffix} ${currency}` : `${compact.text}${compact.suffix}`
-  } else {
-    const plain = formatNumber(snapped, CURRENCY_DECIMALS[currency])
-    text = unit ? `${plain} ${currency}` : plain
-  }
-  return signed && snapped > 0 ? `+${text}` : text
+  if (compact) return `${compact.text} ${compact.suffix} ${currency}`
+  return `${formatNumber(snapped, CURRENCY_DECIMALS[currency])} ${currency}`
 }
 
 
@@ -198,16 +179,6 @@ export function moneyFull(amount: number, currency: Currency = 'UZS'): string {
 export function moneyExact(amount: number, currency: Currency = 'UZS'): string {
   return moneyFull(amount, currency)
 }
-
-/**
- * Chart axis ticks: "29,5M". No currency code and no space, because an axis has no room
- * for either and the tile title already names the unit. Recharts' `YAxis` needs
- * `width={44}` to clear the widest of these ("999,9M").
- */
-export function moneyAxis(amount: number, currency: Currency = 'UZS'): string {
-  return money(amount, currency, { unit: false })
-}
-
 
 /**
  * One date format app-wide. `short` is the default and is what a list row or a detail
@@ -319,10 +290,6 @@ export function todayLocal(): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
 }
 
-/**
- * The current month in the viewer's timezone, as 'YYYY-MM'. Same reason `toISOString()`
- * is wrong here: on the 1st before 05:00 it names the previous month.
- */
 /** `YYYY-MM` shifted by whole months, on the viewer's clock. */
 export function shiftMonth(ym: string, by: number): string {
   const [y, m] = ym.split('-').map(Number)
@@ -330,6 +297,10 @@ export function shiftMonth(ym: string, by: number): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`
 }
 
+/**
+ * The current month in the viewer's timezone, as 'YYYY-MM'. Same reason `toISOString()`
+ * is wrong here: on the 1st before 05:00 it names the previous month.
+ */
 export function monthLocal(): string {
   const d = new Date()
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`

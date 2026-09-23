@@ -1,39 +1,38 @@
-import { useState } from 'react'
-import type { ReactNode } from 'react'
+import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import {
-  AlertTriangle, ArrowRight, CalendarCheck, CheckCircle2, ChevronDown, ChevronUp, CreditCard,
-  Hourglass, Landmark, Lightbulb, ListChecks, Plus, RefreshCw, Target, TrendingDown, Wallet,
-} from 'lucide-react'
+import { Plus, RefreshCw } from 'lucide-react'
 import { GetStartedHero, INCOME_FIELD_ID } from '../components/dashboard/GetStartedHero'
 import { PaySubscriptionModal } from '../components/finance/PaySubscriptionModal'
 import { ContributeInvestmentModal } from '../components/finance/ContributeInvestmentModal'
+import { RepaymentModal } from '../components/finance/RepaymentModal'
+import type { RepayTarget } from '../components/finance/RepaymentModal'
 import { PayBankInstallmentModal } from '../components/overview/PayBankInstallmentModal'
 import { PayPersonalLoanModal } from '../components/overview/PayPersonalLoanModal'
 import { PayBucketModal } from '../components/overview/PayBucketModal'
 import { CheckInModal } from '../components/months/CheckInModal'
-import { CloseMonthModal } from '../components/months/CloseMonthModal'
 import { TransactionModal } from '../components/transactions/TransactionModal'
-import { Button } from '../components/ui/Button'
-import { CacheBadge } from '../components/ui/CacheBadge'
+import { SpendHero } from '../components/home/SpendHero'
+import {
+  ComingUpTile, LinkButton, NextStepsTile, TileHead, YouHaveTile, canPayUpcoming, isBucket, visibleSteps,
+} from '../components/home/HomeTiles'
+import { SavingsThisMonth } from '../components/savings/SavingsThisMonth'
+import { AddGoalSheet } from '../components/savings/AddGoalSheet'
 import { ErrorTile } from '../components/ui/ErrorTile'
 import { PageHeader } from '../components/ui/PageHeader'
 import { Skeleton } from '../components/ui/Skeleton'
-import { StatTile } from '../components/ui/StatTile'
 import { Tile, TileGrid } from '../components/ui/Tile'
 import { useApi } from '../hooks/useApi'
 import { useSettings } from '../context/SettingsContext'
 import { useToast } from '../context/ToastContext'
 import { useLang } from '../i18n/LanguageContext'
-import type { TKey } from '../i18n/LanguageContext'
 import { advisorApi } from '../api/advisor'
 import { dashboardApi } from '../api/dashboard'
 import { financeApi } from '../api/finance'
 import { extractErrorMessage } from '../api/client'
-import { formatDate, formatMonth, money, moneyFull, todayLocal } from '../utils/format'
+import { formatDate, todayLocal } from '../utils/format'
 import type {
-  AdvisorBill, AdvisorResponse, AdvisorSuggestion, Bucket, Currency,
-  InvestmentResponse, MonthlyPaymentResponse, TransactionType,
+  AdvisorSuggestion, AdvisorUpcoming, Bucket, Currency, InvestmentResponse, MonthlyPaymentResponse,
+  TransactionType,
 } from '../types'
 
 interface Props { currency: Currency }
@@ -41,56 +40,19 @@ interface Props { currency: Currency }
 /** A full-width row of the twelve-column page grid. */
 const FULL = 'md:col-span-6 xl:col-span-12'
 
-/** `AdvisorResponse.Suggestion.code` → the sentence. An unknown code prints the server's English. */
-const SUGGESTION_KEY: Record<string, TKey> = {
-  'advisor.s.setIncome': 'page.advisor.s.setIncome',
-  'advisor.s.paySubscription': 'page.advisor.s.paySubscription',
-  'advisor.s.payBank': 'page.advisor.s.payBank',
-  'advisor.s.payLoanPlan': 'page.advisor.s.payLoanPlan',
-  'advisor.s.payDebts': 'page.advisor.s.payDebts',
-  'advisor.s.closeMonth': 'page.advisor.s.closeMonth',
-  'advisor.s.checkWallets': 'page.advisor.s.checkWallets',
-  'advisor.s.checkWalletsFirst': 'page.advisor.s.checkWalletsFirst',
-  'advisor.s.setAside': 'page.advisor.s.setAside',
-  'advisor.s.startEmergency': 'page.advisor.s.startEmergency',
-  'advisor.s.short': 'page.advisor.s.short',
-  'advisor.s.addGoal': 'page.advisor.s.addGoal',
-  'advisor.s.extraToGoal': 'page.advisor.s.extraToGoal',
-  'advisor.s.extraToEmergency': 'page.advisor.s.extraToEmergency',
-  'advisor.s.extraToInvestments': 'page.advisor.s.extraToInvestments',
-}
-
-const BUCKET_KEY: Record<string, TKey> = {
-  DONATION: 'cmp.bucket.donation',
-  EMERGENCY: 'cmp.bucket.emergency',
-  INVESTMENTS: 'cmp.bucket.investments',
-  SAVINGS: 'page.advisor.bucket.savings',
-}
-
-const BILL_KEY: Record<Exclude<AdvisorBill['kind'], 'SUBSCRIPTION'>, TKey> = {
-  BANK: 'page.advisor.bill.bank',
-  LOAN_PLAN: 'page.advisor.bill.loanPlan',
-  DEBTS: 'page.advisor.bill.debts',
-}
-
-const isBucket = (b: string | null): b is Bucket =>
-  b === 'DONATION' || b === 'EMERGENCY' || b === 'INVESTMENTS'
-
 /**
- * Home: the advisor. What you have, what is coming, what this month still asks for, what is free
- * after that — and what to do next, one button each.
+ * Home: how much can I safely spend until salary — and what is coming, what to save, what I have.
  *
- * The owner stopped opening Tracker because Home read like a ledger. Everything that page showed
- * is still one click away (Details below, and Summary / Plan in the sidebar's Details group); this
- * page answers only the questions they asked, from `GET /advisor` — the same response the Telegram
- * bot sends every evening, so the two never give different advice. Each step opens the dialog the
- * rest of the app already uses for that job, so no payment is recorded any differently from here.
+ * Top to bottom: the daily figure (red when the money runs short), the bills and loan payments due
+ * soon, this month's savings, the wallets, and at most three next steps that nothing above already
+ * covers. Every "Pay" opens the dialog the rest of the app uses for that job. It all comes from
+ * `GET /advisor` — the same answer the Telegram bot sends — so web and bot never disagree.
  */
 export function Advisor({ currency }: Props) {
   const { t, lang } = useLang()
   const navigate = useNavigate()
-  const { showError } = useToast()
-  const { hasStableIncome, loading: settingsLoading } = useSettings()
+  const { showError, showSuccess } = useToast()
+  const { hasStableIncome, ready: settingsReady, error: settingsError, loading: settingsLoading } = useSettings()
   const today = todayLocal()
   const month = today.slice(0, 7)
 
@@ -98,17 +60,19 @@ export function Advisor({ currency }: Props) {
   // Only for the first-run checklist, which needs to know whether anything was ever recorded.
   const summary = useApi(() => dashboardApi.getSummary(currency), [currency])
 
-  const [showDetails, setShowDetails] = useState(false)
-  // Recording money from Home opens the one transaction form the rest of the app uses, already
-  // set to income or expense — the same questions in the same order, wherever you start from.
-  const [addType, setAddType] = useState<TransactionType | null>(null)
-  const [subscription, setSubscription] = useState<MonthlyPaymentResponse | null>(null)
-  const [bankOpen, setBankOpen] = useState(false)
-  const [debtOpen, setDebtOpen] = useState(false)
+  const [addOpen, setAddOpen] = useState(false)
+  const [addType, setAddType] = useState<TransactionType | undefined>()
+  // A bill opens on what is still to pay for it this month — never its full price a second time.
+  const [subscription, setSubscription] = useState<{ record: MonthlyPaymentResponse; amount?: number } | null>(null)
+  const [bank, setBank] = useState<{ id?: number; amount?: number } | null>(null)
+  const [debtPickerOpen, setDebtPickerOpen] = useState(false)
+  const [repay, setRepay] = useState<{ target: RepayTarget; amount?: number } | null>(null)
   const [bucket, setBucket] = useState<{ bucket: Bucket; amount: number } | null>(null)
-  const [goal, setGoal] = useState<InvestmentResponse | null>(null)
+  const [goal, setGoal] = useState<{ investment: InvestmentResponse; amount?: number } | null>(null)
   const [checkInOpen, setCheckInOpen] = useState(false)
-  const [closeMonth, setCloseMonth] = useState<string | null>(null)
+  const [goalFormOpen, setGoalFormOpen] = useState(false)
+  const [busyKey, setBusyKey] = useState<string | null>(null)
+  const comingUpRef = useRef<HTMLHeadingElement>(null)
 
   const d = adv.data
   const refetch = () => { adv.refetch(); summary.refetch() }
@@ -120,28 +84,70 @@ export function Advisor({ currency }: Props) {
     ;(el as HTMLInputElement).focus({ preventScroll: true })
   }
 
+  // The income gate, without a dead button: until a monthly income exists the server refuses every
+  // write, so "Add" takes the owner to the one field that unblocks it. Only once the answer is
+  // known — a settings read still in flight, or one that failed, is not "no income".
+  const incomeGated = settingsReady && !settingsError && !hasStableIncome
+  const openAdd = (type?: TransactionType) => {
+    if (incomeGated) { focusIncomeSetup(); return }
+    setAddType(type)
+    setAddOpen(true)
+  }
+
+  const seeDue = () => {
+    const el = comingUpRef.current
+    if (!el) return
+    // Centred, not top-aligned: on a phone the top of the scroller sits under the fixed app bar.
+    el.scrollIntoView({ block: 'center' })
+    el.focus({ preventScroll: true })
+  }
+
+  /** "Pay" on a Coming up row: the dialog for that exact bill or loan, already on its amount. */
+  const payUpcoming = async (u: AdvisorUpcoming, key: string) => {
+    setBusyKey(key)
+    try {
+      if (u.kind === 'BILL') {
+        const sub = (await financeApi.getMonthlyPayments()).data.find(m => m.id === u.refId)
+        if (sub) setSubscription({ record: sub, amount: u.amount })
+        else refetch()
+      } else if (u.kind === 'BANK') {
+        setBank({ id: u.refId ?? undefined, amount: u.amount })
+      } else if (u.kind === 'LOAN') {
+        const rec = (await financeApi.getLoansTaken()).data.find(l => l.id === u.refId)
+        if (rec) setRepay({ target: { kind: 'loan-taken', record: rec }, amount: u.amount })
+        else setDebtPickerOpen(true)
+      } else {
+        const rec = (await financeApi.getDebts()).data.find(x => x.id === u.refId)
+        if (rec) setRepay({ target: { kind: 'debt', record: rec }, amount: u.amount })
+        else setDebtPickerOpen(true)
+      }
+    } catch (err: unknown) {
+      showError(extractErrorMessage(err))
+    } finally {
+      setBusyKey(null)
+    }
+  }
+
   /** One step's button: open the dialog that already does this job elsewhere in the app. */
   const act = async (s: AdvisorSuggestion) => {
     try {
       switch (s.action) {
         case 'SET_INCOME': focusIncomeSetup(); return
         case 'PAY_SUBSCRIPTION': {
-          const all = (await financeApi.getMonthlyPayments()).data
-          const sub = all.find(m => m.id === s.refId)
-          if (sub) setSubscription(sub)
+          const sub = (await financeApi.getMonthlyPayments()).data.find(m => m.id === s.refId)
+          if (sub) setSubscription({ record: sub, amount: s.amount ?? undefined })
           else refetch()
           return
         }
-        case 'PAY_BANK': setBankOpen(true); return
-        case 'PAY_DEBT': setDebtOpen(true); return
-        case 'CLOSE_MONTH': setCloseMonth(s.params.month ?? null); return
+        case 'PAY_BANK': setBank({}); return
+        case 'PAY_DEBT': setDebtPickerOpen(true); return
         case 'CHECK_IN': setCheckInOpen(true); return
-        case 'ADD_GOAL': navigate('/overview/investments?new=goal'); return
+        // The short goal form, right here — no trip to another page.
+        case 'ADD_GOAL': setGoalFormOpen(true); return
         case 'SET_ASIDE': {
           if (s.bucket === 'SAVINGS' && s.refId != null) {
-            const all = (await financeApi.getInvestments()).data
-            const g = all.find(i => i.id === s.refId)
-            if (g) setGoal(g)
+            const g = (await financeApi.getInvestments()).data.find(i => i.id === s.refId)
+            if (g) setGoal({ investment: g, amount: s.amount ?? undefined })
             else refetch()
           } else if (isBucket(s.bucket)) {
             setBucket({ bucket: s.bucket, amount: s.amount ?? 0 })
@@ -155,49 +161,38 @@ export function Advisor({ currency }: Props) {
     }
   }
 
-  const sentence = (s: AdvisorSuggestion) => {
-    const key = SUGGESTION_KEY[s.code]
-    if (!key) return s.text
-    const b = s.params.bucket ?? s.bucket
-    return t(key, {
-      name: s.params.name ?? '',
-      month: s.params.month ? formatMonth(s.params.month, lang) : '',
-      days: s.params.days ?? '',
-      bucket: b && BUCKET_KEY[b] ? t(BUCKET_KEY[b]) : (b ?? ''),
-      amount: s.amount != null ? moneyFull(s.amount, currency) : '',
-    })
-  }
-
-  const buttonLabel = (s: AdvisorSuggestion): string | null => {
-    switch (s.action) {
-      case 'PAY_SUBSCRIPTION':
-      case 'PAY_BANK':
-      case 'PAY_DEBT': return t('page.advisor.btn.pay')
-      case 'CHECK_IN': return t('page.advisor.btn.checkIn')
-      case 'CLOSE_MONTH': return t('page.advisor.btn.close')
-      case 'SET_ASIDE': return t('page.advisor.btn.setAside')
-      case 'ADD_GOAL': return t('page.advisor.btn.addGoal')
-      case 'SET_INCOME': return t('page.advisor.btn.setIncome')
-      default: return null
-    }
-  }
-
-  const stepIcon = (s: AdvisorSuggestion): { icon: ReactNode; tone: string } => {
-    if (s.kind === 'WARN') return { icon: <AlertTriangle className="w-4 h-4" />, tone: 'bg-amber-100 text-amber-700' }
-    if (s.kind === 'IDEA') return { icon: <Lightbulb className="w-4 h-4" />, tone: 'bg-teal-100 text-teal-700' }
-    switch (s.action) {
-      case 'PAY_SUBSCRIPTION': return { icon: <CreditCard className="w-4 h-4" />, tone: 'bg-indigo-100 text-indigo-600' }
-      case 'PAY_BANK':
-      case 'PAY_DEBT': return { icon: <Landmark className="w-4 h-4" />, tone: 'bg-indigo-100 text-indigo-600' }
-      case 'CHECK_IN': return { icon: <Wallet className="w-4 h-4" />, tone: 'bg-slate-100 text-slate-600' }
-      case 'CLOSE_MONTH': return { icon: <CalendarCheck className="w-4 h-4" />, tone: 'bg-slate-100 text-slate-600' }
-      default: return { icon: <Target className="w-4 h-4" />, tone: 'bg-pink-100 text-pink-600' }
-    }
-  }
-
   const walletCount = d?.wallets.length ?? 0
   const showGetStarted = !settingsLoading && !!d && summary.hasLoaded && !summary.error
     && (!hasStableIncome || walletCount === 0 || (summary.data?.transactionCount ?? 0) === 0)
+
+  const daily = d?.daily ?? null
+  const upcoming = daily ? (daily.upcoming ?? []) : null
+  // An older backend sends no savings rows; this month's set-aside lines are the same shape and
+  // carry the unmet ones, so they stand in until it does.
+  const savingsRows = d ? (d.savingsThisMonth ?? d.setAside ?? []) : []
+  const steps = d ? visibleSteps(d, {
+    firstRunShowsIncome: showGetStarted && !hasStableIncome,
+    upcoming: upcoming ? upcoming.filter(u => canPayUpcoming(u, month)) : null,
+    savings: savingsRows.map(r => r.bucket),
+  }) : []
+
+  // Two tiles share a row on a wide screen; one alone takes the row. On a tablet each takes the
+  // full width — the rows carry a Pay button, and half of a tablet is too narrow for them.
+  const pairSpan = (a: boolean, b: boolean) => (a && b ? 6 : 12) as 6 | 12
+
+  const youHave = d && (
+    <YouHaveTile
+      d={d}
+      currency={currency}
+      span={daily ? pairSpan(true, steps.length > 0) : 12}
+      mdSpan={6}
+      hero={!daily}
+      onCheck={() => setCheckInOpen(true)}
+      extra={!daily && d.missingStableIncome ? (
+        <p className="mt-2 text-sm text-slate-600">{t('home.hero.noIncome')}</p>
+      ) : undefined}
+    />
+  )
 
   return (
     <div className="p-4 sm:p-6">
@@ -206,9 +201,8 @@ export function Advisor({ currency }: Props) {
           <PageHeader
             title={t('nav.home')}
             subtitle={formatDate(today, lang, 'long')}
-            primary={{ label: t('page.advisor.addIncome'), onClick: () => setAddType('INCOME'), icon: <Plus className="w-4 h-4" aria-hidden="true" /> }}
+            primary={{ label: t('action.add'), onClick: () => openAdd(), icon: <Plus className="w-4 h-4" aria-hidden="true" /> }}
             overflow={[
-              { label: t('page.advisor.addExpense'), onClick: () => setAddType('EXPENSE'), icon: <TrendingDown className="w-4 h-4" aria-hidden="true" /> },
               { label: t('page.advisor.refresh'), onClick: refetch, icon: <RefreshCw className="w-4 h-4" aria-hidden="true" /> },
             ]}
           />
@@ -221,261 +215,108 @@ export function Advisor({ currency }: Props) {
             walletCount={walletCount}
             transactionCount={summary.data?.transactionCount ?? 0}
             onStepDone={refetch}
-            onAddExpense={() => setAddType('EXPENSE')}
+            onAddExpense={() => openAdd('EXPENSE')}
           />
         )}
 
         {adv.loading ? (
           <>
-            {[0, 1, 2, 3].map(i => (
-              <Tile key={i} span={3} padding="none"><Skeleton variant="stat" bare className="p-5" /></Tile>
-            ))}
+            <Tile span={12} padding="none"><Skeleton variant="stat" bare className="p-6" /></Tile>
+            <Skeleton variant="row" count={3} className="md:col-span-6 xl:col-span-6" />
+            <Skeleton variant="row" count={3} className="md:col-span-6 xl:col-span-6" />
           </>
         ) : adv.error && !d ? (
           <ErrorTile className={FULL} message={adv.error} onRetry={adv.refetch} />
         ) : d ? (
           <>
             {adv.error && <ErrorTile compact className={FULL} message={adv.error} onRetry={adv.refetch} />}
-            <FourFigures d={d} currency={currency} onCheck={() => setCheckInOpen(true)} />
 
-            <Tile span={12} as="section">
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="text-label uppercase text-slate-500">{t('page.advisor.next')}</h2>
-                <CacheBadge isCached={adv.isCached} cachedAt={adv.cachedAt} />
-              </div>
-              {d.missingStableIncome && d.suggestions.length === 0 ? (
-                <p className="mt-3 text-sm text-slate-600">{t('page.advisor.noIncome')}</p>
-              ) : d.suggestions.length === 0 ? (
-                <p className="mt-3 flex items-center gap-2 text-sm text-slate-700">
-                  <CheckCircle2 className="w-4 h-4 text-income" aria-hidden="true" />
-                  {t('page.advisor.allDone')}
-                </p>
-              ) : (
-                <ul className="mt-2 divide-y divide-hairline">
-                  {d.suggestions.map((s, i) => {
-                    const { icon, tone } = stepIcon(s)
-                    const label = buttonLabel(s)
-                    return (
-                      <li key={`${s.code}-${s.refId ?? s.bucket ?? i}`} className="flex items-center gap-3 py-3">
-                        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-chip ${tone}`} aria-hidden="true">
-                          {icon}
-                        </span>
-                        <p className={`min-w-0 flex-1 text-sm ${s.kind === 'IDEA' ? 'text-slate-600' : 'text-slate-900'}`}>
-                          {sentence(s)}
-                        </p>
-                        {label && (
-                          <Button size="sm" variant="secondary" label={label} onClick={() => act(s)} className="shrink-0" />
-                        )}
-                      </li>
-                    )
-                  })}
-                </ul>
-              )}
-            </Tile>
+            <SpendHero
+              d={d}
+              currency={currency}
+              cached={{ isCached: adv.isCached, cachedAt: adv.cachedAt }}
+              onSeeDue={seeDue}
+              fallback={youHave}
+            />
 
-            <Tile span={12} as="section">
-              <button
-                type="button"
-                onClick={() => setShowDetails(v => !v)}
-                aria-expanded={showDetails}
-                className="flex w-full min-h-[44px] items-center justify-between gap-3 rounded-control text-left focus-ring"
-              >
-                <span className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                  <ListChecks className="w-4 h-4 text-slate-500" aria-hidden="true" />
-                  {t('page.advisor.details')}
-                </span>
-                {showDetails
-                  ? <ChevronUp className="w-4 h-4 text-slate-500" aria-hidden="true" />
-                  : <ChevronDown className="w-4 h-4 text-slate-500" aria-hidden="true" />}
-              </button>
-              {showDetails && <Details d={d} currency={currency} />}
-            </Tile>
+            {upcoming && (
+              <ComingUpTile
+                ref={comingUpRef}
+                rows={upcoming}
+                currency={currency}
+                month={month}
+                span={pairSpan(true, savingsRows.length > 0)}
+                mdSpan={6}
+                busyKey={busyKey}
+                onPay={payUpcoming}
+                onAll={() => navigate('/loans')}
+              />
+            )}
+
+            {savingsRows.length > 0 && (
+              <Tile span={pairSpan(!!upcoming, true)} mdSpan={6} as="section">
+                <TileHead
+                  title={t('home.savings.title')}
+                  action={<LinkButton label={t('home.savings.open')} onClick={() => navigate('/savings')} />}
+                />
+                <div className="mt-1">
+                  <SavingsThisMonth
+                    rows={savingsRows}
+                    currency={currency}
+                    onPay={(b, amount) => setBucket({ bucket: b, amount })}
+                  />
+                </div>
+              </Tile>
+            )}
+
+            {daily && youHave}
+
+            {steps.length > 0 && (
+              <NextStepsTile
+                steps={steps}
+                currency={currency}
+                span={daily ? pairSpan(true, true) : 12}
+                mdSpan={6}
+                onAct={act}
+              />
+            )}
           </>
         ) : null}
       </TileGrid>
 
-      {/* Keyed by the direction so the form starts clean each time it is opened from here. */}
       <TransactionModal
-        key={addType ?? 'none'}
-        open={addType !== null} onClose={() => setAddType(null)}
+        open={addOpen} onClose={() => setAddOpen(false)}
         onSaved={refetch} defaultCurrency={currency} transaction={null}
-        presetType={addType ?? undefined}
+        presetType={addType}
       />
+      {/* These two dialogs leave the confirmation to their caller. */}
       <PaySubscriptionModal
-        open={!!subscription} subscription={subscription}
-        onClose={() => setSubscription(null)} onSaved={refetch}
+        open={!!subscription} subscription={subscription?.record ?? null}
+        defaultAmount={subscription?.amount}
+        onClose={() => setSubscription(null)}
+        onSaved={() => { refetch(); showSuccess(t('page.finance.paymentRecordedToast')) }}
       />
-      <PayBankInstallmentModal open={bankOpen} onClose={() => setBankOpen(false)} onSaved={refetch} defaultMonth={month} />
-      <PayPersonalLoanModal open={debtOpen} onClose={() => setDebtOpen(false)} onSaved={refetch} defaultMonth={month} />
+      <PayBankInstallmentModal
+        open={!!bank} onClose={() => setBank(null)} onSaved={refetch} defaultMonth={month}
+        bankLoanId={bank?.id} defaultAmount={bank?.amount}
+      />
+      <PayPersonalLoanModal open={debtPickerOpen} onClose={() => setDebtPickerOpen(false)} onSaved={refetch} defaultMonth={month} />
+      <RepaymentModal
+        open={!!repay} target={repay?.target ?? null} defaultAmount={repay?.amount}
+        onClose={() => setRepay(null)} onSaved={refetch}
+      />
       <PayBucketModal
         open={!!bucket} bucket={bucket?.bucket ?? null} suggestedAmount={bucket?.amount}
         currency={currency} defaultMonth={month}
         onClose={() => setBucket(null)} onSaved={refetch}
       />
-      <ContributeInvestmentModal open={!!goal} investment={goal} onClose={() => setGoal(null)} onSaved={refetch} />
+      <ContributeInvestmentModal
+        open={!!goal} investment={goal?.investment ?? null} defaultAmount={goal?.amount}
+        onClose={() => setGoal(null)}
+        onSaved={() => { refetch(); showSuccess(t('page.investments.savedToast')) }}
+      />
       <CheckInModal open={checkInOpen} onClose={() => setCheckInOpen(false)} onSaved={refetch} currency={currency} />
-      {closeMonth && (
-        <CloseMonthModal
-          open month={closeMonth} currency={currency}
-          onClose={() => setCloseMonth(null)} onSaved={refetch}
-        />
-      )}
-    </div>
-  )
-}
-
-/** You have · Coming · Still this month · Free — the four answers, one tile each. */
-function FourFigures({ d, currency, onCheck }: { d: AdvisorResponse; currency: Currency; onCheck: () => void }) {
-  const { t } = useLang()
-  const ago = d.balanceCheckedDaysAgo
-  const checked = ago == null ? t('page.advisor.notChecked')
-    : ago === 0 ? t('page.advisor.checkedToday')
-    : t('page.advisor.checkedAgo', { days: ago })
-
-  const still = d.billsLeft + d.setAsideLeft
-  const stillCaption = d.billsLeft > 0 && d.setAsideLeft > 0
-    ? t('page.advisor.stillBoth', { bills: moneyFull(d.billsLeft, currency), aside: moneyFull(d.setAsideLeft, currency) })
-    : d.billsLeft > 0 ? t('page.advisor.stillBills', { bills: moneyFull(d.billsLeft, currency) })
-    : d.setAsideLeft > 0 ? t('page.advisor.stillAside', { aside: moneyFull(d.setAsideLeft, currency) })
-    : t('page.advisor.stillNone')
-
-  const free = d.free ?? 0
-  const short = d.free != null && d.free < 0
-
-  return (
-    <>
-      <StatTile
-        span={3} mdSpan={3}
-        label={t('page.advisor.have')}
-        value={money(d.have, currency)}
-        caption={checked}
-        icon={<Wallet className="w-4 h-4" aria-hidden="true" />}
-        onClick={onCheck}
-      />
-      <StatTile
-        span={3} mdSpan={3}
-        label={t('page.advisor.coming')}
-        value={money(d.salaryComing, currency)}
-        caption={d.missingStableIncome ? t('page.advisor.noIncomeShort')
-          : d.salaryComing > 0 ? t('page.advisor.comingSalary') : t('page.advisor.salaryIn')}
-        icon={<Hourglass className="w-4 h-4" aria-hidden="true" />}
-      >
-        {d.owedToYou.length > 0 && (
-          <ul className="space-y-0.5 text-xs text-slate-500">
-            {d.owedToYou.slice(0, 2).map(o => (
-              <li key={o.id} className="truncate">{t('page.advisor.owed', { name: o.name, amount: moneyFull(o.amount, currency) })}</li>
-            ))}
-          </ul>
-        )}
-      </StatTile>
-      <StatTile
-        span={3} mdSpan={3}
-        label={t('page.advisor.still')}
-        value={money(still, currency)}
-        caption={stillCaption + (d.setAsideLeft > 0 && d.setAsideAfterBills ? ` ${t('page.advisor.afterBills')}` : '')}
-        icon={<ListChecks className="w-4 h-4" aria-hidden="true" />}
-      />
-      <StatTile
-        span={3} mdSpan={3}
-        tone={short ? 'out' : 'in'}
-        label={short ? t('page.advisor.short') : t('page.advisor.free')}
-        value={d.free == null ? '—' : money(Math.abs(free), currency)}
-        caption={d.free == null ? t('page.advisor.noIncomeShort')
-          : short ? t('page.advisor.shortCaption') : t('page.advisor.freeCaption')}
-        icon={<CheckCircle2 className="w-4 h-4" aria-hidden="true" />}
-      />
-    </>
-  )
-}
-
-/** Everything behind the four figures, for when the owner wants to see the arithmetic. */
-function Details({ d, currency }: { d: AdvisorResponse; currency: Currency }) {
-  const { t, lang } = useLang()
-  const navigate = useNavigate()
-  const heading = 'mt-5 text-label uppercase text-slate-500'
-  const row = 'flex items-baseline justify-between gap-3 py-1.5 text-sm'
-  const none = <p className="py-1.5 text-sm text-slate-500">{t('page.advisor.d.none')}</p>
-
-  return (
-    <div className="mt-2">
-      <h3 className={heading}>{t('page.advisor.d.wallets')}</h3>
-      {d.wallets.length === 0 ? none : d.wallets.map(w => (
-        <div key={`${w.type}-${w.cardId ?? 'cash'}`} className={row}>
-          <span className="min-w-0 truncate text-slate-700">{w.type === 'CASH' ? t('tx.cash') : w.label}</span>
-          <span className="tabular-nums text-slate-900">{moneyFull(w.balance, currency)}</span>
-        </div>
-      ))}
-
-      {!d.missingStableIncome && (
-        <>
-          <h3 className={heading}>{t('page.advisor.d.income')}</h3>
-          <div className={row}>
-            <span className="text-slate-700">{t('page.advisor.d.salary')}</span>
-            <span className="tabular-nums text-slate-900">
-              {t('page.advisor.d.ofRecorded', { received: moneyFull(d.salaryReceived, currency), expected: moneyFull(d.salaryExpected, currency) })}
-            </span>
-          </div>
-          {d.bonusReceived > 0 && (
-            <div className={row}>
-              <span className="text-slate-700">{t('page.advisor.d.bonus')}</span>
-              <span className="tabular-nums text-slate-900">{moneyFull(d.bonusReceived, currency)}</span>
-            </div>
-          )}
-          {d.owedToYou.map(o => (
-            <div key={o.id} className={row}>
-              <span className="min-w-0 truncate text-slate-700">
-                {o.expectedOn
-                  ? t('page.advisor.d.owedOn', { name: o.name, date: formatDate(o.expectedOn, lang) })
-                  : t('page.advisor.d.owed', { name: o.name })}
-              </span>
-              <span className="tabular-nums text-slate-900">{moneyFull(o.amount, currency)}</span>
-            </div>
-          ))}
-
-          <h3 className={heading}>{t('page.advisor.d.bills')}</h3>
-          {d.bills.length === 0 ? none : d.bills.map(b => (
-            <div key={`${b.kind}-${b.refId ?? ''}`} className={row}>
-              <span className="min-w-0 truncate text-slate-700">
-                {b.kind === 'SUBSCRIPTION' ? b.name : t(BILL_KEY[b.kind])}
-                {b.paid > 0 && (
-                  <span className="text-slate-500"> · {t('page.advisor.d.paidOf', { paid: moneyFull(b.paid, currency), target: moneyFull(b.target, currency) })}</span>
-                )}
-              </span>
-              <span className="tabular-nums text-slate-900">{moneyFull(b.amount, currency)}</span>
-            </div>
-          ))}
-
-          <h3 className={heading}>
-            {t('page.advisor.d.aside')}{d.setAsideAfterBills && d.setAside.length > 0 ? ` ${t('page.advisor.afterBills')}` : ''}
-          </h3>
-          {d.setAside.length === 0 ? none : d.setAside.map(a => (
-            <div key={a.bucket} className={row}>
-              <span className="min-w-0 truncate text-slate-700">
-                {t(BUCKET_KEY[a.bucket])}{a.percent != null ? ` · ${a.percent}%` : ''}
-                {a.paid > 0 && (
-                  <span className="text-slate-500"> · {t('page.advisor.d.paidOf', { paid: moneyFull(a.paid, currency), target: moneyFull(a.target, currency) })}</span>
-                )}
-              </span>
-              <span className="tabular-nums text-slate-900">{moneyFull(a.remaining, currency)}</span>
-            </div>
-          ))}
-
-          <p className="mt-5 rounded-control bg-slate-50 px-3 py-2.5 text-sm text-slate-700 tabular-nums">
-            {t('page.advisor.d.freeMath', {
-              have: moneyFull(d.have, currency), coming: moneyFull(d.salaryComing, currency),
-              bills: moneyFull(d.billsLeft, currency), aside: moneyFull(d.setAsideLeft, currency),
-              free: d.free == null ? '—' : moneyFull(d.free, currency),
-            })}
-          </p>
-        </>
-      )}
-
-      <div className="mt-4 flex flex-wrap gap-2">
-        <Button size="sm" variant="ghost" label={t('page.advisor.d.planLink')} onClick={() => navigate('/overview')}
-          icon={<ArrowRight className="w-4 h-4" aria-hidden="true" />} />
-        <Button size="sm" variant="ghost" label={t('page.advisor.d.summaryLink')} onClick={() => navigate('/summary')}
-          icon={<ArrowRight className="w-4 h-4" aria-hidden="true" />} />
-      </div>
+      <AddGoalSheet open={goalFormOpen} onClose={() => setGoalFormOpen(false)} onSaved={refetch} />
     </div>
   )
 }
