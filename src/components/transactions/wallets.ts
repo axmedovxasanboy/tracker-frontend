@@ -69,6 +69,29 @@ export function rememberChild(parentId: number, childId: number) {
   write(LAST_CHILD_KEY, JSON.stringify(map))
 }
 
+const LAST_ACCOUNT_KEY = 'tracker.lastSavingsAccount'
+
+function readAccountMap(): Record<string, string> {
+  try {
+    const parsed = JSON.parse(read(LAST_ACCOUNT_KEY) ?? '{}')
+    return parsed && typeof parsed === 'object' ? parsed as Record<string, string> : {}
+  } catch {
+    return {}
+  }
+}
+
+/** Where savings money for `bucket` last went: a holding id, 'fund' (the plain emergency record), or null. */
+export function readLastAccount(bucket: string): string | null {
+  const v = readAccountMap()[bucket]
+  return typeof v === 'string' && v ? v : null
+}
+
+export function rememberAccount(bucket: string, account: string) {
+  const map = readAccountMap()
+  map[bucket] = account
+  write(LAST_ACCOUNT_KEY, JSON.stringify(map))
+}
+
 // ── The default ────────────────────────────────────────────────────────────────────────────────
 
 /**

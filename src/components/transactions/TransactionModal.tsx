@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowDownRight, ArrowUpRight, Plus, X } from 'lucide-react'
 import { Sheet } from '../ui/Sheet'
+import { IconChip } from '../ui/IconChip'
 import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
 import { AmountInput } from '../ui/AmountInput'
@@ -14,6 +15,8 @@ import { financeApi } from '../../api/finance'
 import { extractErrorMessage } from '../../api/client'
 import { moneyFull, todayLocal } from '../../utils/format'
 import { BalanceTransferModal } from './BalanceTransferModal'
+import { PayBucketModal } from '../overview/PayBucketModal'
+import { SAVINGS_ICON, SAVINGS_NAME_KEY } from '../savings/SavingsThisMonth'
 import { CashPart, ChipGroup, CompactDate, CONTROL, CONTROL_INVALID, LINK_BLOCK, useOptional } from './formParts'
 import { WalletPicker } from './WalletPicker'
 import {
@@ -21,7 +24,7 @@ import {
 } from './wallets'
 import type { WalletValue } from './wallets'
 import type {
-  Category, CategoryType, Currency, DonationResponse, InvestmentResponse, InvestmentType,
+  Bucket, Category, CategoryType, Currency, DonationResponse, InvestmentResponse, InvestmentType,
   LoanGivenResponse, Transaction, TransactionRequest, TransactionSubType, TransactionType,
 } from '../../types'
 
@@ -217,6 +220,9 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
 
   // Move money opens on top of this form; saving it closes both.
   const [transferOpen, setTransferOpen] = useState(false)
+  // So does a savings payment: which kind first, then the dialog that pays it.
+  const [savingsChooserOpen, setSavingsChooserOpen] = useState(false)
+  const [savingsBucket, setSavingsBucket] = useState<Bucket | null>(null)
 
   const amountRef = useRef<HTMLInputElement>(null)
   const borrowerPopoverRef = useRef<HTMLDivElement>(null)
@@ -276,7 +282,7 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
   }, [])
 
   useEffect(() => {
-    if (!open) { setTransferOpen(false); return }
+    if (!open) { setTransferOpen(false); setSavingsChooserOpen(false); setSavingsBucket(null); return }
     setError(null); setIsBalanceError(false); setValidationError(null); setInvalidField(null)
     setShowNewCat(false); setNewCatName(''); setNewCatError(null)
     setShowNewSubCat(false); setNewSubCatName(''); setNewSubCatError(null)
@@ -1110,7 +1116,8 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
               <button type="button" onClick={() => goTo('/loans')} className={LINK_BLOCK}>
                 {translate('cmp.txModal.elseLoans')}
               </button>
-              <button type="button" onClick={() => goTo('/savings')} className={LINK_BLOCK}>
+              {/* Like Move money: on top of this form, taking the amount and wallet along. */}
+              <button type="button" onClick={() => setSavingsChooserOpen(true)} className={LINK_BLOCK}>
                 {translate('home.form.elseSavings')}
               </button>
               {/* Opens on top of this form and takes the amount along, so nothing typed is lost. */}
@@ -1136,6 +1143,45 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
         presetAmount={total > 0 ? total : undefined}
         onClose={() => setTransferOpen(false)}
         onSaved={() => { setTransferOpen(false); onSaved(); onClose() }}
+      />
+
+      {/* Savings, the same way: pick the kind, then pay it. Saving closes everything; backing out of
+          either returns to this form with what was typed still in it. */}
+      <Sheet
+        open={open && savingsChooserOpen}
+        onClose={() => setSavingsChooserOpen(false)}
+        title={translate('home.form.elseSavings')}
+        maxWidth="max-w-md"
+      >
+        <div className="space-y-2">
+          {(['INVESTMENTS', 'EMERGENCY', 'DONATION'] as Bucket[]).map(b => (
+            <button
+              key={b}
+              type="button"
+              onClick={() => {
+                // The chooser gives focus back before the dialog takes it, so closing the dialog
+                // lands on this form's Savings link rather than on a button that no longer exists.
+                setSavingsChooserOpen(false)
+                setTimeout(() => setSavingsBucket(b), 0)
+              }}
+              className="focus-ring flex min-h-[56px] w-full items-center gap-3 rounded-control border border-slate-200 bg-white px-3 text-left text-sm font-medium text-slate-900 transition-colors hover:bg-slate-50"
+            >
+              <IconChip tone={SAVINGS_ICON[b].tone}>{SAVINGS_ICON[b].icon}</IconChip>
+              {translate(SAVINGS_NAME_KEY[b])}
+            </button>
+          ))}
+        </div>
+      </Sheet>
+      <PayBucketModal
+        open={open && !!savingsBucket}
+        bucket={savingsBucket}
+        currency={defaultCurrency}
+        defaultMonth={todayLocal().slice(0, 7)}
+        presetAmount={total > 0 ? total : undefined}
+        // A split cannot be carried: the dialog pays from one wallet.
+        presetWallet={!split && (typeof wallet === 'number' || wallet === 'cash') ? wallet : undefined}
+        onClose={() => setSavingsBucket(null)}
+        onSaved={() => { setSavingsBucket(null); onSaved(); onClose() }}
       />
     </>
   )

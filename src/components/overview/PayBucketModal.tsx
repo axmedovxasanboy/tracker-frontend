@@ -1,9 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, ChevronUp } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { ChevronDown, ChevronUp, Plus } from 'lucide-react'
 import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
+import { ErrorTile } from '../ui/ErrorTile'
 import { Field } from '../ui/Field'
+import { Skeleton } from '../ui/Skeleton'
 import { AmountInput } from '../ui/AmountInput'
+import { useRadioGroupKeys } from '../../hooks/useRadioGroupKeys'
 import { useLang } from '../../i18n/LanguageContext'
 import { useToast } from '../../context/ToastContext'
 import { emergenciesApi } from '../../api/emergencies'
@@ -12,40 +15,76 @@ import { extractErrorMessage } from '../../api/client'
 import { moneyFull, todayLocal } from '../../utils/format'
 import { CompactDate, CONTROL, CONTROL_INVALID, LINK, MONEY_INPUT, MONEY_INPUT_INVALID, useOptional } from '../transactions/formParts'
 import { WalletPicker } from '../transactions/WalletPicker'
-import { defaultWallet, rememberWallet, useWalletChoice, useWallets } from '../transactions/wallets'
+import {
+  defaultWallet, readLastAccount, rememberAccount, rememberWallet, useWalletChoice, useWallets,
+} from '../transactions/wallets'
+import type { WalletValue } from '../transactions/wallets'
 import type { Bucket, Currency, InvestmentResponse, InvestmentType } from '../../types'
 
 interface Props {
   open: boolean
   onClose: () => void
+  /** Called once the payment is saved. The dialog confirms it with its own toast. */
   onSaved: () => void
   bucket: Bucket | null
   /** Currency shown to the user. Saved record uses this currency too. */
   currency: Currency
-  /** Pre-fill amount — what this month still asks for. */
+  /** What this month still asks for: the amount starts on it, and a changed amount can go back. */
   suggestedAmount?: number
+  /** Start on this amount instead — one already typed elsewhere (the Add form). */
+  presetAmount?: number
+  /** Start on this wallet — the one the Add form had picked. */
+  presetWallet?: WalletValue
   /** Default month (YYYY-MM). The date starts on today when it falls in it, else on the 1st. */
   defaultMonth: string
 }
 
 const INVESTMENT_TYPES: InvestmentType[] = ['REAL_ESTATE', 'BONDS', 'MUTUAL_FUND', 'GOLD', 'OTHER']
 
-// The two non-numeric values of the target select; everything else is an existing holding's id.
+// The two targets that are not an existing holding's id.
 /** EMERGENCY only: a plain emergency-fund contribution (an `Emergency` + its mirrored transaction). */
 const FUND = 'fund'
 /** Open a new holding instead of adding to one that exists. */
 const NEW = 'new'
 
-type Invalid = 'amount' | 'wallet' | 'name' | null
+type Invalid = 'amount' | 'wallet' | 'name' | 'target' | null
+type AccountsState = 'idle' | 'loading' | 'ready' | 'failed'
+
+/** A holding's worth: its market value when one was set, else what went in. */
+const valueOf = (i: InvestmentResponse) => i.currentValue ?? i.investedAmount
+
+/**
+ * The accounts that take this bucket's money — opening balances included: that flag only says the
+ * first amount did not come from a wallet, and money added from a wallet counts toward the month
+ * like any other. The one last used comes first, then the rest by what they are worth. A savings
+ * goal is neither; it has its own "Add money".
+ */
+function accountsFor(bucket: Bucket, currency: Currency, all: InvestmentResponse[], last: string | null) {
+  return all
+    .filter(i => i.currency === currency && !i.savingsGoal
+      && (bucket === 'EMERGENCY' ? i.emergencyFund : !i.emergencyFund))
+    .sort((a, b) =>
+      Number(String(b.id) === last) - Number(String(a.id) === last) || valueOf(b) - valueOf(a))
+}
+
+/** The last one used if it is still there, else the one worth most, else the bucket's own start. */
+function defaultTarget(bucket: Bucket, accounts: InvestmentResponse[], last: string | null): string {
+  if (bucket === 'EMERGENCY' && last === FUND) return FUND
+  if (accounts.length > 0) return String(accounts[0].id)
+  return bucket === 'EMERGENCY' ? FUND : NEW
+}
 
 /**
  * Put money into a donation, the emergency fund or investments.
  *
- * A donation asks for the amount, the date, the wallet — and, only if the owner wants, who it went
- * to and a note. The emergency fund and investments first ask where it goes: an account that
- * already exists is the default, a new one is the last option.
+ * The emergency fund and investments open on where the money goes: every account that takes it,
+ * as one list — the one used last already chosen — then, for the emergency fund, a contribution
+ * with no account behind it, and last a new account. A donation asks for the amount, the date, the
+ * wallet — and, only if the owner wants, who it went to and a note.
  */
-export function PayBucketModal({ open, onClose, onSaved, bucket, currency, suggestedAmount, defaultMonth }: Props) {
+export function PayBucketModal({
+  open, onClose, onSaved, bucket, currency, suggestedAmount, presetAmount, presetWallet, defaultMonth,
+}: Props) {
   const { t } = useLang()
   const optional = useOptional()
   const { showSuccess } = useToast()
@@ -78,19 +117,26 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
   const [moreOpen, setMoreOpen] = useState(false)
 
   const [holdings, setHoldings] = useState<InvestmentResponse[]>([])
-  const [target, setTarget] = useState<string>(NEW)
+  const [accountsState, setAccountsState] = useState<AccountsState>('idle')
+  const [accountsError, setAccountsError] = useState<string | null>(null)
+  /** Read once per open, so the list does not reorder under the owner while the dialog is up. */
+  const [lastUsed, setLastUsed] = useState<string | null>(null)
+  /** '' until the accounts are in: nothing is chosen for the owner before they can see the list. */
+  const [target, setTarget] = useState('')
   /** True once the owner picked a target, so the list landing late cannot overrule them. */
   const targetTouched = useRef(false)
+  const loadRun = useRef(0)
 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [invalid, setInvalid] = useState<Invalid>(null)
 
-  const creatingNew = target === NEW
+  const hasAccounts = bucket === 'EMERGENCY' || bucket === 'INVESTMENTS'
+  const creatingNew = hasAccounts && target === NEW
   const toFund = bucket === 'EMERGENCY' && target === FUND
   const toHolding = /^\d+$/.test(target)
   // "Not from a wallet" only exists where a record can stand without a money movement.
-  const allowNone = bucket !== 'DONATION' && !toFund
+  const allowNone = hasAccounts && !toFund
 
   const wallets = useWallets(open && !!bucket, currency)
   const choice = useWalletChoice({
@@ -99,11 +145,31 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
     cashBalance: wallets.cashBalance,
     loaded: wallets.loaded,
     amount,
+    fixed: presetWallet ?? undefined,
   })
+
+  const loadAccounts = useCallback((b: Bucket, last: string | null) => {
+    const run = ++loadRun.current
+    setAccountsState('loading')
+    setAccountsError(null)
+    financeApi.getInvestments().then(r => {
+      if (loadRun.current !== run) return
+      const accounts = accountsFor(b, currency, r.data, last)
+      setHoldings(accounts)
+      setAccountsState('ready')
+      if (!targetTouched.current) setTarget(defaultTarget(b, accounts, last))
+    }).catch(err => {
+      if (loadRun.current !== run) return
+      setAccountsError(extractErrorMessage(err))
+      setAccountsState('failed')
+      // The fund needs no account; a new one still asks for its name first.
+      if (!targetTouched.current) setTarget(b === 'EMERGENCY' ? FUND : NEW)
+    })
+  }, [currency])
 
   useEffect(() => {
     if (!open || !bucket) return
-    setAmount(suggestedAmount ?? 0)
+    setAmount(presetAmount ?? suggestedAmount ?? 0)
     const cur = todayLocal()
     setDate(cur.startsWith(defaultMonth) ? cur : `${defaultMonth}-01`)
     setNote('')
@@ -115,20 +181,17 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
     setError(null)
     setInvalid(null)
     setHoldings([])
-    setTarget(bucket === 'EMERGENCY' ? FUND : NEW)
+    setTarget('')
     targetTouched.current = false
     if (bucket === 'EMERGENCY' || bucket === 'INVESTMENTS') {
-      financeApi.getInvestments().then(r => {
-        const mine = r.data.filter(i =>
-          i.currency === currency && !i.openingBalance
-          // An emergency-flagged holding takes emergency money; a goal takes neither here.
-          && (bucket === 'EMERGENCY' ? i.emergencyFund : !i.emergencyFund && !i.savingsGoal))
-        setHoldings(mine)
-        // Newest first from the API — the account most likely meant.
-        if (mine.length > 0 && !targetTouched.current) setTarget(String(mine[0].id))
-      }).catch(() => {})
+      const last = readLastAccount(bucket)
+      setLastUsed(last)
+      loadAccounts(bucket, last)
+    } else {
+      setLastUsed(null)
+      setAccountsState('idle')
     }
-  }, [open, bucket, suggestedAmount, defaultMonth, currency])
+  }, [open, bucket, suggestedAmount, presetAmount, defaultMonth, currency, loadAccounts])
 
   // Leaving a target that accepts "Not from a wallet" must not leave that answer standing.
   const { value: walletValue, choose: chooseWallet } = choice
@@ -139,14 +202,28 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allowNone, walletValue, chooseWallet])
 
-  if (!bucket) return null
+  // Every answer to "Pay into", in the order shown: the last one used first (the fund included),
+  // the other accounts by value, the fund, then a new account.
+  const targets: string[] = !hasAccounts ? [] : [
+    ...(bucket === 'EMERGENCY' && lastUsed === FUND ? [FUND] : []),
+    ...holdings.map(i => String(i.id)),
+    ...(bucket === 'EMERGENCY' && lastUsed !== FUND ? [FUND] : []),
+    NEW,
+  ]
+  const pickTarget = useCallback((v: string) => {
+    targetTouched.current = true
+    setTarget(v)
+    if (invalid === 'target' || invalid === 'name') { setInvalid(null); setError(null) }
+  }, [invalid])
+  const targetKeys = useRadioGroupKeys(targets, target, pickTarget)
 
-  const showTarget = bucket === 'EMERGENCY' || (bucket === 'INVESTMENTS' && holdings.length > 0)
+  if (!bucket) return null
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (hasAccounts && !target) { setInvalid('target'); setError(t('cmp.payBucket.pickAccount')); return }
     if (amount <= 0) { setInvalid('amount'); setError(t('cmp.err.amountPositive')); return }
-    if (creatingNew && bucket !== 'DONATION' && !name.trim()) {
+    if (creatingNew && !name.trim()) {
       setInvalid('name')
       setError(t(bucket === 'EMERGENCY' ? 'cmp.err.nameFund' : 'cmp.err.investmentNameRequired'))
       return
@@ -161,6 +238,7 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
     // No category is sent: the server files each one under the category made for its kind
     // (donation, emergency fund, investment), which is what the owner would expect to see.
     try {
+      let account = ''
       if (bucket === 'DONATION') {
         const recipient = recipientName.trim()
         await financeApi.createDonation({
@@ -177,6 +255,8 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
           cardId, noWallet,
           description: note.trim() || undefined,
         })
+        account = holdings.find(i => String(i.id) === target)?.name ?? ''
+        rememberAccount(bucket, target)
       } else if (toFund) {
         // The contribution the emergency fund lists; mirrored to the same transaction the
         // month counts, so both move together.
@@ -185,9 +265,11 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
           description: note.trim() || undefined,
           cardId,
         })
+        account = NAMES.EMERGENCY
+        rememberAccount(bucket, FUND)
       } else {
         const isEmergency = bucket === 'EMERGENCY'
-        await financeApi.createInvestment({
+        const res = await financeApi.createInvestment({
           name: name.trim(),
           type: isEmergency ? 'OTHER' : invType,
           investedAmount: amount, currency, purchaseDate: date,
@@ -196,9 +278,16 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
           description: note.trim() || undefined,
           cardId, openingBalance: noWallet,
         })
+        account = res.data.name
+        rememberAccount(bucket, String(res.data.id))
       }
       rememberWallet(wallet)
-      showSuccess(t('cmp.payBucket.recordedToast', { bucket: NAMES[bucket], amount: moneyFull(amount, currency) }))
+      showSuccess(bucket === 'DONATION'
+        ? t('cmp.payBucket.recordedToast', { bucket: NAMES[bucket], amount: moneyFull(amount, currency) })
+        // Money that left no wallet is on the account, not in this month's savings.
+        : noWallet
+          ? t('cmp.payBucket.addedTo', { account })
+          : t(bucket === 'EMERGENCY' ? 'cmp.payBucket.addedEmergency' : 'cmp.payBucket.addedInvestments', { account }))
       onSaved(); onClose()
     } catch (err) {
       setError(extractErrorMessage(err))
@@ -219,28 +308,72 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
   return (
     <Modal open={open} onClose={onClose} title={TITLES[bucket]} maxWidth="max-w-lg" footer={footer}>
       <form id="pay-bucket-form" noValidate onSubmit={handleSubmit} className="space-y-4">
-        {/* Where it goes: existing accounts first (one already chosen), a new one last. */}
-        {showTarget && (
-          <Field id="pb-target" label={t('home.form.addTo')}>
-            <select value={target}
-              onChange={e => { targetTouched.current = true; setTarget(e.target.value); setInvalid(null); setError(null) }}
-              className={CONTROL}>
-              {holdings.map(i => (
-                <option key={i.id} value={String(i.id)}>
-                  {i.name} · {moneyFull(i.currentValue ?? i.investedAmount, i.currency)}
-                </option>
-              ))}
-              {bucket === 'EMERGENCY' && (
-                <option value={FUND}>{t('cmp.payBucket.emergencyFundOption')}</option>
-              )}
-              <option value={NEW}>
-                {t(bucket === 'EMERGENCY' ? 'cmp.payBucket.newEmergencyFundOption' : 'cmp.payBucket.newInvestmentOption')}
-              </option>
-            </select>
-          </Field>
+        {/* Pay into: every account that takes this money, one per row, the one used last on top. */}
+        {hasAccounts && (
+          <div className="min-w-0">
+            <p id="pb-target-label" className="mb-1 text-xs font-medium text-slate-600">
+              {t('cmp.payBucket.payInto')}
+              <span aria-hidden="true" className="text-expense"> *</span>
+            </p>
+            {accountsState === 'loading' && <Skeleton variant="row" count={2} bare className="mb-2" />}
+            {accountsState === 'failed' && accountsError && (
+              <ErrorTile compact className="mb-2" message={accountsError} onRetry={() => loadAccounts(bucket, lastUsed)} />
+            )}
+            {(accountsState === 'ready' || accountsState === 'failed') && <div
+              id="pb-target"
+              role="radiogroup"
+              aria-labelledby="pb-target-label"
+              aria-required="true"
+              aria-invalid={invalid === 'target' ? true : undefined}
+              aria-describedby={invalid === 'target' ? 'pb-target-error' : undefined}
+              className="space-y-2"
+            >
+              {targets.map((v, index) => {
+                const holding = holdings.find(i => String(i.id) === v)
+                const checked = target === v
+                const title = holding ? holding.name
+                  : v === FUND ? t('cmp.payBucket.emergencyFundOption') : t('cmp.payBucket.newAccount')
+                // Two accounts may share a name; the platform and the value tell them apart.
+                const sub = holding
+                  ? [holding.broker?.trim(), moneyFull(valueOf(holding), holding.currency)].filter(Boolean).join(' · ')
+                  : undefined
+                return (
+                  <button
+                    key={v}
+                    type="button"
+                    role="radio"
+                    aria-checked={checked}
+                    {...targetKeys(index)}
+                    onClick={() => pickTarget(v)}
+                    className={`focus-ring flex min-h-[56px] w-full items-center gap-3 rounded-control border px-3 py-2 text-left transition-colors ${
+                      checked
+                        ? 'border-indigo-600 bg-indigo-50'
+                        : invalid === 'target'
+                          ? 'border-expense bg-white hover:bg-slate-50'
+                          : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span aria-hidden="true" className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${
+                      checked ? 'border-indigo-600 bg-indigo-600' : 'border-slate-300 bg-white'
+                    }`}>
+                      {checked && <span className="h-2 w-2 rounded-full bg-white" />}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium text-slate-900">{title}</span>
+                      {sub && <span className="block truncate text-xs tabular-nums text-slate-500">{sub}</span>}
+                    </span>
+                    {v === NEW && <Plus className="h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />}
+                  </button>
+                )
+              })}
+            </div>}
+            {invalid === 'target' && (
+              <p id="pb-target-error" role="alert" className="mt-1 text-xs leading-snug text-expense">{error}</p>
+            )}
+          </div>
         )}
 
-        {creatingNew && bucket !== 'DONATION' && (
+        {creatingNew && (
           <Field id="pb-name" required error={fieldError('name')}
             label={t(bucket === 'EMERGENCY' ? 'home.form.fundName' : 'cat.name')}>
             <input value={name}
@@ -276,7 +409,7 @@ export function PayBucketModal({ open, onClose, onSaved, bucket, currency, sugge
           value={choice.value}
           onChange={v => { choice.choose(v); if (invalid === 'wallet') { setInvalid(null); setError(null) } }}
           noneLabel={allowNone ? t(creatingNew ? 'home.wallet.alreadyOwn' : 'home.wallet.none') : undefined}
-          help={choice.value === 'none' ? t('home.wallet.noneHelp') : undefined}
+          help={choice.value === 'none' ? t('cmp.payBucket.noWalletHint') : undefined}
           error={fieldError('wallet')}
         />
 

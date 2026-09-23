@@ -354,6 +354,10 @@ export interface InvestmentResponse {
       from the monthly allocation buckets). */
   openingBalance: boolean
   createdAt: string
+  /** A savings goal's deadline, YYYY-MM-DD (the last day of its month). Absent on an older backend. */
+  targetDate?: string | null
+  /** What a savings goal asks each month. Absent on an older backend. */
+  monthlyContribution?: number | null
 }
 
 export interface InvestmentRequest {
@@ -373,6 +377,12 @@ export interface InvestmentRequest {
   openingBalance?: boolean
   cardId?: number
   categoryId?: number
+  /** A savings goal's deadline, YYYY-MM-DD (the last day of its month). */
+  targetDate?: string | null
+  /** Sent with `targetDate: null` to remove a deadline on edit. */
+  clearTargetDate?: boolean
+  /** What a savings goal asks each month. */
+  monthlyContribution?: number | null
 }
 
 export interface InvestmentContributeRequest {
@@ -644,11 +654,16 @@ export interface AdvisorDaily {
 
 /** One savings line for this month: what it asks, what went in, what is left. */
 export interface AdvisorSavingsRow {
-  bucket: Bucket
+  /** GOAL: one savings goal, its target being the goal's monthly payment. Not sent by an older backend. */
+  bucket: Bucket | 'GOAL'
   percent: number | null
   target: number
   paid: number
   remaining: number
+  /** GOAL only: the goal's investment id. */
+  refId?: number | null
+  /** GOAL only: the goal's name. */
+  name?: string | null
 }
 
 export interface AdvisorResponse {

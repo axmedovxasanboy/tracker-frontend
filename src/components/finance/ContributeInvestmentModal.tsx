@@ -56,6 +56,13 @@ export function ContributeInvestmentModal({ open, onClose, onSaved, investment, 
 
   if (!investment) return null
 
+  // Wallet money into an investment or the emergency fund counts toward this month's savings; a
+  // goal's money is the goal's own, so it says nothing about the month.
+  const walletHelp = choice.value === 'none'
+    ? t(investment.savingsGoal ? 'home.wallet.noneHelp' : 'cmp.payBucket.noWalletHint')
+    : investment.savingsGoal ? undefined
+      : t(investment.emergencyFund ? 'cmp.contributeInvestment.countsEmergency' : 'cmp.contributeInvestment.countsInvestments')
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (amount <= 0) { setInvalid('amount'); setError(t('cmp.err.amountPositive')); return }
@@ -111,7 +118,7 @@ export function ContributeInvestmentModal({ open, onClose, onSaved, investment, 
           value={choice.value}
           onChange={v => { choice.choose(v); if (invalid === 'wallet') { setInvalid(null); setError(null) } }}
           noneLabel={t('home.wallet.none')}
-          help={choice.value === 'none' ? t('home.wallet.noneHelp') : undefined}
+          help={walletHelp}
           error={invalid === 'wallet' ? error ?? undefined : undefined}
         />
 

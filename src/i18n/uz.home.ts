@@ -39,6 +39,7 @@ export const uz_home: Partial<Record<keyof typeof en_home, string>> = {
   'home.savings.leftCaption': 'shu oy hali yigʻish kerak',
   'home.savings.allDone': 'Shu oydagi jamgʻarmalar toʻliq bajarildi.',
   'home.savings.nothing': 'Shu oy yigʻiladigan narsa yoʻq.',
+  'home.savings.addMore': 'Yana qoʻshish',
 
   // ── Sizda bor ───────────────────────────────────────────────────────────────────────────────
   'home.have.checkedToday': 'Bugun tekshirilgan',
@@ -97,7 +98,6 @@ export const uz_home: Partial<Record<keyof typeof en_home, string>> = {
   'home.form.usualAmount': 'Odatda {amount}',
   'home.form.useAsUsual': 'Bundan buyon {amount} odatiy summa boʻlsin',
   'home.form.suggested': 'Shu oy: {amount}.',
-  'home.form.addTo': 'Qayerga qoʻshiladi',
   'home.form.fundName': 'Jamgʻarma nomi',
   'home.form.bank.none': 'Hali oylik toʻlovi belgilangan bank krediti yoʻq. Uni «Qarz va toʻlovlar» boʻlimida qoʻshing.',
   'home.form.loan.title': 'Qarzni qaytarish',

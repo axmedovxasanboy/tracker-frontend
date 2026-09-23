@@ -46,6 +46,7 @@ export const en_home = {
   'home.savings.leftCaption': 'still to save this month',
   'home.savings.allDone': 'This month’s savings are all in.',
   'home.savings.nothing': 'Nothing to save this month.',
+  'home.savings.addMore': 'Add more',
 
   // ── Home: You have ──────────────────────────────────────────────────────────────────────────
   'home.have.checkedToday': 'Checked today',
@@ -104,7 +105,6 @@ export const en_home = {
   'home.form.usualAmount': 'Usually {amount}',
   'home.form.useAsUsual': 'Make {amount} the usual amount from now on',
   'home.form.suggested': 'This month: {amount}.',
-  'home.form.addTo': 'Add to',
   'home.form.fundName': 'Fund name',
   'home.form.bank.none': 'No bank loan has a monthly payment yet. Add it in Loans & bills.',
   'home.form.loan.title': 'Pay back a loan',

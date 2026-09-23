@@ -44,6 +44,8 @@ export const uz_components: Partial<Record<keyof typeof en_components, string>> 
   // ── ContributeInvestmentModal ─────────────────────────────────────────────
   'cmp.contributeInvestment.title': '{name} ga qoʻshish',
   'cmp.contributeInvestment.submit': 'Qoʻshish',
+  'cmp.contributeInvestment.countsInvestments': 'Hamyondan boʻlsa, bu shu oyning investitsiyalariga hisoblanadi.',
+  'cmp.contributeInvestment.countsEmergency': 'Hamyondan boʻlsa, bu shu oyning favqulodda jamgʻarmasiga hisoblanadi.',
 
   // ── UpdateValueModal ──────────────────────────────────────────────────────
   'cmp.updateValue.title': 'Qiymatni yangilash — {name}',
@@ -87,7 +89,6 @@ export const uz_components: Partial<Record<keyof typeof en_components, string>> 
   'cmp.payBucket.titleDonation': 'Xayriya qoʻshish',
   'cmp.payBucket.titleEmergency': 'Favqulodda jamgʻarmangizga qoʻshish',
   'cmp.payBucket.titleInvestments': 'Investitsiyaga qoʻshish',
-  'cmp.payBucket.newEmergencyFundOption': '➕ Yangi favqulodda jamgʻarma…',
   'cmp.payBucket.recipient': 'Qabul qiluvchi',
   'cmp.payBucket.recipientPlaceholder': 'Kimga xayriya qildingiz',
   'cmp.payBucket.anonymous': 'Anonim',
@@ -95,8 +96,14 @@ export const uz_components: Partial<Record<keyof typeof en_components, string>> 
   'cmp.payBucket.investmentNamePlaceholder': 'Apple Inc., Koʻchmas mulk va h.k.',
   'cmp.payBucket.brokerPlatform': 'Broker / Platforma',
   'cmp.payBucket.recordedToast': 'Qoʻshildi · {bucket} {amount}',
-  'cmp.payBucket.newInvestmentOption': '➕ Yangi investitsiya…',
-  'cmp.payBucket.emergencyFundOption': 'Favqulodda jamgʻarmaga hissa',
+  'cmp.payBucket.emergencyFundOption': 'Favqulodda jamgʻarma — hisobsiz',
+  'cmp.payBucket.payInto': 'Qayerga toʻlanadi',
+  'cmp.payBucket.newAccount': 'Yangi hisob…',
+  'cmp.payBucket.pickAccount': 'Qayerga borishini tanlang.',
+  'cmp.payBucket.noWalletHint': 'Bu shu oyning jamgʻarmasiga hisoblanmaydi — hamyonlaringizdan pul chiqmaydi.',
+  'cmp.payBucket.addedTo': '{account} ga qoʻshildi',
+  'cmp.payBucket.addedInvestments': '{account} ga qoʻshildi — shu oyning investitsiyalariga hisoblanadi',
+  'cmp.payBucket.addedEmergency': '{account} ga qoʻshildi — shu oyning favqulodda jamgʻarmasiga hisoblanadi',
 
   // ── PayPersonalLoanModal ──────────────────────────────────────────────────
   'cmp.payPersonalLoan.noLoans': 'Qolgan qoldigʻi bor shaxsiy qarz yoʻq.',

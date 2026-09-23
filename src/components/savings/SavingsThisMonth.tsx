@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Building2, CheckCircle2, HeartHandshake, ShieldAlert } from 'lucide-react'
+import { Building2, CheckCircle2, HeartHandshake, Plus, ShieldAlert } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { IconChip } from '../ui/IconChip'
 import type { IconTone } from '../ui/StatTile'
@@ -22,11 +22,13 @@ export const SAVINGS_ICON: Record<Bucket, { icon: ReactNode; tone: IconTone }> =
 
 /**
  * This month's savings, one line each: "Donation · 0 of 884.000 UZS · Pay", or "✓ Done" once it is
- * in. The same rows on Home and on Savings, so the two pages can never read differently.
+ * in — with "Add more" beside it, since the owner often puts in more than the month asks. The same
+ * rows on Home and on Savings, so the two pages can never read differently.
  */
 export function SavingsThisMonth({ rows, currency, onPay }: {
   rows: AdvisorSavingsRow[]
   currency: Currency
+  /** `amount` is what is left for the month; 0 for "Add more", which starts on an empty amount. */
   onPay: (bucket: Bucket, amount: number) => void
 }) {
   const { t } = useLang()
@@ -48,10 +50,20 @@ export function SavingsThisMonth({ rows, currency, onPay }: {
               </p>
             </div>
             {done ? (
-              <span className="flex shrink-0 items-center gap-1.5 text-sm font-medium text-income">
-                <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-                {t('ui.status.done')}
-              </span>
+              <div className="flex shrink-0 items-center gap-2">
+                <span className="flex items-center gap-1.5 text-sm font-medium text-income">
+                  <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+                  {t('ui.status.done')}
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon={<Plus className="h-3.5 w-3.5" aria-hidden="true" />}
+                  label={t('home.savings.addMore')}
+                  aria-describedby={`savings-row-${r.bucket}`}
+                  onClick={() => onPay(r.bucket, 0)}
+                />
+              </div>
             ) : (
               <Button
                 size="sm"

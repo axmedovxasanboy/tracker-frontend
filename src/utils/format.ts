@@ -192,6 +192,7 @@ export type DateStyle =
   | 'day'       //   alias of 'short'
   | 'long'      // 5 September 2026  / 5 Sentabr 2026
   | 'month'     // September 2026    / Sentabr 2026
+  | 'monthShort' // Sep 2026         / sen 2026     — a goal's deadline, where space is short
   | 'time'      // 5 Sep 2026, 14:32 / 5 Sen 2026, 14:32
   | 'dayTime'   //   alias of 'time'
   | 'datetime'  //   alias of 'time'
@@ -206,6 +207,7 @@ const DATE_PATTERNS: Record<DateStyle, string> = {
   day: 'd MMM yyyy',
   long: 'd MMMM yyyy',
   month: 'LLLL yyyy',
+  monthShort: 'LLL yyyy',
   time: 'd MMM yyyy, HH:mm',
   dayTime: 'd MMM yyyy, HH:mm',
   datetime: 'd MMM yyyy, HH:mm',

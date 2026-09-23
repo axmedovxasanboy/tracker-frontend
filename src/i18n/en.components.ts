@@ -43,6 +43,8 @@ export const en_components = {
   // ── finance/ContributeInvestmentModal ────────────────────────────────────────────────────
   'cmp.contributeInvestment.title': 'Add to {name}',
   'cmp.contributeInvestment.submit': 'Add',
+  'cmp.contributeInvestment.countsInvestments': 'From a wallet, this counts toward this month’s investments.',
+  'cmp.contributeInvestment.countsEmergency': 'From a wallet, this counts toward this month’s emergency fund.',
 
   // ── finance/UpdateValueModal ──────────────────────────────────────────────────────────────
   'cmp.updateValue.title': 'Update value — {name}',
@@ -86,7 +88,6 @@ export const en_components = {
   'cmp.payBucket.titleDonation': 'Add a donation',
   'cmp.payBucket.titleEmergency': 'Add to your emergency fund',
   'cmp.payBucket.titleInvestments': 'Add to investments',
-  'cmp.payBucket.newEmergencyFundOption': '➕ New emergency fund…',
   'cmp.payBucket.recipient': 'Recipient',
   'cmp.payBucket.recipientPlaceholder': 'Who you donated to',
   'cmp.payBucket.anonymous': 'Anonymous',
@@ -94,8 +95,14 @@ export const en_components = {
   'cmp.payBucket.investmentNamePlaceholder': 'Apple Inc., Real Estate, etc.',
   'cmp.payBucket.brokerPlatform': 'Broker / Platform',
   'cmp.payBucket.recordedToast': 'Added · {bucket} {amount}',
-  'cmp.payBucket.newInvestmentOption': '➕ New investment…',
-  'cmp.payBucket.emergencyFundOption': 'Emergency fund contribution',
+  'cmp.payBucket.emergencyFundOption': 'Emergency fund — without an account',
+  'cmp.payBucket.payInto': 'Pay into',
+  'cmp.payBucket.newAccount': 'New account…',
+  'cmp.payBucket.pickAccount': 'Pick where it goes.',
+  'cmp.payBucket.noWalletHint': 'This won’t count toward this month’s savings — nothing leaves your wallets.',
+  'cmp.payBucket.addedTo': 'Added to {account}',
+  'cmp.payBucket.addedInvestments': 'Added to {account} — counts toward this month’s investments',
+  'cmp.payBucket.addedEmergency': 'Added to {account} — counts toward this month’s emergency fund',
 
   // ── overview/PayPersonalLoanModal ─────────────────────────────────────────────────────────
   'cmp.payPersonalLoan.noLoans': 'No personal loans with a remaining balance.',
