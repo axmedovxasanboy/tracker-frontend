@@ -70,6 +70,7 @@ export function Profile() {
 
   const result = q.data
   const p = result?.kind === 'ok' ? result.profile : null
+  const hasSoFar = !!(p?.incomeThisMonth || p?.allocatedThisMonth)
 
   return (
     <div className="p-4 sm:p-6">
@@ -110,12 +111,14 @@ export function Profile() {
           ) : p ? (
             <>
               {q.error && <ErrorTile compact className={FULL} message={q.error} onRetry={q.refetch} />}
+              {/* The owner's order: the level beside its savings rule; under the level, this month
+                  so far beside what to set aside; the workings last, across the whole width. */}
               <LevelHero p={p} cached={{ isCached: q.isCached, cachedAt: q.cachedAt }} />
-              {/* Asked for by name, so it sits right under the level. An older server sends neither. */}
-              {(p.incomeThisMonth || p.allocatedThisMonth) && <SoFarTile p={p} />}
               <RuleTile p={p} />
+              {/* An older server sends neither figure — then "set aside" takes the row alone. */}
+              {hasSoFar && <SoFarTile p={p} />}
+              <SetAsideTile p={p} full={!hasSoFar} onHome={() => navigate('/')} onSavings={() => navigate('/savings')} />
               <LadderTile p={p} onChangeIncome={() => navigate('/settings')} />
-              <SetAsideTile p={p} onHome={() => navigate('/')} onSavings={() => navigate('/savings')} />
             </>
           ) : null}
         </TileGrid>
@@ -332,55 +335,64 @@ function LadderTile({ p, onChangeIncome }: { p: ProfileResponse; onChangeIncome:
   const { t, categoryName } = useLang()
   const parts = p.baseParts
   return (
-    <Tile span={6} mdSpan={6} as="section">
+    // Last on the page and alone in its row, so it takes the full width with the two ladders side
+    // by side (stacked on a phone) rather than leaving half a row empty.
+    <Tile span={12} as="section">
       <TileHead
         title={t('cmp.cardInfo.howItsBuilt')}
         action={<LinkButton label={t('shell.profile.changeIncome')} onClick={onChangeIncome} />}
       />
 
-      {/* The level: what is left after bills decides it — and which percentages apply. */}
-      <h3 className="mt-3 text-label uppercase text-slate-500">{t('shell.profile.levelLabel')}</h3>
-      <dl className="mt-1">
-        <Rung label={t('shell.settings.income')} amount={p.stableIncome ?? 0} />
-        <Rung sign="−" label={t('shell.bills.title')} amount={p.monthlyBills} />
-        <Rung sign="=" strong label={t('shell.profile.afterBills')} amount={p.leftAfterBills} />
-      </dl>
-      {p.level != null && (
-        <p className="mt-1 text-sm font-medium tabular-nums text-indigo-700">
-          <span aria-hidden="true">→ </span>
-          {p.nextLevelAt != null && !p.aboveCeiling
-            ? t('shell.profile.levelResultNext', { n: p.level, next: p.level + 1, amount: moneyFull(p.nextLevelAt) })
-            : t('shell.profile.level', { n: p.level })}
-        </p>
-      )}
+      <div className="grid gap-x-8 md:grid-cols-2">
+        <div>
+          {/* The level: what is left after bills decides it — and which percentages apply. */}
+          <h3 className="mt-3 text-label uppercase text-slate-500">{t('shell.profile.levelLabel')}</h3>
+          <dl className="mt-1">
+            <Rung label={t('shell.settings.income')} amount={p.stableIncome ?? 0} />
+            <Rung sign="−" label={t('shell.bills.title')} amount={p.monthlyBills} />
+            <Rung sign="=" strong label={t('shell.profile.afterBills')} amount={p.leftAfterBills} />
+          </dl>
+          {p.level != null && (
+            <p className="mt-1 text-sm font-medium tabular-nums text-indigo-700">
+              <span aria-hidden="true">→ </span>
+              {p.nextLevelAt != null && !p.aboveCeiling
+                ? t('shell.profile.levelResultNext', { n: p.level, next: p.level + 1, amount: moneyFull(p.nextLevelAt) })
+                : t('shell.profile.level', { n: p.level })}
+            </p>
+          )}
+        </div>
 
-      {/* The savings base: what the percentages apply to — salary, avans and bonus. */}
-      <h3 className="mt-4 border-t border-hairline pt-3 text-label uppercase text-slate-500">{t('shell.profile.baseLadder')}</h3>
-      <dl className="mt-1">
-        {parts ? (
-          parts.usesStableIncome ? (
-            // Before the salary lands, the income in Settings stands in for it; a bonus still adds.
-            <>
-              <Rung label={t('shell.profile.incomeUntilSalary')} amount={parts.stableIncome} />
-              {parts.bonus > 0 && <Rung sign="+" label={t('shell.profile.bonus')} amount={parts.bonus} />}
-            </>
-          ) : (
-            [...(parts.lines ?? [])].sort((a, b) => b.amount - a.amount).map((l, i) => (
-              <Rung key={`${l.categoryId ?? 'none'}-${i}`} sign={i === 0 ? undefined : '+'}
-                label={categoryName({ name: l.name, nameUz: l.nameUz })} amount={l.amount} />
-            ))
-          )
-        ) : (
-          // An older server still builds the base from what is left after bills and loans.
-          <>
-            <Rung label={t('shell.profile.afterBills')} amount={p.leftAfterBills} />
-            <Rung sign="−" label={t('shell.profile.loanPayments')} amount={p.loanPayments} />
-            <Rung sign="=" strong label={t('shell.profile.forSavings')} amount={p.leftForSavings} />
-            {p.bonusThisMonth > 0 && <Rung sign="+" label={t('shell.profile.bonus')} amount={p.bonusThisMonth} />}
-          </>
-        )}
-        <Rung sign="=" strong label={t('shell.profile.base')} amount={p.savingsBase} />
-      </dl>
+        <div>
+          {/* The savings base: what the percentages apply to — salary, avans and bonus. The divider
+              only separates the two ladders while they are stacked. */}
+          <h3 className="mt-4 border-t border-hairline pt-3 text-label uppercase text-slate-500 md:mt-3 md:border-t-0 md:pt-0">{t('shell.profile.baseLadder')}</h3>
+          <dl className="mt-1">
+            {parts ? (
+              parts.usesStableIncome ? (
+                // Before the salary lands, the income in Settings stands in for it; a bonus still adds.
+                <>
+                  <Rung label={t('shell.profile.incomeUntilSalary')} amount={parts.stableIncome} />
+                  {parts.bonus > 0 && <Rung sign="+" label={t('shell.profile.bonus')} amount={parts.bonus} />}
+                </>
+              ) : (
+                [...(parts.lines ?? [])].sort((a, b) => b.amount - a.amount).map((l, i) => (
+                  <Rung key={`${l.categoryId ?? 'none'}-${i}`} sign={i === 0 ? undefined : '+'}
+                    label={categoryName({ name: l.name, nameUz: l.nameUz })} amount={l.amount} />
+                ))
+              )
+            ) : (
+              // An older server still builds the base from what is left after bills and loans.
+              <>
+                <Rung label={t('shell.profile.afterBills')} amount={p.leftAfterBills} />
+                <Rung sign="−" label={t('shell.profile.loanPayments')} amount={p.loanPayments} />
+                <Rung sign="=" strong label={t('shell.profile.forSavings')} amount={p.leftForSavings} />
+                {p.bonusThisMonth > 0 && <Rung sign="+" label={t('shell.profile.bonus')} amount={p.bonusThisMonth} />}
+              </>
+            )}
+            <Rung sign="=" strong label={t('shell.profile.base')} amount={p.savingsBase} />
+          </dl>
+        </div>
+      </div>
     </Tile>
   )
 }
@@ -407,12 +419,18 @@ function Rung({ sign, label, amount, strong = false }: {
 
 // ── To set aside ───────────────────────────────────────────────────────────────────────────────
 
-function SetAsideTile({ p, onHome, onSavings }: { p: ProfileResponse; onHome: () => void; onSavings: () => void }) {
+function SetAsideTile({ p, full = false, onHome, onSavings }: {
+  p: ProfileResponse
+  /** Across the whole row, for when "so far" is not there to sit beside it. */
+  full?: boolean
+  onHome: () => void
+  onSavings: () => void
+}) {
   const { t } = useLang()
   const rows = known(p.buckets)
   const bonus = p.baseParts ? p.baseParts.bonus : p.bonusThisMonth
   return (
-    <Tile span={6} mdSpan={6} as="section">
+    <Tile span={full ? 12 : 6} mdSpan={6} as="section">
       <TileHead title={t('shell.profile.setAsideTitle')} />
       <ul className="mt-2 divide-y divide-hairline">
         {rows.map(b => (
