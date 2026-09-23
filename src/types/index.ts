@@ -377,10 +377,9 @@ export interface InvestmentRequest {
   openingBalance?: boolean
   cardId?: number
   categoryId?: number
-  /** A savings goal's deadline, YYYY-MM-DD (the last day of its month). */
+  /** A savings goal's deadline, YYYY-MM-DD (the last day of its month). On update, a key left out
+   *  keeps the stored deadline and an explicit null removes it. */
   targetDate?: string | null
-  /** Sent with `targetDate: null` to remove a deadline on edit. */
-  clearTargetDate?: boolean
   /** What a savings goal asks each month. */
   monthlyContribution?: number | null
 }

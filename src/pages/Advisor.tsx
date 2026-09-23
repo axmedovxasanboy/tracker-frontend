@@ -128,6 +128,17 @@ export function Advisor({ currency }: Props) {
     }
   }
 
+  /** A goal's row in "Savings this month": the goal's own Add money, on what the month still asks. */
+  const payGoal = async (goalId: number | null | undefined, amount: number) => {
+    try {
+      const g = (await financeApi.getInvestments()).data.find(i => i.id === goalId)
+      if (g) setGoal({ investment: g, amount: amount > 0 ? amount : undefined })
+      else refetch()
+    } catch (err: unknown) {
+      showError(extractErrorMessage(err))
+    }
+  }
+
   /** One step's button: open the dialog that already does this job elsewhere in the app. */
   const act = async (s: AdvisorSuggestion) => {
     try {
@@ -173,7 +184,7 @@ export function Advisor({ currency }: Props) {
   const steps = d ? visibleSteps(d, {
     firstRunShowsIncome: showGetStarted && !hasStableIncome,
     upcoming: upcoming ? upcoming.filter(u => canPayUpcoming(u, month)) : null,
-    savings: savingsRows.map(r => r.bucket),
+    savings: savingsRows,
   }) : []
 
   // Two tiles share a row on a wide screen; one alone takes the row. On a tablet each takes the
@@ -263,7 +274,9 @@ export function Advisor({ currency }: Props) {
                   <SavingsThisMonth
                     rows={savingsRows}
                     currency={currency}
-                    onPay={(b, amount) => setBucket({ bucket: b, amount })}
+                    onPay={(row, amount) => row.bucket === 'GOAL'
+                      ? payGoal(row.refId, amount)
+                      : setBucket({ bucket: row.bucket, amount })}
                   />
                 </div>
               </Tile>

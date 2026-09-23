@@ -9,7 +9,9 @@ import { Button } from '../ui/Button'
 import { useLang } from '../../i18n/LanguageContext'
 import type { TKey } from '../../i18n/LanguageContext'
 import { formatDate, formatMonth, money, moneyFull, plural } from '../../utils/format'
-import type { AdvisorResponse, AdvisorSuggestion, AdvisorUpcoming, Bucket, Currency } from '../../types'
+import type {
+  AdvisorResponse, AdvisorSavingsRow, AdvisorSuggestion, AdvisorUpcoming, Bucket, Currency,
+} from '../../types'
 
 // ── Suggestions ────────────────────────────────────────────────────────────────────────────────
 
@@ -70,12 +72,13 @@ export function visibleSteps(d: AdvisorResponse, opts: {
   firstRunShowsIncome: boolean
   /** The rows "Coming up" offers Pay on; null when that tile is not on the page. */
   upcoming: AdvisorUpcoming[] | null
-  /** The savings "Savings this month" shows. */
-  savings: Bucket[]
+  /** The rows "Savings this month" shows. */
+  savings: AdvisorSavingsRow[]
 }): AdvisorSuggestion[] {
   const daily = d.daily ?? null
   const upcoming = opts.upcoming
-  const savedBuckets = new Set(opts.savings)
+  const savedBuckets = new Set<string>(opts.savings.map(r => r.bucket))
+  const savedGoals = new Set(opts.savings.filter(r => r.bucket === 'GOAL').map(r => r.refId))
 
   const covered = (s: AdvisorSuggestion): boolean => {
     if (s.code === 'advisor.s.short' && daily?.shortBy) return true
@@ -92,7 +95,10 @@ export function visibleSteps(d: AdvisorResponse, opts: {
         return !!upcoming && upcoming.some(u => u.kind === 'LOAN' || u.kind === 'DEBT')
       // Only the "due" kind: an idea to put spare money somewhere stays, even for a shown saving.
       case 'SET_ASIDE':
-        return s.kind === 'DO' && isBucket(s.bucket) && savedBuckets.has(s.bucket)
+        if (s.kind !== 'DO') return false
+        // A goal's own row covers its monthly payment.
+        if (s.bucket === 'SAVINGS') return s.refId != null && savedGoals.has(s.refId)
+        return isBucket(s.bucket) && savedBuckets.has(s.bucket)
       default:
         return false
     }

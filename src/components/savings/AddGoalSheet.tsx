@@ -130,9 +130,8 @@ export function AddGoalSheet({ open, onClose, onSaved, goal }: {
     try {
       if (goal) {
         await financeApi.updateInvestment(goal.id, requestFrom(goal, {
+          // targetDate is always sent: an explicit null is how the server removes a deadline.
           name: name.trim(), targetAmount: target, monthlyContribution: monthly, targetDate,
-          // A deadline taken off says so outright, whatever the server makes of a bare null.
-          ...(goal.targetDate && !targetDate ? { clearTargetDate: true } : {}),
         }))
       } else {
         await financeApi.createInvestment({

@@ -31,6 +31,7 @@ import { financeApi } from '../api/finance'
 import { emergenciesApi } from '../api/emergencies'
 import { extractErrorMessage } from '../api/client'
 import { formatDate, money, moneyFull, snap, todayLocal } from '../utils/format'
+import { goalPlan } from '../components/savings/goalPlan'
 import type { Bucket, Currency, InvestmentResponse } from '../types'
 
 /** A full-width row of the twelve-column page grid. */
@@ -66,7 +67,8 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
   const [goalForm, setGoalForm] = useState<{ goal: InvestmentResponse | null } | null>(null)
   const [investmentForm, setInvestmentForm] = useState<{ investment: InvestmentResponse | null } | null>(null)
   const [bucket, setBucket] = useState<{ bucket: Bucket; amount?: number } | null>(null)
-  const [contributeFor, setContributeFor] = useState<InvestmentResponse | null>(null)
+  // Add money on one holding — from a goal's row in "This month", starting on what it still asks.
+  const [contributeFor, setContributeFor] = useState<{ investment: InvestmentResponse; amount?: number } | null>(null)
   const [valueFor, setValueFor] = useState<InvestmentResponse | null>(null)
   const [showAllEmergency, setShowAllEmergency] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
@@ -82,6 +84,18 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
       else if (kind === 'investment') setInvestmentForm({ investment: null })
       else setBucket({ bucket: kind === 'donation' ? 'DONATION' : 'EMERGENCY' })
     }, 0)
+  }
+
+  /** A goal's row in "This month" pays through the goal's own Add money. */
+  const payGoal = async (goalId: number | null | undefined, amount: number) => {
+    try {
+      const g = (investments.data ?? []).find(i => i.id === goalId)
+        ?? (await financeApi.getInvestments()).data.find(i => i.id === goalId)
+      if (g) setContributeFor({ investment: g, amount: amount > 0 ? amount : undefined })
+      else refetchAll()
+    } catch (err) {
+      showError(extractErrorMessage(err))
+    }
   }
 
   const remove = async (key: string, message: string, run: () => Promise<unknown>, done: string) => {
@@ -192,7 +206,9 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
                   <SavingsThisMonth
                     rows={savingsRows}
                     currency={currency}
-                    onPay={(b, amount) => setBucket({ bucket: b, amount })}
+                    onPay={(row, amount) => row.bucket === 'GOAL'
+                      ? payGoal(row.refId, amount)
+                      : setBucket({ bucket: row.bucket, amount })}
                   />
                 </div>
               </>
@@ -218,6 +234,17 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
                   const target = g.targetAmount
                   const pct = target && target > 0 ? Math.min(100, (value / target) * 100) : null
                   const nameId = `goal-${g.id}`
+                  // The plan, when the goal has one: "1.000.000 UZS a month · by Mar 2027". Both fields
+                  // are absent on an older backend, and the card then reads as it always did.
+                  const monthly = g.monthlyContribution ?? 0
+                  const plan = goalPlan(Math.max(0, (target ?? 0) - value), monthly, g.targetDate ?? null, month)
+                  const planLine = [
+                    monthly > 0 ? t('home.goals.perMonth', { amount: moneyFull(monthly, g.currency) }) : null,
+                    plan.deadlineMonth ? t('home.goals.by', { month: formatDate(plan.deadlineMonth, lang, 'monthShort') }) : null,
+                  ].filter(Boolean).join(' · ')
+                  // With a deadline and money still missing: does the monthly payment get there in time?
+                  const onTrack = monthly > 0 && !plan.late
+                  const showStatus = !!plan.deadlineMonth && target != null && target > 0 && value < target
                   return (
                     <li key={g.id} className="py-3">
                       <div className="flex items-start justify-between gap-3">
@@ -228,11 +255,12 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
                               ? t('home.goals.ofTarget', { value: moneyFull(value, g.currency), target: moneyFull(target, g.currency) })
                               : moneyFull(value, g.currency)}
                           </p>
+                          {planLine && <p className="text-xs tabular-nums text-slate-500">{planLine}</p>}
                         </div>
                         <div className="flex shrink-0 items-center gap-1">
                           <Button size="sm" label={t('cmp.action.topUp')} aria-describedby={nameId}
                             icon={<Plus className="h-3.5 w-3.5" aria-hidden="true" />}
-                            onClick={() => setContributeFor(g)} />
+                            onClick={() => setContributeFor({ investment: g })} />
                           <ActionMenu actions={holdingActions(g, true)} />
                         </div>
                       </div>
@@ -245,6 +273,13 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
                             {pct >= 100 ? t('ui.status.done') : `${Math.floor(pct)}%`}
                           </span>
                         </div>
+                      )}
+                      {showStatus && (
+                        <p className={`mt-1 text-xs font-medium tabular-nums ${onTrack ? 'text-income' : 'text-amber-700'}`}>
+                          {onTrack
+                            ? t('home.goals.onTrack')
+                            : t('home.goals.behind', { amount: moneyFull(plan.needed ?? 0, g.currency) })}
+                        </p>
                       )}
                     </li>
                   )
@@ -275,7 +310,7 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
                       sub={formatDate(e.date, lang)}
                       amount={moneyFull(valueOf(e.holding), e.holding.currency)}
                       actions={[
-                        { label: t('cmp.action.topUp'), icon: <Plus className="h-4 w-4" aria-hidden="true" />, onClick: () => setContributeFor(e.holding) },
+                        { label: t('cmp.action.topUp'), icon: <Plus className="h-4 w-4" aria-hidden="true" />, onClick: () => setContributeFor({ investment: e.holding }) },
                         { label: t('page.investments.updateValue'), icon: <TrendingUp className="h-4 w-4" aria-hidden="true" />, onClick: () => setValueFor(e.holding) },
                         ...holdingActions(e.holding, false),
                       ]}
@@ -341,7 +376,7 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
                         <div className="mt-2 flex flex-wrap items-center gap-2 sm:pl-12">
                           <Button size="sm" label={t('cmp.action.topUp')} aria-describedby={nameId}
                             icon={<Plus className="h-3.5 w-3.5" aria-hidden="true" />}
-                            onClick={() => setContributeFor(i)} />
+                            onClick={() => setContributeFor({ investment: i })} />
                           <Button size="sm" variant="ghost" label={t('page.investments.updateValue')} aria-describedby={nameId}
                             icon={<TrendingUp className="h-3.5 w-3.5" aria-hidden="true" />}
                             onClick={() => setValueFor(i)} />
@@ -434,7 +469,8 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
         onClose={() => setBucket(null)} onSaved={refetchAll}
       />
       <ContributeInvestmentModal
-        open={!!contributeFor} investment={contributeFor}
+        open={!!contributeFor} investment={contributeFor?.investment ?? null}
+        defaultAmount={contributeFor?.amount}
         onClose={() => setContributeFor(null)} onSaved={savedToast}
       />
       <UpdateValueModal
