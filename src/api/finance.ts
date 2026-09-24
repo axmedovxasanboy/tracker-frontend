@@ -7,7 +7,7 @@ import type {
   MonthlyPaymentRequest, MonthlyPaymentResponse, MonthlyPaymentPayRequest,
   DonationRequest, DonationResponse,
   InvestmentRequest, InvestmentResponse,
-  InvestmentContributeRequest, InvestmentValueRequest,
+  InvestmentContributeRequest, InvestmentValueRequest, InvestmentWithdrawRequest,
   RepaymentRequest,
   Transaction,
 } from '../types'
@@ -65,6 +65,8 @@ export const financeApi = {
     apiClient.post<InvestmentResponse>(`${base}/investments/${id}/contribute`, d),
   setInvestmentValue: (id: number, d: InvestmentValueRequest) =>
     apiClient.post<InvestmentResponse>(`${base}/investments/${id}/value`, d),
+  withdrawInvestment: (id: number, d: InvestmentWithdrawRequest) =>
+    apiClient.post<InvestmentResponse>(`${base}/investments/${id}/withdraw`, d),
 
   // Repayments
   repayLoanTaken: (id: number, d: RepaymentRequest) =>

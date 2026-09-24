@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
 import {
-  Building2, HeartHandshake, Pencil, Plus, ShieldAlert, Target, Trash2, TrendingUp,
+  ArrowDownToLine, Building2, HeartHandshake, Pencil, Plus, ShieldAlert, Target, Trash2, TrendingUp,
 } from 'lucide-react'
 import { PageHeader } from '../components/ui/PageHeader'
 import { Sheet } from '../components/ui/Sheet'
@@ -17,6 +17,7 @@ import { CacheBadge } from '../components/ui/CacheBadge'
 import { IncomeRequiredNotice } from '../components/ui/IncomeRequiredNotice'
 import { ContributeInvestmentModal } from '../components/finance/ContributeInvestmentModal'
 import { UpdateValueModal } from '../components/finance/UpdateValueModal'
+import { WithdrawInvestmentModal } from '../components/finance/WithdrawInvestmentModal'
 import { PayBucketModal } from '../components/overview/PayBucketModal'
 import { SavingsThisMonth } from '../components/savings/SavingsThisMonth'
 import { AddGoalSheet } from '../components/savings/AddGoalSheet'
@@ -32,6 +33,7 @@ import { emergenciesApi } from '../api/emergencies'
 import { extractErrorMessage } from '../api/client'
 import { formatDate, money, moneyFull, snap, todayLocal } from '../utils/format'
 import { goalPlan } from '../components/savings/goalPlan'
+import { GrowthLine, growthOf } from '../components/savings/growth'
 import type { Bucket, Currency, InvestmentResponse } from '../types'
 
 /** A full-width row of the twelve-column page grid. */
@@ -43,7 +45,7 @@ const LATEST = 5
 type AddKind = 'goal' | 'investment' | 'donation' | 'emergency'
 
 /** A holding's worth: its market value when one was set, else what went in. */
-const valueOf = (i: InvestmentResponse) => i.currentValue ?? i.investedAmount
+const valueOf = (i: InvestmentResponse) => growthOf(i).value
 
 /**
  * Savings: everything put by, on one page — this month's savings, goals, the emergency fund,
@@ -70,6 +72,7 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
   // Add money on one holding — from a goal's row in "This month", starting on what it still asks.
   const [contributeFor, setContributeFor] = useState<{ investment: InvestmentResponse; amount?: number } | null>(null)
   const [valueFor, setValueFor] = useState<InvestmentResponse | null>(null)
+  const [withdrawFor, setWithdrawFor] = useState<InvestmentResponse | null>(null)
   const [showAllEmergency, setShowAllEmergency] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
 
@@ -264,6 +267,8 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
                               : moneyFull(value, g.currency)}
                           </p>
                           {planLine && <p className="text-xs tabular-nums text-slate-500">{planLine}</p>}
+                          {/* Only once the goal tracks a value of its own — otherwise put in = now. */}
+                          {g.currentValue != null && Math.abs(growthOf(g).growth) >= 1 && <GrowthLine i={g} />}
                         </div>
                         <div className="flex shrink-0 items-center gap-1">
                           <Button size="sm" label={t('cmp.action.topUp')} aria-describedby={nameId}
@@ -316,10 +321,12 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
                       icon={<IconChip tone="amber"><ShieldAlert className="h-4 w-4" aria-hidden="true" /></IconChip>}
                       title={e.holding.name}
                       sub={formatDate(e.date, lang)}
+                      extra={<GrowthLine i={e.holding} />}
                       amount={moneyFull(valueOf(e.holding), e.holding.currency)}
                       actions={[
                         { label: t('cmp.action.topUp'), icon: <Plus className="h-4 w-4" aria-hidden="true" />, onClick: () => setContributeFor({ investment: e.holding }) },
                         { label: t('page.investments.updateValue'), icon: <TrendingUp className="h-4 w-4" aria-hidden="true" />, onClick: () => setValueFor(e.holding) },
+                        { label: t('cmp.withdraw.action'), icon: <ArrowDownToLine className="h-4 w-4" aria-hidden="true" />, disabled: valueOf(e.holding) <= 0, onClick: () => setWithdrawFor(e.holding) },
                         ...holdingActions(e.holding, false),
                       ]}
                     />
@@ -378,6 +385,7 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
                           <div className="min-w-0 flex-1">
                             <p id={nameId} className="truncate text-sm font-medium text-slate-900">{i.name}</p>
                             {i.broker && <p className="truncate text-xs text-slate-500">{i.broker}</p>}
+                            <GrowthLine i={i} className="mt-0.5" />
                           </div>
                           <p className="shrink-0 text-sm font-semibold tabular-nums text-slate-900">{moneyFull(valueOf(i), i.currency)}</p>
                         </div>
@@ -388,6 +396,10 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
                           <Button size="sm" variant="ghost" label={t('page.investments.updateValue')} aria-describedby={nameId}
                             icon={<TrendingUp className="h-3.5 w-3.5" aria-hidden="true" />}
                             onClick={() => setValueFor(i)} />
+                          <Button size="sm" variant="ghost" label={t('cmp.withdraw.action')} aria-describedby={nameId}
+                            icon={<ArrowDownToLine className="h-3.5 w-3.5" aria-hidden="true" />}
+                            disabled={valueOf(i) <= 0}
+                            onClick={() => setWithdrawFor(i)} />
                           <div className="ml-auto">
                             <ActionMenu actions={holdingActions(i, true)} />
                           </div>
@@ -484,6 +496,16 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
       <UpdateValueModal
         open={!!valueFor} investment={valueFor}
         onClose={() => setValueFor(null)} onSaved={savedToast}
+        onAddMoney={() => {
+          // "I added money" is a saving from a wallet — hand over to Add money once this closes.
+          const inv = valueFor
+          setValueFor(null)
+          if (inv) setTimeout(() => setContributeFor({ investment: inv }), 0)
+        }}
+      />
+      <WithdrawInvestmentModal
+        open={!!withdrawFor} investment={withdrawFor}
+        onClose={() => setWithdrawFor(null)} onSaved={refetchAll}
       />
     </div>
   )
@@ -514,10 +536,12 @@ function SmallAdd({ label, onClick }: { label: string; onClick: () => void }) {
 }
 
 /** One entry in a tile's list: what, when, how much, and its ⋯ menu. */
-function EntryRow({ icon, title, sub, amount, actions }: {
+function EntryRow({ icon, title, sub, extra, amount, actions }: {
   icon: ReactNode
   title: string
   sub?: string
+  /** A further line under `sub` — a holding's growth. */
+  extra?: ReactNode
   amount: string
   actions: MenuAction[]
 }) {
@@ -527,6 +551,7 @@ function EntryRow({ icon, title, sub, amount, actions }: {
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-slate-900">{title}</p>
         {sub && <p className="truncate text-xs text-slate-500">{sub}</p>}
+        {extra}
       </div>
       <p className="shrink-0 text-sm font-semibold tabular-nums text-slate-900">{amount}</p>
       <ActionMenu actions={actions} />

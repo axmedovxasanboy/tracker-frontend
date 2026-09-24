@@ -22,6 +22,7 @@ export function TransactionDetailModal({ transaction: tx, open, onClose, onEdit,
     LOAN_RETURNED_TO_ME: t('cmp.subType.loanReturned'), REGULAR_EXPENSE: t('cmp.subType.regularExpense'),
     LOAN_GIVEN: t('cmp.subType.loanGiven'), LOAN_REPAYMENT: t('cmp.subType.loanRepayment'),
     BANK_LOAN_PAYMENT: t('cmp.subType.bankLoanPayment'), INVESTMENT: t('cmp.subType.investment'), DONATION: t('cmp.subType.donation'),
+    INVESTMENT_WITHDRAWAL: t('cmp.subType.investmentWithdrawal'),
   }
   if (!tx) return null
 

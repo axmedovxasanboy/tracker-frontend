@@ -49,10 +49,24 @@ export const uz_components: Partial<Record<keyof typeof en_components, string>> 
 
   // ── UpdateValueModal ──────────────────────────────────────────────────────
   'cmp.updateValue.title': 'Qiymatni yangilash — {name}',
-  'cmp.updateValue.contributedSoFar': 'Hozirgacha kiritilgan:',
-  'cmp.updateValue.setCurrentValueHint': 'Joriy bozor qiymatini kiriting (oʻsish/daromadlar bilan birga).',
+  'cmp.updateValue.setCurrentValueHint': 'Hozir jami qancha turishini kiriting.',
   'cmp.updateValue.currentValueLabel': 'Joriy qiymat ({currency})',
   'cmp.updateValue.submit': 'Qiymatni yangilash',
+  'cmp.updateValue.whatChanged': 'Nima oʻzgardi?',
+  'cmp.updateValue.addedMoney': 'Pul qoʻshdim',
+  'cmp.updateValue.addedMoneyHint': 'Hamyondan kiritgan pulingiz — shu oyning jamgʻarmasiga hisoblanadi.',
+  'cmp.updateValue.valueMoved': 'Qiymati oshdi yoki tushdi',
+  'cmp.updateValue.valueMovedHint': 'Aksiyalar qimmatlashdi yoki arzonladi — pul qoʻshilmadi.',
+  'cmp.growth.line': 'Kiritilgan {putIn} · hozir {value}',
+  'cmp.withdraw.action': 'Pul yechish',
+  'cmp.withdraw.title': '{name} dan pul yechish',
+  'cmp.withdraw.submit': 'Yechish',
+  'cmp.withdraw.all': 'Hammasi · {amount}',
+  'cmp.withdraw.left': '{name} da qoladi: {amount}',
+  'cmp.withdraw.tooMuch': 'Unda faqat {amount} bor.',
+  'cmp.withdraw.walletHelp': 'Pul shu hamyonga tushadi. Daromad sifatida hisoblanmaydi.',
+  'cmp.withdraw.toast': '{name} dan {amount} yechildi — {wallet} ga qoʻshildi',
+  'cmp.subType.investmentWithdrawal': 'Jamgʻarmadan',
 
   // ── RepaymentModal ────────────────────────────────────────────────────────
   'cmp.repay.title.loanTaken': 'Olingan qarzni qaytarish',

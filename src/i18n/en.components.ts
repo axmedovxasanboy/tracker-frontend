@@ -48,10 +48,24 @@ export const en_components = {
 
   // ── finance/UpdateValueModal ──────────────────────────────────────────────────────────────
   'cmp.updateValue.title': 'Update value — {name}',
-  'cmp.updateValue.contributedSoFar': 'Contributed so far:',
-  'cmp.updateValue.setCurrentValueHint': 'Set the current market value (incl. any growth/returns).',
+  'cmp.updateValue.setCurrentValueHint': 'Enter what it is worth now, in total.',
   'cmp.updateValue.currentValueLabel': 'Current value ({currency})',
   'cmp.updateValue.submit': 'Update value',
+  'cmp.updateValue.whatChanged': 'What changed?',
+  'cmp.updateValue.addedMoney': 'I added money',
+  'cmp.updateValue.addedMoneyHint': 'Money you put in from a wallet — it counts toward this month’s savings.',
+  'cmp.updateValue.valueMoved': 'The value grew or fell',
+  'cmp.updateValue.valueMovedHint': 'The shares are worth more or less — no money was put in.',
+  'cmp.growth.line': 'Put in {putIn} · now {value}',
+  'cmp.withdraw.action': 'Take money out',
+  'cmp.withdraw.title': 'Take money out of {name}',
+  'cmp.withdraw.submit': 'Take out',
+  'cmp.withdraw.all': 'All · {amount}',
+  'cmp.withdraw.left': 'Left in {name}: {amount}',
+  'cmp.withdraw.tooMuch': 'There is only {amount} in it.',
+  'cmp.withdraw.walletHelp': 'The money goes into this wallet. It is not counted as income.',
+  'cmp.withdraw.toast': 'Took {amount} from {name} — added to {wallet}',
+  'cmp.subType.investmentWithdrawal': 'From savings',
 
   // ── finance/RepaymentModal ────────────────────────────────────────────────────────────────
   'cmp.repay.title.loanTaken': 'Pay back borrowed money',

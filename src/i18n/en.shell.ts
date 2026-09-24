@@ -15,6 +15,7 @@ export const en_shell = {
   'shell.history.saved': 'Saved',
   'shell.history.borrowed': 'Borrowed: {amount}',
   'shell.history.lent': 'Lent: {amount}',
+  'shell.history.fromSavings': 'From savings: {amount}',
   'shell.history.whereItWent': 'Where it went',
   'shell.history.other': 'Other',
   'shell.history.nothingSpent': 'Nothing spent in {month}.',

@@ -25,6 +25,7 @@ export const en = {
   // ── Common actions ──────────────────────────────────────────────────────
   'action.save': 'Save',
   'action.cancel': 'Cancel',
+  'action.back': 'Back',
   'action.delete': 'Delete',
   'action.edit': 'Edit',
   'action.add': 'Add',

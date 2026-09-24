@@ -20,6 +20,7 @@ export const uz: Partial<Record<keyof typeof en, string>> = {
   // ── Umumiy amallar ──────────────────────────────────────────────────────
   'action.save': 'Saqlash',
   'action.cancel': 'Bekor qilish',
+  'action.back': 'Orqaga',
   'action.delete': 'Oʻchirish',
   'action.edit': 'Tahrirlash',
   'action.add': 'Qoʻshish',

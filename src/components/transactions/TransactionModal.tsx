@@ -154,6 +154,7 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
     DONATION: translate('cmp.txModal.subType.donation'),
     EMERGENCY_CONTRIBUTION: translate('cmp.bucket.emergency'),
     EVERYDAY_SPENDING: translate('home.form.everydaySpending'),
+    INVESTMENT_WITHDRAWAL: translate('cmp.subType.investmentWithdrawal'),
     TRANSFER_IN: translate('shell.wallets.moveMoney'),
     TRANSFER_OUT: translate('shell.wallets.moveMoney'),
   }

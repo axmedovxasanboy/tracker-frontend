@@ -7,6 +7,8 @@ export type TransactionSubType =
   | 'TRANSFER_OUT' | 'TRANSFER_IN'
   // Booked by a wallet check: the gap between what the app computed and what was really there.
   | 'EVERYDAY_SPENDING'
+  // Money taken out of an investment into a wallet: it arrives, but it is not earned.
+  | 'INVESTMENT_WITHDRAWAL'
 // USD/EUR exist only as standalone cash pots — nothing converts them to UZS.
 export type Currency = 'UZS' | 'USD' | 'EUR'
 export type CategoryType = 'INCOME' | 'EXPENSE' | 'BOTH'
@@ -384,6 +386,12 @@ export interface InvestmentResponse {
   /** The month a savings goal's payments start, YYYY-MM-01; null = the month of `purchaseDate`.
    *  Absent on an older backend, which is read the same way. */
   paymentStartDate?: string | null
+  /** Money put in, what it is worth now, the difference and its percent (1 decimal; null when
+   *  nothing was put in). Absent on an older backend — worked out from the amounts then. */
+  putIn?: number
+  value?: number
+  growth?: number
+  growthPercent?: number | null
 }
 
 export interface InvestmentRequest {
@@ -426,6 +434,16 @@ export interface InvestmentContributeRequest {
 
 export interface InvestmentValueRequest {
   currentValue: number
+}
+
+/** Take money out of a holding into a wallet; the server refuses more than it is worth. */
+export interface InvestmentWithdrawRequest {
+  amount: number
+  date: string
+  currency: Currency
+  /** The card, or null for cash. */
+  cardId: number | null
+  description?: string
 }
 
 export interface RepaymentRequest {

@@ -26,9 +26,11 @@ export interface MonthTransactions {
  * - `surplus`  — a wallet check found more than recorded: taken back off `out`, the same way a
  *                check that found less adds to it
  * - `saved`    — money put into donation, emergency fund or investments
+ * - `fromSavings` — money taken out of an investment or the emergency fund: it arrived, but it
+ *                  is not earned
  * - `skip`     — moves between your own wallets, money returned to you
  */
-export type MoneyFlow = 'in' | 'borrowed' | 'out' | 'lent' | 'surplus' | 'saved' | 'skip'
+export type MoneyFlow = 'in' | 'borrowed' | 'out' | 'lent' | 'surplus' | 'saved' | 'fromSavings' | 'skip'
 
 /** A loan the owner is paying back, whichever record it lives in. */
 export type Obligation =

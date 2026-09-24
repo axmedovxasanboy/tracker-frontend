@@ -88,7 +88,8 @@ const SAVING_SUB_TYPES = new Set(['DONATION', 'EMERGENCY_CONTRIBUTION', 'INVESTM
  * In is money earned — borrowed money, money paid back to you and moves between your own wallets
  * all arrive in a wallet without being earned. Out is money spent, apart from moves between
  * wallets and money put into savings, which is its own figure. Lending is not spending either:
- * money lent is its own line, and getting it back is skipped, as borrowing is.
+ * money lent is its own line, and getting it back is skipped, as borrowing is. Money taken out of
+ * savings arrives without being earned or spent, so it is its own line too ("From savings").
  *
  * A wallet check books what it finds as EVERYDAY_SPENDING: an expense when a wallet held less than
  * the app worked out, an income when it held more. Both are the same correction, so the surplus is
@@ -100,6 +101,7 @@ export function flowOf(tx: Transaction): MoneyFlow {
   if (tx.transferPairId != null || sub === 'TRANSFER_IN' || sub === 'TRANSFER_OUT') return 'skip'
   if (tx.type === 'INCOME') {
     if (sub === 'LOAN_RECEIVED') return 'borrowed'
+    if (sub === 'INVESTMENT_WITHDRAWAL') return 'fromSavings'
     if (sub === 'EVERYDAY_SPENDING') return 'surplus'
     if (sub === 'LOAN_RETURNED_TO_ME') return 'skip'
     return 'in'
@@ -218,7 +220,7 @@ export function History({ currency }: Props) {
 
   // ── The month in three figures ──────────────────────────────────────────────
   const totals = useMemo(() => {
-    let earned = 0, spent = 0, saved = 0, borrowed = 0, lent = 0
+    let earned = 0, spent = 0, saved = 0, borrowed = 0, lent = 0, fromSavings = 0
     for (const tx of rows) {
       // UZS is the reporting currency; a dormant foreign cash pot never enters a total.
       if (tx.currency !== 'UZS') continue
@@ -229,9 +231,11 @@ export function History({ currency }: Props) {
       else if (flow === 'saved') saved += tx.amount
       else if (flow === 'borrowed') borrowed += tx.amount
       else if (flow === 'lent') lent += tx.amount
+      else if (flow === 'fromSavings') fromSavings += tx.amount
     }
     return {
       earned: snap(earned), spent: snap(spent), saved: snap(saved), borrowed: snap(borrowed), lent: snap(lent),
+      fromSavings: snap(fromSavings),
     }
   }, [rows])
 
@@ -411,10 +415,11 @@ export function History({ currency }: Props) {
                   <HeroLine label={t('shell.history.out')} amount={Math.max(0, totals.spent)} tone="out" />
                   <HeroLine label={t('shell.history.saved')} amount={totals.saved} tone="neutral" />
                 </dl>
-                {(totals.borrowed > 0 || totals.lent > 0) && (
+                {(totals.borrowed > 0 || totals.lent > 0 || totals.fromSavings > 0) && (
                   <div className="mt-3 space-y-1 text-sm text-slate-600 tabular-nums">
                     {totals.borrowed > 0 && <p>{t('shell.history.borrowed', { amount: moneyFull(totals.borrowed) })}</p>}
                     {totals.lent > 0 && <p>{t('shell.history.lent', { amount: moneyFull(totals.lent) })}</p>}
+                    {totals.fromSavings > 0 && <p>{t('shell.history.fromSavings', { amount: moneyFull(totals.fromSavings) })}</p>}
                   </div>
                 )}
                 {monthTx.isCached && (
