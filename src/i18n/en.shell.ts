@@ -45,6 +45,8 @@ export const en_shell = {
   'shell.loans.editTitle': 'Edit {name}',
   'shell.loans.savedToast': 'Saved',
   'shell.loans.addedToast': 'Added',
+  'shell.loans.borrowedToast': 'Borrowed {amount} from {name} — added to {wallet}',
+  'shell.loans.lentToast': 'Lent {amount} to {name} — taken from {wallet}',
   // Two ways of paying back: a monthly plan (bank loans, and money borrowed that way), or as fast as
   // possible — all of it once what's left is 70% of the monthly income or less, else 34% a month.
   'shell.loans.youOweFast': 'You owe (repay fast)',
@@ -111,6 +113,10 @@ export const en_shell = {
   'shell.form.choosePerson': 'Choose…',
   'shell.form.newLender': 'New lender…',
   'shell.form.newPerson': 'New person…',
+  'shell.form.intoWallet': 'Into wallet',
+  'shell.form.fromWallet': 'From wallet',
+  'shell.form.noWallet': 'Not moved through a wallet',
+  'shell.form.noWalletHint': 'Only the loan is recorded — no wallet changes. Use it for money already counted.',
   'shell.form.howRepay': 'How will you repay?',
   'shell.form.repayMonthly': 'Monthly payments',
   'shell.form.repayAsap': 'As fast as possible',

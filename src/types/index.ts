@@ -221,6 +221,10 @@ export interface LoanGivenRequest {
   status?: RecordStatus
   description?: string
   borrowerId?: number | null
+  /** Create only: take the money out of a wallet in the same step. */
+  moveMoney?: boolean
+  /** With `moveMoney`: the card, or null for cash. */
+  cardId?: number | null
 }
 
 /** MONTHLY: repaid by a monthly plan, like a bank loan. ASAP: as fast as possible (the 70% / 34% rule). */
@@ -253,6 +257,10 @@ export interface LoanTakenRequest {
   plannedMonthlyPayment?: number | null
   repaymentType?: RepaymentType
   lenderId?: number | null
+  /** Create only: put the money into a wallet in the same step. */
+  moveMoney?: boolean
+  /** With `moveMoney`: the card, or null for cash. */
+  cardId?: number | null
   lenderName: string
   totalAmount: number
   paidAmount?: number

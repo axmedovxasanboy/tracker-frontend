@@ -19,6 +19,8 @@ import { IncomeRequiredNotice } from '../components/ui/IncomeRequiredNotice'
 import { ListRow, ListTile } from '../components/ui/ListRow'
 import { Modal } from '../components/ui/Modal'
 import { PageHeader } from '../components/ui/PageHeader'
+import { WalletPicker } from '../components/transactions/WalletPicker'
+import { rememberWallet, useWalletChoice, useWallets } from '../components/transactions/wallets'
 import { Sheet } from '../components/ui/Sheet'
 import { Skeleton } from '../components/ui/Skeleton'
 import { StatTile } from '../components/ui/StatTile'
@@ -210,7 +212,7 @@ interface BorrowedForm {
 interface DebtForm { name: string; amount: number; firstMonth: string }
 interface LentForm { person: string; name: string; amount: number; date: string; expected: string }
 
-type FieldErrors = Partial<Record<'amount' | 'monthly' | 'endDate' | 'expected' | 'person' | 'name', string>>
+type FieldErrors = Partial<Record<'amount' | 'monthly' | 'endDate' | 'expected' | 'person' | 'name' | 'wallet', string>>
 
 type PeopleList = { supported: boolean; people: PersonSummary[] }
 
@@ -474,6 +476,39 @@ export function Loans() {
   // "How will you repay?" is a radiogroup: arrow keys move and pick, one tab stop.
   const repayKeys = useRadioGroupKeys(REPAY_TYPES, borrowed.type, v => editBorrowed({ type: v }))
 
+  // A new loan moves the money through a wallet in the same step: into one when borrowed, out of
+  // one when lent — or, for money already counted, through none. Edits leave the wallets alone.
+  const movesMoney = !!form && form.editId == null && (form.kind === 'borrowed' || form.kind === 'lent')
+  const incomingMoney = form?.kind === 'borrowed'
+  const wallets = useWallets(movesMoney, 'UZS')
+  const walletChoice = useWalletChoice({
+    open: movesMoney,
+    cards: wallets.cards,
+    cashBalance: wallets.cashBalance,
+    loaded: wallets.loaded,
+    amount: incomingMoney ? borrowed.amount : lent.amount,
+    incoming: incomingMoney,
+  })
+  const walletName = (w: typeof walletChoice.value) =>
+    typeof w === 'number' ? wallets.cards.find(c => c.id === w)?.name ?? '' : t('tx.cash')
+  const walletField = movesMoney && (
+    <WalletPicker
+      id="loans-wallet"
+      label={t(incomingMoney ? 'shell.form.intoWallet' : 'shell.form.fromWallet')}
+      cards={wallets.cards}
+      cashBalance={wallets.cashBalance}
+      currency="UZS"
+      loaded={wallets.loaded}
+      failed={wallets.failed}
+      onRetry={wallets.reload}
+      value={walletChoice.value}
+      onChange={v => { setDirty(true); setErrors({}); walletChoice.choose(v) }}
+      noneLabel={t('shell.form.noWallet')}
+      help={walletChoice.value === 'none' ? t('shell.form.noWalletHint') : undefined}
+      error={errors.wallet}
+    />
+  )
+
   const openForm = (kind: FormKind, editId: number | null = null, name = '') => {
     setChooserOpen(false)
     setDirty(false); setSaving(false); setFormError(null); setErrors({})
@@ -591,9 +626,16 @@ export function Loans() {
     ev.preventDefault()
     if (!form) return
     const found = validate()
+    if (movesMoney && walletChoice.value == null) found.wallet = t('cmp.err.pickCardOrCash')
     if (Object.keys(found).length > 0) { setErrors(found); return }
     setSaving(true); setFormError(null)
     const { kind, editId } = form
+    const wallet = walletChoice.value
+    // What a new loan's money did, for the request and the toast; null when no wallet moved.
+    const move = movesMoney && wallet != null && wallet !== 'none'
+      ? { moveMoney: true, cardId: typeof wallet === 'number' ? wallet : null }
+      : movesMoney ? { moveMoney: false, cardId: null } : {}
+    let movedToast: string | null = null
     try {
       if (kind === 'bill') {
         const existing = editId != null ? bills.data?.find(m => m.id === editId) : undefined
@@ -647,7 +689,14 @@ export function Loans() {
           status: existing ? repaymentStatus(existing.paidAmount, borrowed.amount) : undefined,
         }
         if (editId != null) await financeApi.updateLoanTaken(editId, req)
-        else await financeApi.createLoanTaken(req)
+        else {
+          await financeApi.createLoanTaken({ ...req, ...move })
+          if ('moveMoney' in move && move.moveMoney) {
+            movedToast = t('shell.loans.borrowedToast', {
+              amount: moneyFull(borrowed.amount), name: who.name, wallet: walletName(wallet),
+            })
+          }
+        }
       } else if (kind === 'debt') {
         const existing = editId != null ? debts.data?.find(d => d.id === editId) : undefined
         if (!existing) throw new Error(t('shell.form.missingRecord'))
@@ -678,11 +727,20 @@ export function Loans() {
           status: existing ? repaymentStatus(existing.receivedAmount, lent.amount) : undefined,
         }
         if (editId != null) await financeApi.updateLoanGiven(editId, req)
-        else await financeApi.createLoanGiven(req)
+        else {
+          await financeApi.createLoanGiven({ ...req, ...move })
+          if ('moveMoney' in move && move.moveMoney) {
+            movedToast = t('shell.loans.lentToast', {
+              amount: moneyFull(lent.amount), name: who.name, wallet: walletName(wallet),
+            })
+          }
+        }
       }
+      if (movesMoney) rememberWallet(wallet)
       closeForm()
+      // Every figure a wallet feeds is refetched — Home's "You have" rides on the advisor.
       refetchAll()
-      showSuccess(editId != null ? t('shell.loans.savedToast') : t('shell.loans.addedToast'))
+      showSuccess(movedToast ?? (editId != null ? t('shell.loans.savedToast') : t('shell.loans.addedToast')))
     } catch (err: unknown) {
       setFormError(err instanceof Error && !('isAxiosError' in err) ? err.message : extractErrorMessage(err))
     } finally {
@@ -1163,6 +1221,7 @@ export function Loans() {
                 <AmountInput required value={borrowed.amount} currency="UZS" suffix="UZS"
                   onChange={v => editBorrowed({ amount: v })} className={MONEY_INPUT} />
               </Field>
+              {walletField}
               <Field id="loans-borrowed-date" label={t('shell.form.date')} required>
                 <input required type="date" value={borrowed.date}
                   onChange={e => editBorrowed({ date: e.target.value })} className={INPUT} />
@@ -1247,6 +1306,7 @@ export function Loans() {
                 <AmountInput required value={lent.amount} currency="UZS" suffix="UZS"
                   onChange={v => editLent({ amount: v })} className={MONEY_INPUT} />
               </Field>
+              {walletField}
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Field id="loans-lent-date" label={t('shell.form.date')} required>
                   <input required type="date" value={lent.date}
