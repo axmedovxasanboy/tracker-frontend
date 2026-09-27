@@ -11,15 +11,17 @@ import { useLang } from '../../i18n/LanguageContext'
 import { useToast } from '../../context/ToastContext'
 import { emergenciesApi } from '../../api/emergencies'
 import { financeApi } from '../../api/finance'
+import { categoriesApi } from '../../api/categories'
 import { extractErrorMessage } from '../../api/client'
 import { moneyFull, todayLocal } from '../../utils/format'
-import { CompactDate, CONTROL, CONTROL_INVALID, LINK, MONEY_INPUT, MONEY_INPUT_INVALID, useOptional } from '../transactions/formParts'
+import { ChipGroup, CompactDate, CONTROL, CONTROL_INVALID, LINK, MONEY_INPUT, MONEY_INPUT_INVALID, useOptional } from '../transactions/formParts'
 import { WalletPicker } from '../transactions/WalletPicker'
 import {
-  defaultWallet, readLastAccount, rememberAccount, rememberWallet, useWalletChoice, useWallets,
+  defaultWallet, readLastAccount, readLastChild, rememberAccount, rememberChild, rememberWallet, useWalletChoice,
+  useWallets,
 } from '../transactions/wallets'
 import type { WalletValue } from '../transactions/wallets'
-import type { Bucket, Currency, InvestmentResponse, InvestmentType } from '../../types'
+import type { Bucket, Category, Currency, InvestmentResponse, InvestmentType } from '../../types'
 
 interface Props {
   open: boolean
@@ -47,7 +49,7 @@ const FUND = 'fund'
 /** Open a new holding instead of adding to one that exists. */
 const NEW = 'new'
 
-type Invalid = 'amount' | 'wallet' | 'name' | 'target' | null
+type Invalid = 'amount' | 'kind' | 'wallet' | 'name' | 'target' | null
 type AccountsState = 'idle' | 'loading' | 'ready' | 'failed'
 
 /** A holding's worth: its market value when one was set, else what went in. */
@@ -85,7 +87,7 @@ function defaultTarget(bucket: Bucket, accounts: InvestmentResponse[], last: str
 export function PayBucketModal({
   open, onClose, onSaved, bucket, currency, suggestedAmount, presetAmount, presetWallet, defaultMonth,
 }: Props) {
-  const { t } = useLang()
+  const { t, categoryName } = useLang()
   const optional = useOptional()
   const { showSuccess } = useToast()
   const TITLES: Record<Bucket, string> = {
@@ -109,6 +111,11 @@ export function PayBucketModal({
   const [date, setDate] = useState(todayLocal())
   const [note, setNote] = useState('')
   const [recipientName, setRecipientName] = useState('')
+  // Donation only: the Donation category's sub-categories, picked like in the add form — the
+  // server would otherwise file every donation under the root and the owner's own kinds are lost.
+  const [donationRootId, setDonationRootId] = useState<number | null>(null)
+  const [donationKinds, setDonationKinds] = useState<Category[]>([])
+  const [kind, setKind] = useState<number | null>(null)
 
   // Only for a NEW holding (the name doubles as the new account's name).
   const [name, setName] = useState('')
@@ -193,6 +200,29 @@ export function PayBucketModal({
     }
   }, [open, bucket, suggestedAmount, presetAmount, defaultMonth, currency, loadAccounts])
 
+  useEffect(() => {
+    setDonationRootId(null)
+    setDonationKinds([])
+    setKind(null)
+    if (!open || bucket !== 'DONATION') return
+    let live = true
+    ;(async () => {
+      // The subType filter also returns roots with no sub-type, so pick the Donation root itself.
+      const roots = await categoriesApi.getAll('EXPENSE', 'DONATION').catch(() => null)
+      const root = roots?.data.find(c => c.parentId == null && c.applicableSubType === 'DONATION')
+      if (!live || !root) return
+      const subs = await categoriesApi.getSubCategories(root.id).catch(() => null)
+      if (!live || !subs) return
+      const kinds = subs.data
+      setDonationRootId(root.id)
+      setDonationKinds(kinds)
+      // Same default as the add form: the last one used here, else the only one there is.
+      const last = readLastChild(root.id)
+      setKind(kinds.some(k => k.id === last) ? last : kinds.length === 1 ? kinds[0].id : null)
+    })()
+    return () => { live = false }
+  }, [open, bucket])
+
   // Leaving a target that accepts "Not from a wallet" must not leave that answer standing.
   const { value: walletValue, choose: chooseWallet } = choice
   useEffect(() => {
@@ -228,6 +258,9 @@ export function PayBucketModal({
       setError(t(bucket === 'EMERGENCY' ? 'cmp.err.nameFund' : 'cmp.err.investmentNameRequired'))
       return
     }
+    if (bucket === 'DONATION' && donationKinds.length > 0 && kind == null) {
+      setInvalid('kind'); setError(t('cmp.txModal.err.selectSubCategory')); return
+    }
     const wallet = choice.value
     if (wallet == null || (wallet === 'none' && !allowNone)) {
       setInvalid('wallet'); setError(t('cmp.err.pickCardOrCash')); return
@@ -235,20 +268,24 @@ export function PayBucketModal({
     const cardId = typeof wallet === 'number' ? wallet : undefined
     const noWallet = wallet === 'none'
     setSaving(true); setError(null); setInvalid(null)
-    // No category is sent: the server files each one under the category made for its kind
-    // (donation, emergency fund, investment), which is what the owner would expect to see.
+    // Savings money is filed by the server under the category made for its kind; a donation
+    // carries the sub-category the owner picked, when the Donation category has any.
     try {
       let account = ''
       if (bucket === 'DONATION') {
         const recipient = recipientName.trim()
+        const chosen = donationKinds.find(k => k.id === kind)
         await financeApi.createDonation({
           // The recipient is optional; left blank, the donation is saved without one.
           recipientName: recipient || 'Anonymous',
-          anonymous: !recipient,
+          // An anonymising sub-category ("Anonymous") keeps it anonymous, as the add form does.
+          anonymous: !recipient || !!chosen?.anonymizes,
           amount, currency, donationDate: date,
           description: note.trim() || undefined,
           cardId,
+          categoryId: chosen?.id,
         })
+        if (chosen && donationRootId != null) rememberChild(donationRootId, chosen.id)
       } else if (toHolding) {
         await financeApi.contributeInvestment(Number(target), {
           amount, currency, date,
@@ -395,6 +432,19 @@ export function PayBucketModal({
               {t('cmp.action.useThis')}
             </button>
           </p>
+        )}
+
+        {bucket === 'DONATION' && donationKinds.length > 0 && (
+          <ChipGroup<number>
+            id="pb-kind"
+            compact
+            required
+            label={t('cmp.txModal.label.subCategory')}
+            options={donationKinds.map(c => ({ value: c.id, label: categoryName(c) }))}
+            value={kind}
+            onChange={id => { setKind(id); if (invalid === 'kind') { setInvalid(null); setError(null) } }}
+            error={fieldError('kind')}
+          />
         )}
 
         <WalletPicker
