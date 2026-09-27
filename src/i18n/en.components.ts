@@ -227,6 +227,7 @@ export const en_components = {
   'cmp.txModal.label.category': 'Category',
   'cmp.txModal.label.subCategory': 'Sub-category',
   'cmp.txModal.label.date': 'Date',
+  'cmp.txModal.label.salaryMonth': 'For which month',
   'cmp.txModal.label.investment': 'Investment',
   'cmp.txModal.label.direction': 'Money in or out',
   'cmp.txModal.label.whatFor': 'What for',

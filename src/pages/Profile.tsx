@@ -15,7 +15,7 @@ import { useAuth } from '../context/AuthContext'
 import { useLang } from '../i18n/LanguageContext'
 import type { TKey } from '../i18n/LanguageContext'
 import { profileApi } from '../api/profile'
-import { formatDate, formatMonth, formatNumber, moneyFull, todayLocal } from '../utils/format'
+import { formatDate, formatMonth, formatNumber, moneyFull, shiftMonth, todayLocal } from '../utils/format'
 import type { Bucket } from '../types'
 import type { ProfileAllocatedLine, ProfileReason, ProfileResponse } from '../types/profile'
 
@@ -238,14 +238,17 @@ function SoFarTile({ p }: { p: ProfileResponse }) {
                 ? { icon: <Target className="h-4 w-4" aria-hidden="true" />, tone: 'indigo' as const }
                 : SAVINGS_ICON[l.bucket]
               const name = l.bucket === 'GOALS' ? t('home.goals.title') : t(SAVINGS_NAME_KEY[l.bucket])
-              const met = l.target != null && l.target > 0 && l.amount >= l.target
+              // This month's advice plus what earlier months left unpaid — the server's `over` is
+              // measured against the same sum.
+              const due = (l.target ?? 0) + Math.max(0, l.carried ?? 0)
+              const met = due > 0 && l.amount >= due
               return (
                 <li key={l.bucket} className="flex items-center gap-3 py-2">
                   <IconChip tone={icon.tone}>{icon.icon}</IconChip>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm text-slate-900">{name}</p>
-                    {l.target != null && l.target > 0 && (
-                      <p className="text-xs tabular-nums text-slate-500">{t('shell.profile.ofTarget', { amount: moneyFull(l.target) })}</p>
+                    {due > 0 && (
+                      <p className="text-xs tabular-nums text-slate-500">{t('shell.profile.ofTarget', { amount: moneyFull(due) })}</p>
                     )}
                     {l.over != null && l.over > 0 && (
                       <p className="text-xs font-medium tabular-nums text-amber-700">
@@ -436,9 +439,14 @@ function SetAsideTile({ p, full = false, onHome, onSavings }: {
   onHome: () => void
   onSavings: () => void
 }) {
-  const { t } = useLang()
+  const { t, lang } = useLang()
   const rows = known(p.buckets)
   const bonus = p.baseParts ? p.baseParts.bonus : p.bonusThisMonth
+  // What earlier months left unpaid rides on top of this month's rule — shown per bucket, and in
+  // the total. An overpayment never carries, so this is never negative.
+  const carriedOf = (b: { carried?: number }) => Math.max(0, b.carried ?? 0)
+  const carriedTotal = rows.reduce((sum, b) => sum + carriedOf(b), 0)
+  const previousMonth = formatDate(shiftMonth(p.month.slice(0, 7), -1), lang, 'monthName')
   return (
     <Tile span={full ? 12 : 6} mdSpan={6} as="section">
       <TileHead title={t('shell.profile.setAsideTitle')} />
@@ -452,13 +460,18 @@ function SetAsideTile({ p, full = false, onHome, onSavings }: {
                   ? t('shell.profile.percentOf', { percent: percentText(b.percent), base: moneyFull(p.savingsBase) })
                   : t('shell.profile.notThisMonth')}
               </p>
+              {carriedOf(b) >= 1 && (
+                <p className="text-xs tabular-nums text-slate-600">
+                  {t('shell.profile.carried', { amount: moneyFull(carriedOf(b)), month: previousMonth })}
+                </p>
+              )}
             </div>
             <p className="shrink-0 text-sm font-semibold tabular-nums text-slate-900">{moneyFull(b.amount)}</p>
           </li>
         ))}
         <li className="flex items-baseline justify-between gap-3 pt-2">
           <span className="text-sm font-semibold text-slate-900">{t('page.shared.total')}</span>
-          <span className="text-title tabular-nums text-slate-900">{moneyFull(p.totalAmount)}</span>
+          <span className="text-title tabular-nums text-slate-900">{moneyFull(p.totalAmount + carriedTotal)}</span>
         </li>
       </ul>
       {/* A bonus month asks for more; the usual month is what to expect after it. */}

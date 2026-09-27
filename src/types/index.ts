@@ -86,6 +86,8 @@ export interface Transaction {
   repaidLoanTakenId: number | null
   repaidLoanGivenId: number | null
   repaidDebtId: number | null
+  /** Salary-tree income only: the month this pay is for, YYYY-MM; null = its own month. Absent on an older server. */
+  salaryMonth?: string | null
 }
 
 export interface PageResponse<T> {
@@ -145,6 +147,8 @@ export interface TransactionRequest {
   /** LOAN_RECEIVED only: month (YYYY-MM-01) repayments start counting toward the tier. */
   paymentStartDate?: string
   cashAmount?: number
+  /** Salary-tree income only: the month this pay is for, YYYY-MM. Left out, an edit keeps the stored one. */
+  salaryMonth?: string | null
 }
 
 export interface CategoryRequest {
@@ -506,6 +510,14 @@ export interface CashBalanceRequest {
   initialBalance: number
 }
 
+/** "This is the cash I hold now": the difference is booked as everyday spending or found money. */
+export interface CashNowRequest {
+  currency: Currency
+  amount: number
+  /** YYYY-MM-DD, the owner's day. */
+  date?: string
+}
+
 export interface BalanceTransferRequest {
   /** null = the cash pot */
   fromCardId: number | null
@@ -607,9 +619,13 @@ export interface AdvisorBill {
 export interface AdvisorSetAside {
   bucket: Bucket
   percent: number | null
+  /** This month's rule amount alone. */
   target: number
   paid: number
+  /** max(0, target + carried − paid). */
   remaining: number
+  /** Unpaid from earlier months (an overpayment never carries). Absent on an older server. */
+  carried?: number
 }
 
 export type AdvisorAction =
@@ -705,9 +721,13 @@ export interface AdvisorSavingsRow {
   /** GOAL: one savings goal, its target being the goal's monthly payment. Not sent by an older backend. */
   bucket: Bucket | 'GOAL'
   percent: number | null
+  /** This month's rule amount alone. */
   target: number
   paid: number
+  /** max(0, target + carried − paid). */
   remaining: number
+  /** Unpaid from earlier months (an overpayment never carries). Absent on an older server. */
+  carried?: number
   /** GOAL only: the goal's investment id. */
   refId?: number | null
   /** GOAL only: the goal's name. */
@@ -745,4 +765,6 @@ export interface AdvisorResponse {
   daily?: AdvisorDaily | null
   /** This month's savings lines (met ones included). Absent on an older backend. */
   savingsThisMonth?: AdvisorSavingsRow[]
+  /** The month a salary recorded today is most likely for, YYYY-MM. Absent on an older backend. */
+  suggestedSalaryMonth?: string
 }

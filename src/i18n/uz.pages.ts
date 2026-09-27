@@ -196,6 +196,16 @@ export const uz_pages: Partial<Record<keyof typeof en_pages, string>> = {
   'page.cards.updateCash': 'Naqd pulni yangilash',
   'page.cards.cashModalTitle': 'Naqd pul balansi',
   'page.cards.cashSavedToast': 'Naqd pul balansi yangilandi',
+  'page.cards.cashNow.title': 'Hozir qoʻlingizdagi naqd pul',
+  'page.cards.cashNow.label': 'Hozir qoʻlingizdagi naqd pul ({currency})',
+  'page.cards.cashNow.appThinks': 'Ilova hisobi: {amount}',
+  'page.cards.cashNow.matches': 'Mos keladi — hech narsa yozilmaydi.',
+  'page.cards.cashNow.asSpending': '{amount} kundalik xarajat sifatida yoziladi.',
+  'page.cards.cashNow.asFound': '{amount} topilgan pul sifatida yoziladi.',
+  'page.cards.cashNow.matchesToast': 'Naqd pul mos keladi — hech narsa yozilmadi',
+  'page.cards.cashNow.spentToast': 'Naqd pul yangilandi — {amount} kundalik xarajat sifatida yozildi',
+  'page.cards.cashNow.foundToast': 'Naqd pul yangilandi — {amount} topilgan pul sifatida yozildi',
+  'page.cards.cashNow.outdated': 'Server hali bunga yangilanmagan. Keyingi yangilanishdan soʻng qayta urinib koʻring.',
   'page.cards.colorOption': 'Rang {n}',
 
   // ── Transactions ────────────────────────────────────────────────────────

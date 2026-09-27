@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import type { AxiosError } from 'axios'
 import {
   ArrowDownRight, ArrowLeftRight, ArrowUpRight, CreditCard, Info,
   Pencil, Plus, Scale, Trash2, Wallet,
@@ -34,7 +35,7 @@ import { transactionsApi } from '../api/transactions'
 import { cashBalancesApi } from '../api/cashBalances'
 import { monthsApi } from '../api/months'
 import { extractErrorMessage } from '../api/client'
-import { formatDate, money, moneyExact, moneyFull, plural, todayLocal } from '../utils/format'
+import { formatDate, money, moneyExact, moneyFull, plural, snap, todayLocal } from '../utils/format'
 import type {
   CardRequest, CardResponse, CardType, CashBalanceResponse, PageResponse, Transaction, TransactionFilters,
 } from '../types'
@@ -329,26 +330,51 @@ export function Cards() {
   }
 
   // Inline cash editor. UZS-only: there is one pot and it cannot change currency.
-  const [cashEdit, setCashEdit] = useState<{ initialBalance: number } | null>(null)
+  // `add` starts the pot; `now` says what is in the pocket today, and the difference from what the
+  // app worked out (`thinks`) is booked — less as everyday spending, more as found money — so the
+  // balance history stays true instead of the starting amount being rewritten.
+  const [cashEdit, setCashEdit] = useState<{ mode: 'add' | 'now'; amount: number; thinks: number } | null>(null)
   const [cashDirty, setCashDirty] = useState(false)
   const [savingCash, setSavingCash] = useState(false)
   const [cashError, setCashError] = useState<string | null>(null)
 
   const openCashEdit = (b?: CashBalanceResponse | null) => {
-    setCashEdit({ initialBalance: b?.initialBalance ?? 0 })
+    setCashEdit(b
+      ? { mode: 'now', amount: b.currentBalance, thinks: b.currentBalance }
+      : { mode: 'add', amount: 0, thinks: 0 })
     setCashDirty(false)
     setCashError(null)
   }
+  const cashDiff = cashEdit ? snap(cashEdit.amount - cashEdit.thinks) : 0
   const saveCash = async () => {
     if (!cashEdit) return
+    if (cashEdit.amount < 0) { setCashError(t('cmp.err.valueNegative')); return }
+    if (cashEdit.mode === 'now' && cashDiff === 0) {
+      // Nothing to book: say so, rather than a "saved" for a write that never happened.
+      setCashEdit(null)
+      showSuccess(t('page.cards.cashNow.matchesToast'))
+      return
+    }
     setSavingCash(true); setCashError(null)
     try {
-      await cashBalancesApi.upsert({ currency: 'UZS', initialBalance: cashEdit.initialBalance })
-      cashBalances.refetch()
+      if (cashEdit.mode === 'now') {
+        await cashBalancesApi.setCurrent({ currency: 'UZS', amount: cashEdit.amount, date: todayLocal() })
+        showSuccess(t(cashDiff < 0 ? 'page.cards.cashNow.spentToast' : 'page.cards.cashNow.foundToast', {
+          amount: moneyFull(Math.abs(cashDiff)),
+        }))
+      } else {
+        await cashBalancesApi.upsert({ currency: 'UZS', initialBalance: cashEdit.amount })
+        showSuccess(t('page.cards.cashSavedToast'))
+      }
+      // A booked difference is a transaction: the cash list, the check-in and the totals all move.
+      refetchWallets()
       setCashEdit(null)
-      showSuccess(t('page.cards.cashSavedToast'))
     } catch (err) {
-      setCashError(extractErrorMessage(err))
+      // An older server has no such endpoint — the old "starting amount" edit is what caused the
+      // wrong balances, so it is not fallen back to.
+      setCashError((err as AxiosError).response?.status === 404
+        ? t('page.cards.cashNow.outdated')
+        : extractErrorMessage(err))
     } finally {
       setSavingCash(false)
     }
@@ -846,7 +872,7 @@ export function Cards() {
       <Sheet
         open={!!cashEdit}
         onClose={() => setCashEdit(null)}
-        title={t('page.cards.cashModalTitle')}
+        title={cashEdit?.mode === 'now' ? t('page.cards.cashNow.title') : t('page.cards.cashModalTitle')}
         maxWidth="max-w-md"
         dirty={cashDirty && !savingCash}
         footer={
@@ -867,20 +893,37 @@ export function Cards() {
           <form id={CASH_FORM_ID} onSubmit={e => { e.preventDefault(); saveCash() }} className="space-y-4">
             <Field
               id="cash-initial"
-              label={t('page.cards.cashHoldLabel', { currency: 'UZS' })}
-              help={t('page.cards.cashHoldHint')}
+              label={cashEdit.mode === 'now'
+                ? t('page.cards.cashNow.label', { currency: 'UZS' })
+                : t('page.cards.cashHoldLabel', { currency: 'UZS' })}
+              help={cashEdit.mode === 'now'
+                ? t('page.cards.cashNow.appThinks', { amount: moneyFull(cashEdit.thinks) })
+                : t('page.cards.cashHoldHint')}
               error={cashError ?? undefined}
             >
               <AmountInput
                 autoFocus
-                value={cashEdit.initialBalance}
+                value={cashEdit.amount}
                 currency="UZS"
-                onChange={v => { setCashDirty(true); setCashEdit(p => p ? { ...p, initialBalance: v } : p) }}
-                className="focus-ring h-11 w-full rounded-control border border-slate-200 px-3 text-sm"
+                onChange={v => {
+                  setCashDirty(true)
+                  if (cashError) setCashError(null)
+                  setCashEdit(p => p ? { ...p, amount: v } : p)
+                }}
+                className="focus-ring h-11 w-full rounded-control border border-slate-200 px-3 pr-14 text-sm"
                 placeholder="0"
                 suffix="UZS"
               />
             </Field>
+            {cashEdit.mode === 'now' && (
+              <p aria-live="polite" className="rounded-control bg-slate-50 px-3 py-2.5 text-sm tabular-nums text-slate-700">
+                {cashDiff === 0
+                  ? t('page.cards.cashNow.matches')
+                  : t(cashDiff < 0 ? 'page.cards.cashNow.asSpending' : 'page.cards.cashNow.asFound', {
+                    amount: moneyFull(Math.abs(cashDiff)),
+                  })}
+              </p>
+            )}
           </form>
         )}
       </Sheet>

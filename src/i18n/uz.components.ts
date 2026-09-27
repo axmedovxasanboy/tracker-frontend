@@ -227,6 +227,7 @@ export const uz_components: Partial<Record<keyof typeof en_components, string>> 
   'cmp.txModal.label.category': 'Kategoriya',
   'cmp.txModal.label.subCategory': 'Ichki kategoriya',
   'cmp.txModal.label.date': 'Sana',
+  'cmp.txModal.label.salaryMonth': 'Qaysi oy uchun',
   'cmp.txModal.label.investment': 'Investitsiya',
   'cmp.txModal.label.direction': 'Kirim yoki chiqim',
   'cmp.txModal.label.whatFor': 'Nima uchun',

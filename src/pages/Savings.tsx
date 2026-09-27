@@ -209,6 +209,7 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
                   <SavingsThisMonth
                     rows={savingsRows}
                     currency={currency}
+                    month={d?.month}
                     onPay={(row, amount) => row.bucket === 'GOAL'
                       ? payGoal(row.refId, amount)
                       : setBucket({ bucket: row.bucket, amount })}

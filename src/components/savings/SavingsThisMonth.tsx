@@ -5,7 +5,7 @@ import { IconChip } from '../ui/IconChip'
 import type { IconTone } from '../ui/StatTile'
 import { useLang } from '../../i18n/LanguageContext'
 import type { TKey } from '../../i18n/LanguageContext'
-import { formatNumber, moneyFull } from '../../utils/format'
+import { formatDate, formatNumber, monthLocal, moneyFull, shiftMonth } from '../../utils/format'
 import type { AdvisorSavingsRow, Bucket, Currency } from '../../types'
 
 export const SAVINGS_NAME_KEY: Record<Bucket, TKey> = {
@@ -32,23 +32,32 @@ const isGoalRow = (r: AdvisorSavingsRow) => r.bucket === 'GOAL' && r.refId != nu
  * in — with "Add more" beside it, since the owner often puts in more than the month asks. Each
  * savings goal with a monthly payment follows the three, by its own name. The same rows on Home and
  * on Savings, so the two pages can never read differently.
+ *
+ * What an earlier month left unpaid carries into this one: the row asks for this month's amount plus
+ * the carried part, and says how much of it is carried. Paying more never lowers a later month.
  */
-export function SavingsThisMonth({ rows, currency, onPay }: {
+export function SavingsThisMonth({ rows, currency, month, onPay }: {
   rows: AdvisorSavingsRow[]
   currency: Currency
-  /** `amount` is what is left for the month; 0 for "Add more", which starts on an empty amount. */
+  /** The advisor's month, YYYY-MM — the carried part is named after the one before it. */
+  month?: string
+  /** `amount` is what is left for the month, carried part included; 0 for "Add more". */
   onPay: (row: AdvisorSavingsRow, amount: number) => void
 }) {
-  const { t } = useLang()
+  const { t, lang } = useLang()
   // Anything this client does not know how to pay is left out rather than shown half-working.
   const shown = [...rows.filter(isBucketRow), ...rows.filter(isGoalRow)]
+  const previousMonth = formatDate(shiftMonth((month ?? monthLocal()).slice(0, 7), -1), lang, 'monthName')
 
   return (
     <ul className="divide-y divide-hairline">
       {shown.map(r => {
         const done = r.remaining <= 0
+        const carried = Math.max(0, r.carried ?? 0)
+        // This month's amount and whatever earlier months left unpaid.
+        const due = r.target + carried
         // More than the month asked: shown, not hidden under "Done".
-        const over = done && r.target > 0 ? r.paid - r.target : 0
+        const over = done && due > 0 ? r.paid - due : 0
         const goal = r.bucket === 'GOAL'
         const key = goal ? `goal-${r.refId}` : r.bucket
         const name = isBucketRow(r) ? t(SAVINGS_NAME_KEY[r.bucket]) : r.name?.trim() || t('page.advisor.bucket.savings')
@@ -62,13 +71,18 @@ export function SavingsThisMonth({ rows, currency, onPay }: {
               <p className="text-xs tabular-nums text-slate-500">
                 {done
                   ? moneyFull(r.paid, currency)
-                  : t('home.savings.ofTarget', { paid: formatNumber(r.paid), target: moneyFull(r.target, currency) })}
+                  : t('home.savings.ofTarget', { paid: formatNumber(r.paid), target: moneyFull(due, currency) })}
                 {over >= 1 && (
                   <span className="font-medium text-amber-700">
                     {' · '}{t('home.savings.over', { amount: moneyFull(over, currency) })}
                   </span>
                 )}
               </p>
+              {carried >= 1 && (
+                <p className="text-xs tabular-nums text-slate-500">
+                  {t('home.savings.carried', { amount: moneyFull(carried, currency), month: previousMonth })}
+                </p>
+              )}
             </div>
             {done ? (
               <div className="flex shrink-0 items-center gap-2">

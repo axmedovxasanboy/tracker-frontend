@@ -539,9 +539,12 @@ function Row({ tx, deleting, onOpen, onEdit, onDelete }: {
   onEdit: () => void
   onDelete: () => void
 }) {
-  const { t, categoryName } = useLang()
+  const { t, lang, categoryName } = useLang()
   const isSplit = (tx.cashAmount ?? 0) > 0 && (tx.cardAmount ?? 0) > 0 && !!tx.card
   const income = tx.type === 'INCOME'
+  // Pay that arrived in one month for another — September's salary on 2 October — says so.
+  const payMonth = income && tx.salaryMonth ? tx.salaryMonth.slice(0, 7) : null
+  const forOtherMonth = payMonth != null && payMonth !== tx.transactionDate.slice(0, 7)
   const subtitle = [tx.note || '', tx.card ? `${tx.card.name} ••${tx.card.lastFourDigits}` : '']
     .filter(Boolean)
     .join(' · ')
@@ -563,6 +566,11 @@ function Row({ tx, deleting, onOpen, onEdit, onDelete }: {
             <span className="inline-flex items-center gap-1.5 rounded-chip bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
               <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: tx.category.color }} />
               {categoryName(tx.category)}
+            </span>
+          )}
+          {forOtherMonth && (
+            <span className="inline-flex items-center rounded-chip bg-indigo-50 px-1.5 py-0.5 text-[11px] font-medium text-indigo-700">
+              {t('shell.history.forMonth', { month: formatDate(payMonth!, lang, 'monthName') })}
             </span>
           )}
           {isSplit && (

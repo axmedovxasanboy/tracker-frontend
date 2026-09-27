@@ -195,6 +195,16 @@ export const en_pages = {
   'page.cards.updateCash': 'Update cash',
   'page.cards.cashModalTitle': 'Cash balance',
   'page.cards.cashSavedToast': 'Cash balance updated',
+  'page.cards.cashNow.title': 'Cash you hold now',
+  'page.cards.cashNow.label': 'Cash you hold now ({currency})',
+  'page.cards.cashNow.appThinks': 'App thinks: {amount}',
+  'page.cards.cashNow.matches': 'Matches — nothing will be recorded.',
+  'page.cards.cashNow.asSpending': '{amount} will be recorded as everyday spending.',
+  'page.cards.cashNow.asFound': '{amount} will be recorded as found money.',
+  'page.cards.cashNow.matchesToast': 'Cash already matches — nothing recorded',
+  'page.cards.cashNow.spentToast': 'Cash updated — {amount} recorded as everyday spending',
+  'page.cards.cashNow.foundToast': 'Cash updated — {amount} recorded as found money',
+  'page.cards.cashNow.outdated': 'The server is not updated for this yet. Try again after the next update.',
   'page.cards.colorOption': 'Colour {n}',
 
   // ── Transactions ────────────────────────────────────────────────────────

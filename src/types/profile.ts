@@ -16,6 +16,8 @@ export interface ProfileBucket {
   amount: number
   /** The same percent of a month without a bonus. */
   normalMonthAmount: number
+  /** Unpaid from earlier months, on top of `amount`. Absent on an older server. */
+  carried?: number
 }
 
 export interface ProfileNextMonth {
@@ -66,7 +68,9 @@ export interface ProfileAllocatedLine {
   percentOfBase?: number | null
   /** What this month asks for; null when nothing is asked. */
   target: number | null
-  /** How much more went in than the advice asked. */
+  /** Unpaid from earlier months, on top of `target`. Absent on an older server. */
+  carried?: number
+  /** How much more went in than the advice (target + carried) asked. */
   over?: number | null
 }
 

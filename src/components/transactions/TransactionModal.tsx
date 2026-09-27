@@ -12,8 +12,9 @@ import { useConfirm } from '../../context/ConfirmContext'
 import { categoriesApi } from '../../api/categories'
 import { transactionsApi } from '../../api/transactions'
 import { financeApi } from '../../api/finance'
+import { advisorApi } from '../../api/advisor'
 import { extractErrorMessage } from '../../api/client'
-import { moneyFull, todayLocal } from '../../utils/format'
+import { formatDate, moneyFull, shiftMonth, todayLocal } from '../../utils/format'
 import { BalanceTransferModal } from './BalanceTransferModal'
 import { PayBucketModal } from '../overview/PayBucketModal'
 import { SAVINGS_ICON, SAVINGS_NAME_KEY } from '../savings/SavingsThisMonth'
@@ -116,6 +117,20 @@ function linkedDonation(tx: Transaction, donations: DonationResponse[]): Donatio
 }
 
 /**
+ * The roots of the salary tree, mirroring the server (`OverviewService.salaryTree`): the roots
+ * holding a bonus-flagged category, else a root income category named "Salary". Everything under
+ * them — Salary, Avans, Bonus — is pay, and pay can be for another month than the day it arrived.
+ */
+function salaryRootIds(roots: Category[]): Set<number> {
+  const holdsBonus = (c: Category): boolean => (c.children ?? []).some(k => k.bonusIncome || holdsBonus(k))
+  const withBonus = roots.filter(holdsBonus)
+  if (withBonus.length > 0) return new Set(withBonus.map(r => r.id))
+  return new Set(roots
+    .filter(r => r.type !== 'EXPENSE' && r.name.trim().toLowerCase() === 'salary')
+    .map(r => r.id))
+}
+
+/**
  * The wallet an existing row was paid from, and whether it was split. A row with no card, or on a
  * legacy CASH-type card, is cash; a card row that also carries a cash part is a split.
  */
@@ -138,7 +153,7 @@ function walletOf(tx: Transaction): { wallet: WalletValue; split: boolean; cash:
  */
 export function TransactionModal({ open, onClose, onSaved, transaction, defaultCurrency, presetType }: Props) {
   // Aliased to `translate` — this file uses `t` as a local loop variable in a couple of callbacks.
-  const { t: translate, categoryName } = useLang()
+  const { t: translate, lang, categoryName } = useLang()
   const navigate = useNavigate()
   const confirm = useConfirm()
   const optional = useOptional()
@@ -225,6 +240,15 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
   const [savingsChooserOpen, setSavingsChooserOpen] = useState(false)
   const [savingsBucket, setSavingsBucket] = useState<Bucket | null>(null)
 
+  // Pay (salary, avans, bonus): the month it is for, YYYY-MM. Null = the row's own month.
+  const [salaryMonth, setSalaryMonth] = useState<string | null>(null)
+  /** Once the owner picks one, a late suggestion from the server does not overrule them. */
+  const salaryMonthPicked = useRef(false)
+  /** The suggestion is asked for once per opening, and only when a salary category is chosen. */
+  const salaryMonthAsked = useRef(false)
+  /** Bumped on every opening, so an answer meant for an earlier one is dropped. */
+  const openSeq = useRef(0)
+
   const amountRef = useRef<HTMLInputElement>(null)
   const borrowerPopoverRef = useRef<HTMLDivElement>(null)
   const bankPopoverRef = useRef<HTMLDivElement>(null)
@@ -293,6 +317,10 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
     counterpartySeeded.current = false
     anonymitySeeded.current = false
     openTxId.current = transaction?.id ?? null
+    openSeq.current += 1
+    salaryMonthPicked.current = false
+    salaryMonthAsked.current = false
+    setSalaryMonth(transaction?.salaryMonth ? transaction.salaryMonth.slice(0, 7) : null)
     setDonation(null)
     setInvestmentMode('existing')
 
@@ -535,6 +563,41 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
   const keepsRoot = !!transaction && selectedRootId != null
     && transaction.category?.id === selectedRootId && form.categoryId === selectedRootId
 
+  // Pay — plain income under the salary tree — says which month it is for. A salary that lands on
+  // the 2nd is usually the month before's; the server suggests which, the owner has the last word.
+  const isSalaryIncome = form.type === 'INCOME'
+    && (form.subType ?? 'REGULAR_INCOME') === 'REGULAR_INCOME'
+    && selectedRootId != null && salaryRootIds(rootCategories).has(selectedRootId)
+  const dateMonth = (form.transactionDate || todayLocal()).slice(0, 7)
+  const effectiveSalaryMonth = salaryMonth ?? dateMonth
+  // The month before the date, its own and the next (pay in advance); plus the stored one, if the
+  // date has since moved away from it.
+  const salaryMonthOptions = [shiftMonth(dateMonth, -1), dateMonth, shiftMonth(dateMonth, 1)]
+  if (!salaryMonthOptions.includes(effectiveSalaryMonth)) {
+    salaryMonthOptions.push(effectiveSalaryMonth)
+    salaryMonthOptions.sort()
+  }
+
+  useEffect(() => {
+    if (!open || transaction || !isSalaryIncome || salaryMonthAsked.current) return
+    salaryMonthAsked.current = true
+    const seq = openSeq.current
+    advisorApi.get(todayLocal(), { silent: true })
+      .then(res => {
+        const suggested = res.data.suggestedSalaryMonth
+        if (seq !== openSeq.current || salaryMonthPicked.current || !suggested) return
+        setSalaryMonth(suggested.slice(0, 7))
+      })
+      // No suggestion: the date's own month stands, which is the current month for a new entry.
+      .catch(() => {})
+  }, [open, transaction, isSalaryIncome])
+
+  const pickSalaryMonth = (m: string) => {
+    salaryMonthPicked.current = true
+    setTouched(true)
+    setSalaryMonth(m)
+  }
+
   const total = form.amount || 0
   const cardPart = total - (cashPart || 0)
 
@@ -584,6 +647,8 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
       // Edit only ever keeps the stored month; the payment-start month is set in Loans & bills.
       paymentStartDate: undefined,
       loanGivenId: form.subType === 'LOAN_GIVEN' ? form.loanGivenId : undefined,
+      // Pay only. Left out otherwise — an edit then keeps whatever the server has stored.
+      salaryMonth: isSalaryIncome ? effectiveSalaryMonth : undefined,
     }
     try {
       if (transaction) {
@@ -1110,6 +1175,17 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
             onChange={v => { set('transactionDate', v); clearFieldError('date') }}
             error={fieldError('date')}
           />
+
+          {isSalaryIncome && (
+            <ChipGroup<string>
+              id="tx-salary-month"
+              compact
+              label={translate('cmp.txModal.label.salaryMonth')}
+              options={salaryMonthOptions.map(m => ({ value: m, label: formatDate(m, lang, 'monthName') }))}
+              value={effectiveSalaryMonth}
+              onChange={pickSalaryMonth}
+            />
+          )}
 
           {!transaction && (
             <p className="flex flex-wrap items-center gap-x-4 border-t border-hairline pt-1 text-xs text-slate-500">

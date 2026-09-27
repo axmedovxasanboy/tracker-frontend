@@ -15,6 +15,7 @@ export const uz_shell: Partial<Record<keyof typeof en_shell, string>> = {
   'shell.history.borrowed': 'Qarz olindi: {amount}',
   'shell.history.lent': 'Qarz berildi: {amount}',
   'shell.history.fromSavings': 'Jamgʻarmadan: {amount}',
+  'shell.history.forMonth': '{month} uchun',
   'shell.history.whereItWent': 'Pul qayerga ketdi',
   'shell.history.other': 'Boshqa',
   'shell.history.nothingSpent': '{month}: hali xarajat yoʻq.',
@@ -186,4 +187,5 @@ export const uz_shell: Partial<Record<keyof typeof en_shell, string>> = {
   'shell.profile.ofTarget': '{amount} dan',
   'shell.profile.ofBase': 'maosh, avans va bonusingizning {percent}%',
   'shell.profile.overAdvice': '+{amount} tavsiyadan ortiq',
+  'shell.profile.carried': '+ {amount} {month} oyidan oʻtgan',
 }

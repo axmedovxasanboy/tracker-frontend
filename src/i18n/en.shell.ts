@@ -16,6 +16,7 @@ export const en_shell = {
   'shell.history.borrowed': 'Borrowed: {amount}',
   'shell.history.lent': 'Lent: {amount}',
   'shell.history.fromSavings': 'From savings: {amount}',
+  'shell.history.forMonth': 'for {month}',
   'shell.history.whereItWent': 'Where it went',
   'shell.history.other': 'Other',
   'shell.history.nothingSpent': 'Nothing spent in {month}.',
@@ -195,4 +196,5 @@ export const en_shell = {
   'shell.profile.ofTarget': 'of {amount}',
   'shell.profile.ofBase': '{percent}% of your salary + avans + bonus',
   'shell.profile.overAdvice': '+{amount} over the advice',
+  'shell.profile.carried': '+ {amount} carried from {month}',
 } as const
