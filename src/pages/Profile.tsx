@@ -1,6 +1,7 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { AxiosError } from 'axios'
-import { AlertTriangle, CheckCircle2, CloudOff, Target } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronDown, CloudOff, Target } from 'lucide-react'
 import { PageHeader } from '../components/ui/PageHeader'
 import { Tile, TileGrid } from '../components/ui/Tile'
 import { Button } from '../components/ui/Button'
@@ -47,8 +48,10 @@ const known = <T extends { bucket: Bucket }>(rows: T[] | null | undefined): T[] 
 type ProfileResult = { kind: 'ok'; profile: ProfileResponse } | { kind: 'outdated' }
 
 /**
- * Profile: the owner's level — "Level 1", never a sub-level — how much the savings rule asks this
- * month, and every number it is worked out from, so the percentages are never a mystery.
+ * Profile: one sentence first — what this month asks to set aside — then the owner's cards in the
+ * order they chose: the level ("Level 1", never a sub-level) beside the savings rule, what to set
+ * aside beside the month so far, and the working-out last. The working-out is folded closed: it is
+ * there for the day the owner wonders where a percentage came from, not for every visit.
  */
 export function Profile() {
   const { t } = useLang()
@@ -75,6 +78,8 @@ export function Profile() {
   return (
     <div className="p-4 sm:p-6">
       <PageHeader title={t('shell.nav.profile')} subtitle={p?.username || username || undefined} />
+
+      {p && !p.missingStableIncome && <Lead p={p} />}
 
       <div className="mt-4 xl:mt-5">
         <TileGrid className={q.refreshing ? 'opacity-60 transition-opacity' : ''}>
@@ -131,41 +136,51 @@ export function Profile() {
 
 function LevelHero({ p, cached }: { p: ProfileResponse; cached: { isCached: boolean; cachedAt: string | null } }) {
   const { t } = useLang()
-  const from = p.levelFrom ?? 0
   const next = p.nextLevelAt
-  const pct = next != null && next > from
-    ? Math.min(100, Math.max(0, ((p.leftAfterBills - from) / (next - from)) * 100))
-    : null
+  // The level by name, and one quiet line saying what it rests on. No progress bar: the next level
+  // is a fact about the owner's income, not a target to chase, and why the rule is what it is
+  // belongs with the rest of the working-out below.
+  const line = p.aboveCeiling
+    ? t('shell.profile.aboveCeiling')
+    : next == null
+      ? (p.level != null ? t('shell.profile.topLevel') : null)
+      : t('fix.profile.levelLine', { amount: moneyFull(p.leftAfterBills), n: (p.level ?? 0) + 1, next: moneyFull(next) })
 
   return (
-    <Tile span={6} mdSpan={6} padding="hero" as="section">
+    <Tile span={6} mdSpan={6} as="section">
       <div className="flex items-start justify-between gap-3">
         <h2 className="text-label uppercase text-slate-500">{t('shell.profile.levelLabel')}</h2>
         <CacheBadge isCached={cached.isCached} cachedAt={cached.cachedAt} />
       </div>
-      <p className="mt-3 text-hero text-slate-900">
+      <p className="mt-2 text-stat text-slate-900">
         {p.level != null ? t('shell.profile.level', { n: p.level }) : t('shell.profile.noLevel')}
       </p>
-      <p className="mt-2 text-sm tabular-nums text-slate-600">
-        {t('shell.profile.leftAfterBills', { amount: moneyFull(p.leftAfterBills) })}
-      </p>
-      {p.aboveCeiling ? (
-        <p className="mt-4 text-sm font-medium text-slate-700">{t('shell.profile.aboveCeiling')}</p>
-      ) : next == null ? (
-        p.level != null && <p className="mt-4 text-sm font-medium text-slate-700">{t('shell.profile.topLevel')}</p>
-      ) : (
-        <div className="mt-4">
-          {/* Drawn only; the sentence under it says the same thing in words. */}
-          <div className="h-2 overflow-hidden rounded-full bg-slate-100" aria-hidden="true">
-            <div className="h-full rounded-full bg-indigo-600" style={{ width: `${pct ?? 0}%` }} />
-          </div>
-          <p className="mt-2 text-xs tabular-nums text-slate-500">
-            {t('shell.profile.nextLevel', { n: (p.level ?? 0) + 1, amount: moneyFull(next) })}
-          </p>
-        </div>
+      {line && <p className="mt-2 text-sm tabular-nums text-slate-600">{line}</p>}
+      {next == null && !p.aboveCeiling && (
+        <p className="mt-1 text-sm tabular-nums text-slate-600">
+          {t('shell.profile.leftAfterBills', { amount: moneyFull(p.leftAfterBills) })}
+        </p>
       )}
-      <RuleReasons p={p} />
     </Tile>
+  )
+}
+
+/**
+ * The page's first line, as plain text above the cards: what this month asks to set aside, and of
+ * what. Everything under it is detail.
+ */
+function Lead({ p }: { p: ProfileResponse }) {
+  const { t } = useLang()
+  const carried = known(p.buckets).reduce((sum, b) => sum + Math.max(0, b.carried ?? 0), 0)
+  return (
+    <p className="mt-3 text-base leading-snug text-slate-900 tabular-nums">
+      {p.totalAmount > 0
+        ? t('fix.profile.lead', {
+          total: moneyFull(p.totalAmount), percent: percentText(p.totalPercent), base: moneyFull(p.savingsBase),
+        })
+        : t('fix.profile.leadNone')}
+      {carried >= 1 && <> {t('fix.profile.leadCarried', { amount: moneyFull(carried) })}</>}
+    </p>
   )
 }
 
@@ -190,6 +205,7 @@ function SoFarTile({ p }: { p: ProfileResponse }) {
   const allocatedLines = (allocated?.lines ?? [])
     .filter(l => ALLOCATED_ORDER.includes(l.bucket))
     .sort((a, b) => ALLOCATED_ORDER.indexOf(a.bucket) - ALLOCATED_ORDER.indexOf(b.bucket))
+  const given = allocatedLines.find(l => l.bucket === 'DONATION')?.amount ?? 0
 
   return (
     <Tile span={6} mdSpan={6} as="section">
@@ -198,7 +214,9 @@ function SoFarTile({ p }: { p: ProfileResponse }) {
       {income && (
         <div className="mt-3">
           <div className="flex items-baseline justify-between gap-3">
-            <h3 className="text-label uppercase text-slate-500">{t('shell.profile.incomeThisMonth')}</h3>
+            <h3 className="text-label uppercase text-slate-500">
+              {t('fix.profile.payFor', { month: formatDate(p.month, lang, 'monthName') })}
+            </h3>
             <p className="shrink-0 text-title tabular-nums text-income">{moneyFull(incomeTotal)}</p>
           </div>
           {incomeLines.length === 0 ? (
@@ -232,6 +250,12 @@ function SoFarTile({ p }: { p: ProfileResponse }) {
                 ? '—'
                 : t('shell.profile.ofIncome', { percent: formatNumber(allocated.percentOfIncome, 1) })}
           </p>
+          {/* Set aside is saved and given together; a donation is never called saved. */}
+          {given > 0 && (
+            <p className="text-right text-xs tabular-nums text-slate-500">
+              {t('fix.savedGiven', { saved: moneyFull(Math.max(0, allocated.total - given)), given: moneyFull(given) })}
+            </p>
+          )}
           <ul className="mt-1 divide-y divide-hairline">
             {allocatedLines.map(l => {
               const icon = l.bucket === 'GOALS'
@@ -251,7 +275,7 @@ function SoFarTile({ p }: { p: ProfileResponse }) {
                       <p className="text-xs tabular-nums text-slate-500">{t('shell.profile.ofTarget', { amount: moneyFull(due) })}</p>
                     )}
                     {l.over != null && l.over > 0 && (
-                      <p className="text-xs font-medium tabular-nums text-amber-700">
+                      <p className="text-xs tabular-nums text-slate-500">
                         {t('shell.profile.overAdvice', { amount: moneyFull(l.over) })}
                       </p>
                     )}
@@ -284,7 +308,7 @@ function SoFarTile({ p }: { p: ProfileResponse }) {
 
 function RuleTile({ p }: { p: ProfileResponse }) {
   const { t } = useLang()
-  // Why these percentages (and next month's) is said on the Level card — the owner's placement.
+  // Why these percentages (and next month's) is said in "How it is worked out".
   return (
     <Tile span={6} mdSpan={6} as="section">
       <TileHead title={t('shell.profile.ruleTitle')} />
@@ -308,8 +332,8 @@ function RuleTile({ p }: { p: ProfileResponse }) {
 }
 
 /**
- * Why the savings rule is what it is this month — and what it becomes next month when that
- * changes. Shown on the Level card, under the level it follows from.
+ * Why the percentages are what they are this month — and what they become next month when that
+ * changes. The first thing inside "How it is worked out".
  */
 function RuleReasons({ p }: { p: ProfileResponse }) {
   const { t, lang } = useLang()
@@ -334,7 +358,7 @@ function RuleReasons({ p }: { p: ProfileResponse }) {
   if (!why && !small && !next) return null
 
   return (
-    <div className="mt-4 border-t border-hairline pt-4">
+    <div className="mt-2 border-b border-hairline pb-4">
       {why && <p className="text-sm text-slate-600">{why}</p>}
       {small && <p className={`${why ? 'mt-1 ' : ''}text-xs leading-snug tabular-nums text-slate-500`}>{small}</p>}
       {next && (
@@ -357,6 +381,8 @@ function RuleReasons({ p }: { p: ProfileResponse }) {
 
 function LadderTile({ p, onChangeIncome }: { p: ProfileResponse; onChangeIncome: () => void }) {
   const { t, categoryName } = useLang()
+  const [open, setOpen] = useState(false)
+  const panelId = 'profile-worked-out'
   const parts = p.baseParts
   // The base is the monthly income from Settings plus this month's bonus: recording salary or
   // avans never moves the targets. The server then lists the bonus lines only; when the lines do
@@ -368,10 +394,26 @@ function LadderTile({ p, onChangeIncome }: { p: ProfileResponse; onChangeIncome:
     // Last on the page and alone in its row, so it takes the full width with the two ladders side
     // by side (stacked on a phone) rather than leaving half a row empty.
     <Tile span={12} as="section">
-      <TileHead
-        title={t('cmp.cardInfo.howItsBuilt')}
-        action={<LinkButton label={t('shell.profile.changeIncome')} onClick={onChangeIncome} />}
-      />
+      {/* Closed until asked for: the whole row is the button. */}
+      <h2>
+        <button
+          type="button"
+          onClick={() => setOpen(v => !v)}
+          aria-expanded={open}
+          aria-controls={open ? panelId : undefined}
+          className="focus-ring flex min-h-[44px] w-full items-center justify-between gap-3 rounded-control text-left text-title text-slate-900"
+        >
+          {t('cmp.cardInfo.howItsBuilt')}
+          <ChevronDown
+            className={`h-4 w-4 shrink-0 text-slate-500 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+            aria-hidden="true"
+          />
+        </button>
+      </h2>
+
+      {open && (
+      <div id={panelId}>
+      <RuleReasons p={p} />
 
       <div className="grid gap-x-8 md:grid-cols-2">
         <div>
@@ -431,6 +473,11 @@ function LadderTile({ p, onChangeIncome }: { p: ProfileResponse; onChangeIncome:
           )}
         </div>
       </div>
+      <div className="mt-2">
+        <LinkButton label={t('shell.profile.changeIncome')} onClick={onChangeIncome} />
+      </div>
+      </div>
+      )}
     </Tile>
   )
 }

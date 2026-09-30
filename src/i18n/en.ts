@@ -36,8 +36,7 @@ export const en = {
   'action.clearFilters': 'Clear filters',
   'action.history': 'History',
   'action.saving': 'Saving…',
-  'action.transfer': 'Transfer',
-
+  'action.transfer': 'Move',
   // ── Shared UI vocabulary (primitives in src/components/ui) ──────────────
   'ui.error.title': 'Can\'t reach your server',
   'ui.error.retry': 'Retry',
@@ -95,7 +94,7 @@ export const en = {
   'cat.nameEn': 'Name (English)',
   'cat.nameUz': 'Name (Uzbek)',
   'cat.nameUzHint': 'Shown when the app is in Uzbek. Leave blank to use the English name.',
-  'cat.addCategory': 'Add category',
+  'cat.addCategory': 'New category',
   'cat.addSub': 'Add sub-category to "{name}"',
   'cat.edit': 'Edit "{name}"',
   'cat.subOf': 'Sub-category of',

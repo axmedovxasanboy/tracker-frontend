@@ -337,7 +337,7 @@ export function PayBucketModal({
     <div className="flex gap-3">
       <Button label={t('action.cancel')} onClick={onClose} className="flex-1" />
       <Button type="submit" form="pay-bucket-form" variant="primary" loading={saving}
-        label={saving ? t('action.saving') : t('action.add')}
+        label={saving ? t('action.saving') : t(bucket === 'DONATION' ? 'fix.give' : 'cmp.action.topUp')}
         className="flex-1" />
     </div>
   )
@@ -439,7 +439,7 @@ export function PayBucketModal({
             id="pb-kind"
             compact
             required
-            label={t('cmp.txModal.label.subCategory')}
+            label={t('fix.whatKind')}
             options={donationKinds.map(c => ({ value: c.id, label: categoryName(c) }))}
             value={kind}
             onChange={id => { setKind(id); if (invalid === 'kind') { setInvalid(null); setError(null) } }}

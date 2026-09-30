@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { ExactAmount } from './ExactAmount'
 import { InfoDot } from './InfoDot'
 import { Tile } from './Tile'
 import type { TileSpan, TileMdSpan } from './Tile'
@@ -42,13 +43,15 @@ const PILL_TONE: Record<PillTone, string> = {
  * comes in as `children` and sits under the caption.
  */
 export function StatTile({
-  label, value, caption, hero = false, icon, iconTone = 'neutral', tone = 'neutral',
+  label, value, exact, caption, hero = false, icon, iconTone = 'neutral', tone = 'neutral',
   pill, onInfo, onClick, span, mdSpan, rows, children,
 }: {
   /** 11px caps. The scope word ("Target", "Left", "Set aside") belongs here. */
   label: string
   /** Already formatted and compact — the tile does not format. */
   value: string
+  /** The amount behind `value`: printed in small under it when the compact form hides digits. */
+  exact?: number
   /** The exact value, or a one-line gloss. */
   caption?: string
   /** The page's single biggest number: 40px and p-6 instead of 28px and p-5. */
@@ -88,6 +91,7 @@ export function StatTile({
       <p className={`mt-3 tabular-nums ${hero ? 'text-hero whitespace-nowrap' : 'text-stat'} ${VALUE_TONE[tone]}`}>
         {value}
       </p>
+      {exact != null && <ExactAmount amount={exact} className="mt-1" />}
 
       {pill && (
         <span className={`mt-2 inline-flex items-center rounded-chip px-2 py-0.5 text-xs font-semibold tabular-nums ${PILL_TONE[pill.tone]}`}>

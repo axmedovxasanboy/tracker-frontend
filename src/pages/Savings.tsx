@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
 import {
-  ArrowDownToLine, Building2, HeartHandshake, Pencil, Plus, ShieldAlert, Target, Trash2, TrendingUp,
+  AlertTriangle, ArrowDownToLine, Building2, HeartHandshake, Pencil, Plus, Repeat, ShieldAlert, Target, Trash2,
+  TrendingUp,
 } from 'lucide-react'
 import { PageHeader } from '../components/ui/PageHeader'
 import { Sheet } from '../components/ui/Sheet'
@@ -12,6 +13,7 @@ import { ActionMenu } from '../components/ui/ActionMenu'
 import type { MenuAction } from '../components/ui/ActionMenu'
 import { IconChip } from '../components/ui/IconChip'
 import { ErrorTile } from '../components/ui/ErrorTile'
+import { ExactAmount } from '../components/ui/ExactAmount'
 import { Skeleton } from '../components/ui/Skeleton'
 import { CacheBadge } from '../components/ui/CacheBadge'
 import { IncomeRequiredNotice } from '../components/ui/IncomeRequiredNotice'
@@ -20,7 +22,7 @@ import { UpdateValueModal } from '../components/finance/UpdateValueModal'
 import { WithdrawInvestmentModal } from '../components/finance/WithdrawInvestmentModal'
 import { PayBucketModal } from '../components/overview/PayBucketModal'
 import { SavingsThisMonth } from '../components/savings/SavingsThisMonth'
-import { AddGoalSheet } from '../components/savings/AddGoalSheet'
+import { AddGoalSheet, requestFrom } from '../components/savings/AddGoalSheet'
 import { AddInvestmentSheet } from '../components/savings/AddInvestmentSheet'
 import { TileHead } from '../components/home/HomeTiles'
 import { useApi } from '../hooks/useApi'
@@ -32,9 +34,11 @@ import { financeApi } from '../api/finance'
 import { emergenciesApi } from '../api/emergencies'
 import { extractErrorMessage } from '../api/client'
 import { formatDate, money, moneyFull, snap, todayLocal } from '../utils/format'
-import { goalPlan } from '../components/savings/goalPlan'
+import { goalKindOf, goalPlan } from '../components/savings/goalPlan'
+import { meansLine } from '../components/savings/means'
 import { GrowthLine, growthOf } from '../components/savings/growth'
 import type { Bucket, Currency, InvestmentResponse } from '../types'
+import type { GoalKind } from '../types/fixes'
 
 /** A full-width row of the twelve-column page grid. */
 const FULL = 'md:col-span-6 xl:col-span-12'
@@ -42,15 +46,17 @@ const FULL = 'md:col-span-6 xl:col-span-12'
 const HALF = 'md:col-span-6 xl:col-span-6'
 const LATEST = 5
 
-type AddKind = 'goal' | 'investment' | 'donation' | 'emergency'
+type AddKind = 'goal' | 'investment'
 
 /** A holding's worth: its market value when one was set, else what went in. */
 const valueOf = (i: InvestmentResponse) => growthOf(i).value
 
 /**
- * Savings: everything put by, on one page — this month's savings, goals, the emergency fund,
- * investments and donations. Replaces the three Plan tabs; what they could do is still here, with
- * the month's arithmetic and bucket talk left out.
+ * Savings: everything put by, on one page — what this month asks to set aside, goals (plans and
+ * wishes), the emergency fund, investments and donations.
+ *
+ * One word per action (UX-FIXES-SPEC.md §1): "New" creates a goal or an investment, "Put in" moves
+ * money into one, "Give" records a donation. "Pay" is not used here — that is for bills and loans.
  */
 export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
   const { t, lang } = useLang()
@@ -66,7 +72,7 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
   const emergencies = useApi(() => emergenciesApi.getAll(), [])
 
   const [chooserOpen, setChooserOpen] = useState(false)
-  const [goalForm, setGoalForm] = useState<{ goal: InvestmentResponse | null } | null>(null)
+  const [goalForm, setGoalForm] = useState<{ goal: InvestmentResponse | null; startAs?: GoalKind } | null>(null)
   const [investmentForm, setInvestmentForm] = useState<{ investment: InvestmentResponse | null } | null>(null)
   const [bucket, setBucket] = useState<{ bucket: Bucket; amount?: number } | null>(null)
   // Add money on one holding — from a goal's row in "This month", starting on what it still asks.
@@ -84,8 +90,7 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
     setChooserOpen(false)
     setTimeout(() => {
       if (kind === 'goal') setGoalForm({ goal: null })
-      else if (kind === 'investment') setInvestmentForm({ investment: null })
-      else setBucket({ bucket: kind === 'donation' ? 'DONATION' : 'EMERGENCY' })
+      else setInvestmentForm({ investment: null })
     }, 0)
   }
 
@@ -115,6 +120,9 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
 
   const all = investments.data ?? []
   const goals = all.filter(i => i.savingsGoal)
+  // A goal is a plan (it has a monthly payment and is set aside for) or a wish (it asks for nothing).
+  const plans = goals.filter(g => goalKindOf(g) === 'PLAN')
+  const wishes = goals.filter(g => goalKindOf(g) === 'WISH')
   const emergencyHoldings = all.filter(i => i.emergencyFund && !i.savingsGoal)
   const holdings = all.filter(i => !i.savingsGoal && !i.emergencyFund)
   const holdingsTotal = snap(holdings.reduce((sum, i) => sum + valueOf(i), 0))
@@ -148,8 +156,126 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
   const staleError = [adv, investments, donations, emergencies].find(q => q.error && q.data)?.error ?? null
 
   const d = adv.data
+  // Whether the server stores wishes. It says so either way it can: the advisor's goal list, or
+  // the flag on a goal. Without it nothing here offers a wish — the field would be ignored, and a
+  // toast saying "it is a wish now" would be untrue.
+  const wishSupported = d?.goals !== undefined || goals.some(g => g.wish !== undefined)
+  const means = d?.means ?? null
+  // Whether a normal month has room for the plans. A month can be short before any plan, so the
+  // sentence is chosen in one place (means.ts) and never prints a negative amount as "left".
+  const fits = meansLine(means)
+  const fitsText = fits
+    ? t(fits.key, Object.fromEntries(Object.entries(fits.amounts).map(([k, v]) => [k, money(v, currency)])))
+    : null
   const savingsRows = d ? (d.savingsThisMonth ?? d.setAside ?? []) : []
   const leftThisMonth = snap(savingsRows.reduce((sum, r) => sum + Math.max(0, r.remaining), 0))
+
+  /**
+   * "Make it a wish" / "Make it a plan": one tap, nothing else changes. The monthly payment, the
+   * start month and the deadline stay stored, so a wish made a plan again is the plan it was. A
+   * wish that never had a monthly payment has nothing to go back to, and opens the form instead.
+   */
+  const setWish = async (g: InvestmentResponse, wish: boolean) => {
+    if (!wish && !((g.monthlyContribution ?? 0) > 0)) { setGoalForm({ goal: g, startAs: 'PLAN' }); return }
+    try {
+      await financeApi.updateInvestment(g.id, requestFrom(g, { wish }))
+      refetchAll()
+      showSuccess(wish
+        ? t('fix.goal.nowWish', { name: g.name })
+        : t('fix.goal.nowPlan', { name: g.name, amount: moneyFull(g.monthlyContribution ?? 0, g.currency) }))
+    } catch (err) {
+      showError(extractErrorMessage(err))
+    }
+  }
+
+  const goalActions = (g: InvestmentResponse): MenuAction[] => [
+    ...(wishSupported ? [{
+      label: t(goalKindOf(g) === 'PLAN' ? 'fix.goal.makeWish' : 'fix.goal.makePlan'),
+      icon: <Repeat className="h-4 w-4" aria-hidden="true" />,
+      onClick: () => setWish(g, goalKindOf(g) === 'PLAN'),
+    }] : []),
+    ...holdingActions(g, true),
+  ]
+
+  /** One goal's row: a plan says what it asks each month and whether that works; a wish does not. */
+  const goalRow = (g: InvestmentResponse) => {
+    // On a server without wishes every goal is a plan, as it always was.
+    const plan = !wishSupported || goalKindOf(g) === 'PLAN'
+    const value = valueOf(g)
+    const target = g.targetAmount
+    const pct = target && target > 0 ? Math.min(100, (value / target) * 100) : null
+    const nameId = `goal-${g.id}`
+    const monthly = g.monthlyContribution ?? 0
+    // Payments start in their own month; without one (or on an older server), the goal's.
+    const start = (g.paymentStartDate ?? g.purchaseDate ?? '').slice(0, 7)
+    const own = goalPlan(Math.max(0, (target ?? 0) - value), monthly, g.targetDate ?? null, month, start)
+    const planLine = [
+      plan && monthly > 0
+        ? start > month
+          ? t('home.goals.perMonthFrom', {
+            amount: moneyFull(monthly, g.currency), month: formatDate(start, lang, 'monthShort'),
+          })
+          : t('home.goals.perMonth', { amount: moneyFull(monthly, g.currency) })
+        : null,
+      plan && own.deadlineMonth ? t('home.goals.by', { month: formatDate(own.deadlineMonth, lang, 'monthShort') }) : null,
+    ].filter(Boolean).join(' · ')
+
+    // The status is the server's when it sends one — it also knows whether the plans fit a normal
+    // month. Without it (an older server) the row says what it always said: whether the monthly
+    // payment reaches the target by the deadline.
+    const advised = d?.goals?.find(x => x.id === g.id)
+    const status: { text: string; good: boolean } | null = !plan ? null
+      : advised
+        ? advised.status === 'ON_TRACK' ? { text: t('home.goals.onTrack'), good: true }
+          : advised.status === 'BEHIND'
+            ? { text: t('home.goals.behind', { amount: moneyFull(advised.neededMonthly ?? own.needed ?? 0, g.currency) }), good: false }
+            : advised.status === 'DOES_NOT_FIT' ? { text: t('fix.goal.status.doesNotFit'), good: false }
+              : null
+        : own.deadlineMonth && target != null && target > 0 && value < target
+          ? monthly > 0 && !own.late
+            ? { text: t('home.goals.onTrack'), good: true }
+            : { text: t('home.goals.behind', { amount: moneyFull(own.needed ?? 0, g.currency) }), good: false }
+          : null
+
+    return (
+      <li key={g.id} className="py-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p id={nameId} className="truncate text-sm font-medium text-slate-900">{g.name}</p>
+            <p className="text-xs tabular-nums text-slate-500">
+              {target != null
+                ? t('home.goals.ofTarget', { value: moneyFull(value, g.currency), target: moneyFull(target, g.currency) })
+                : moneyFull(value, g.currency)}
+            </p>
+            {planLine && <p className="text-xs tabular-nums text-slate-500">{planLine}</p>}
+            {/* Only once the goal tracks a value of its own — otherwise put in = now. */}
+            {g.currentValue != null && Math.abs(growthOf(g).growth) >= 1 && <GrowthLine i={g} />}
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            <Button size="sm" label={t('cmp.action.topUp')} aria-describedby={nameId}
+              icon={<Plus className="h-3.5 w-3.5" aria-hidden="true" />}
+              onClick={() => setContributeFor({ investment: g })} />
+            <ActionMenu actions={goalActions(g)} />
+          </div>
+        </div>
+        {pct != null && (
+          <div className="mt-2 flex items-center gap-2">
+            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+              <div className="h-full rounded-full bg-income transition-all" style={{ width: `${pct}%` }} />
+            </div>
+            <span className={`w-12 shrink-0 text-right text-xs tabular-nums ${pct >= 100 ? 'font-semibold text-income' : 'text-slate-500'}`}>
+              {pct >= 100 ? t('ui.status.done') : `${Math.floor(pct)}%`}
+            </span>
+          </div>
+        )}
+        {status && (
+          <p className={`mt-1 text-xs font-medium tabular-nums ${status.good ? 'text-income' : 'text-amber-700'}`}>
+            {status.text}
+          </p>
+        )}
+      </li>
+    )
+  }
 
   const holdingActions = (i: InvestmentResponse, withEdit: boolean): MenuAction[] => [
     ...(withEdit ? [{
@@ -177,7 +303,7 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
         <div className={FULL}>
           <PageHeader
             title={t('home.savings.page')}
-            primary={{ label: t('action.add'), onClick: () => setChooserOpen(true), icon: <Plus className="w-4 h-4" aria-hidden="true" /> }}
+            primary={{ label: t('action.new'), onClick: () => setChooserOpen(true), icon: <Plus className="w-4 h-4" aria-hidden="true" /> }}
           />
         </div>
 
@@ -202,6 +328,7 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
                 <p className={`mt-3 text-hero tabular-nums whitespace-nowrap ${leftThisMonth > 0 ? 'text-slate-900' : 'text-income'}`}>
                   {leftThisMonth > 0 ? money(leftThisMonth, currency) : t('ui.status.done')}
                 </p>
+                {leftThisMonth > 0 && <ExactAmount amount={leftThisMonth} currency={currency} className="mt-0.5" />}
                 <p className="mt-2 text-sm text-slate-600">
                   {leftThisMonth > 0 ? t('home.savings.leftCaption') : t('home.savings.allDone')}
                 </p>
@@ -220,7 +347,8 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
           </Tile>
         )}
 
-        {/* ── Goals ── */}
+        {/* ── Goals ── plans, then wishes. Beside "This month", so the two tall tiles share a row;
+            investments and the emergency fund share the next. */}
         <QuerySlot query={investments} className={HALF}>
           <Section
             span={6} mdSpan={6}
@@ -231,74 +359,82 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
               <div className="mt-3 space-y-3">
                 <p className="text-sm text-slate-600">{t('home.goals.empty')}</p>
               </div>
+            ) : !wishSupported ? (
+              // A server from before wishes: one list, exactly as it was.
+              <ul className="mt-1 divide-y divide-hairline">{goals.map(goalRow)}</ul>
             ) : (
-              <ul className="mt-1 divide-y divide-hairline">
-                {goals.map(g => {
-                  const value = valueOf(g)
-                  const target = g.targetAmount
-                  const pct = target && target > 0 ? Math.min(100, (value / target) * 100) : null
-                  const nameId = `goal-${g.id}`
-                  // The plan, when the goal has one: "1.000.000 UZS a month · by Mar 2027". Both fields
-                  // are absent on an older backend, and the card then reads as it always did.
-                  const monthly = g.monthlyContribution ?? 0
-                  // Payments start in their own month; without one (or on an older server), the goal's.
-                  const start = (g.paymentStartDate ?? g.purchaseDate ?? '').slice(0, 7)
-                  const plan = goalPlan(Math.max(0, (target ?? 0) - value), monthly, g.targetDate ?? null, month, start)
-                  const planLine = [
-                    monthly > 0
-                      ? start > month
-                        ? t('home.goals.perMonthFrom', {
-                          amount: moneyFull(monthly, g.currency), month: formatDate(start, lang, 'monthShort'),
-                        })
-                        : t('home.goals.perMonth', { amount: moneyFull(monthly, g.currency) })
-                      : null,
-                    plan.deadlineMonth ? t('home.goals.by', { month: formatDate(plan.deadlineMonth, lang, 'monthShort') }) : null,
-                  ].filter(Boolean).join(' · ')
-                  // With a deadline and money still missing: does the monthly payment get there in time?
-                  const onTrack = monthly > 0 && !plan.late
-                  const showStatus = !!plan.deadlineMonth && target != null && target > 0 && value < target
-                  return (
-                    <li key={g.id} className="py-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p id={nameId} className="truncate text-sm font-medium text-slate-900">{g.name}</p>
-                          <p className="text-xs tabular-nums text-slate-500">
-                            {target != null
-                              ? t('home.goals.ofTarget', { value: moneyFull(value, g.currency), target: moneyFull(target, g.currency) })
-                              : moneyFull(value, g.currency)}
-                          </p>
-                          {planLine && <p className="text-xs tabular-nums text-slate-500">{planLine}</p>}
-                          {/* Only once the goal tracks a value of its own — otherwise put in = now. */}
-                          {g.currentValue != null && Math.abs(growthOf(g).growth) >= 1 && <GrowthLine i={g} />}
+              <>
+                <h3 className="mt-3 text-label uppercase text-slate-500">{t('fix.goals.plans')}</h3>
+                {/* Whether a normal month has room for the plans — the server's verdict. */}
+                {plans.length > 0 && fits && (fits.warn ? (
+                  <p className="mt-2 flex items-start gap-2 text-sm font-medium text-amber-700">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                    <span className="tabular-nums">{fitsText}</span>
+                  </p>
+                ) : (
+                  <p className="mt-2 text-sm tabular-nums text-slate-600">{fitsText}</p>
+                ))}
+                {plans.length > 0 ? (
+                  <ul className="mt-1 divide-y divide-hairline">{plans.map(goalRow)}</ul>
+                ) : (
+                  <p className="mt-2 text-sm text-slate-500">{t('fix.goals.noPlans')}</p>
+                )}
+                {wishes.length > 0 && (
+                  <>
+                    <h3 className="mt-4 border-t border-hairline pt-3 text-label uppercase text-slate-500">{t('fix.goals.wishes')}</h3>
+                    <ul className="mt-1 divide-y divide-hairline">{wishes.map(goalRow)}</ul>
+                  </>
+                )}
+              </>
+            )}
+          </Section>
+        </QuerySlot>
+
+        {/* ── Investments ── */}
+        <QuerySlot query={investments} className={HALF}>
+          <Section
+            span={6} mdSpan={6}
+            title={t('cmp.bucket.investments')}
+            action={<SmallAdd label={t('action.new')} onClick={() => setInvestmentForm({ investment: null })} />}
+          >
+            {holdings.length === 0 ? (
+              <p className="mt-3 text-sm text-slate-500">{t('page.investments.empty')}</p>
+            ) : (
+              <>
+                <p className="mt-2 text-stat tabular-nums text-slate-900">{money(holdingsTotal, currency)}</p>
+                <ExactAmount amount={holdingsTotal} currency={currency} />
+                <ul className="mt-2 divide-y divide-hairline">
+                  {holdings.map(i => {
+                    const nameId = `inv-${i.id}`
+                    return (
+                      <li key={i.id} className="py-3">
+                        <div className="flex items-start gap-3">
+                          <IconChip tone="teal"><Building2 className="h-4 w-4" aria-hidden="true" /></IconChip>
+                          <div className="min-w-0 flex-1">
+                            <p id={nameId} className="truncate text-sm font-medium text-slate-900">{i.name}</p>
+                            {i.broker && <p className="truncate text-xs text-slate-500">{i.broker}</p>}
+                            <GrowthLine i={i} className="mt-0.5" />
+                          </div>
+                          <p className="shrink-0 text-sm font-semibold tabular-nums text-slate-900">{moneyFull(valueOf(i), i.currency)}</p>
                         </div>
-                        <div className="flex shrink-0 items-center gap-1">
+                        <div className="mt-2 flex flex-wrap items-center gap-2 sm:pl-12">
                           <Button size="sm" label={t('cmp.action.topUp')} aria-describedby={nameId}
                             icon={<Plus className="h-3.5 w-3.5" aria-hidden="true" />}
-                            onClick={() => setContributeFor({ investment: g })} />
-                          <ActionMenu actions={holdingActions(g, true)} />
-                        </div>
-                      </div>
-                      {pct != null && (
-                        <div className="mt-2 flex items-center gap-2">
-                          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
-                            <div className="h-full rounded-full bg-income transition-all" style={{ width: `${pct}%` }} />
+                            onClick={() => setContributeFor({ investment: i })} />
+                          {/* One button for the everyday action; the rare ones live in the menu. */}
+                          <div className="ml-auto">
+                            <ActionMenu actions={[
+                              { label: t('page.investments.updateValue'), icon: <TrendingUp className="h-4 w-4" aria-hidden="true" />, onClick: () => setValueFor(i) },
+                              { label: t('cmp.withdraw.action'), icon: <ArrowDownToLine className="h-4 w-4" aria-hidden="true" />, disabled: valueOf(i) <= 0, onClick: () => setWithdrawFor(i) },
+                              ...holdingActions(i, true),
+                            ]} />
                           </div>
-                          <span className={`w-12 shrink-0 text-right text-xs tabular-nums ${pct >= 100 ? 'font-semibold text-income' : 'text-slate-500'}`}>
-                            {pct >= 100 ? t('ui.status.done') : `${Math.floor(pct)}%`}
-                          </span>
                         </div>
-                      )}
-                      {showStatus && (
-                        <p className={`mt-1 text-xs font-medium tabular-nums ${onTrack ? 'text-income' : 'text-amber-700'}`}>
-                          {onTrack
-                            ? t('home.goals.onTrack')
-                            : t('home.goals.behind', { amount: moneyFull(plan.needed ?? 0, g.currency) })}
-                        </p>
-                      )}
-                    </li>
-                  )
-                })}
-              </ul>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </>
             )}
           </Section>
         </QuerySlot>
@@ -308,9 +444,10 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
           <Section
             span={6} mdSpan={6}
             title={t('cmp.bucket.emergency')}
-            action={<SmallAdd label={t('action.add')} onClick={() => setBucket({ bucket: 'EMERGENCY' })} />}
+            action={<SmallAdd label={t('cmp.action.topUp')} onClick={() => setBucket({ bucket: 'EMERGENCY' })} />}
           >
             <p className="mt-2 text-stat tabular-nums text-slate-900">{money(emergencyTotal, currency)}</p>
+            <ExactAmount amount={emergencyTotal} currency={currency} />
             {emergencyEntries.length === 0 ? (
               <p className="mt-2 text-sm text-slate-500">{t('home.emergency.empty')}</p>
             ) : (
@@ -364,56 +501,6 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
           </Section>
         </QuerySlot>
 
-        {/* ── Investments ── */}
-        <QuerySlot query={investments} className={HALF}>
-          <Section
-            span={6} mdSpan={6}
-            title={t('cmp.bucket.investments')}
-            action={<SmallAdd label={t('action.add')} onClick={() => setInvestmentForm({ investment: null })} />}
-          >
-            {holdings.length === 0 ? (
-              <p className="mt-3 text-sm text-slate-500">{t('page.investments.empty')}</p>
-            ) : (
-              <>
-                <p className="mt-2 text-stat tabular-nums text-slate-900">{money(holdingsTotal, currency)}</p>
-                <ul className="mt-2 divide-y divide-hairline">
-                  {holdings.map(i => {
-                    const nameId = `inv-${i.id}`
-                    return (
-                      <li key={i.id} className="py-3">
-                        <div className="flex items-start gap-3">
-                          <IconChip tone="teal"><Building2 className="h-4 w-4" aria-hidden="true" /></IconChip>
-                          <div className="min-w-0 flex-1">
-                            <p id={nameId} className="truncate text-sm font-medium text-slate-900">{i.name}</p>
-                            {i.broker && <p className="truncate text-xs text-slate-500">{i.broker}</p>}
-                            <GrowthLine i={i} className="mt-0.5" />
-                          </div>
-                          <p className="shrink-0 text-sm font-semibold tabular-nums text-slate-900">{moneyFull(valueOf(i), i.currency)}</p>
-                        </div>
-                        <div className="mt-2 flex flex-wrap items-center gap-2 sm:pl-12">
-                          <Button size="sm" label={t('cmp.action.topUp')} aria-describedby={nameId}
-                            icon={<Plus className="h-3.5 w-3.5" aria-hidden="true" />}
-                            onClick={() => setContributeFor({ investment: i })} />
-                          <Button size="sm" variant="ghost" label={t('page.investments.updateValue')} aria-describedby={nameId}
-                            icon={<TrendingUp className="h-3.5 w-3.5" aria-hidden="true" />}
-                            onClick={() => setValueFor(i)} />
-                          <Button size="sm" variant="ghost" label={t('cmp.withdraw.action')} aria-describedby={nameId}
-                            icon={<ArrowDownToLine className="h-3.5 w-3.5" aria-hidden="true" />}
-                            disabled={valueOf(i) <= 0}
-                            onClick={() => setWithdrawFor(i)} />
-                          <div className="ml-auto">
-                            <ActionMenu actions={holdingActions(i, true)} />
-                          </div>
-                        </div>
-                      </li>
-                    )
-                  })}
-                </ul>
-              </>
-            )}
-          </Section>
-        </QuerySlot>
-
         {/* ── Donations ── */}
         <QuerySlot query={donations} className={HALF}>
           <Section
@@ -455,13 +542,11 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
       </TileGrid>
 
       {/* "Add" — what kind of saving, one tap each. */}
-      <Sheet open={chooserOpen} onClose={() => setChooserOpen(false)} title={t('action.add')} maxWidth="max-w-md">
+      <Sheet open={chooserOpen} onClose={() => setChooserOpen(false)} title={t('action.new')} maxWidth="max-w-md">
         <div className="space-y-2">
           {([
             { kind: 'goal', label: t('page.advisor.btn.addGoal'), icon: <Target className="h-4 w-4" aria-hidden="true" />, tone: 'indigo' },
             { kind: 'investment', label: t('page.investments.addInvestment'), icon: <Building2 className="h-4 w-4" aria-hidden="true" />, tone: 'teal' },
-            { kind: 'donation', label: t('cmp.bucket.donation'), icon: <HeartHandshake className="h-4 w-4" aria-hidden="true" />, tone: 'pink' },
-            { kind: 'emergency', label: t('cmp.bucket.emergency'), icon: <ShieldAlert className="h-4 w-4" aria-hidden="true" />, tone: 'amber' },
           ] as const).map(o => (
             <button
               key={o.kind}
@@ -478,6 +563,7 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
 
       <AddGoalSheet
         open={!!goalForm} goal={goalForm?.goal ?? null}
+        wishSupported={wishSupported} means={means} startAs={goalForm?.startAs}
         onClose={() => setGoalForm(null)} onSaved={refetchAll}
       />
       <AddInvestmentSheet

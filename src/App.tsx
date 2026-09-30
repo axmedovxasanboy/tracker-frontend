@@ -10,6 +10,8 @@ import { Menu } from 'lucide-react'
 import { ToastContainer } from './components/ui/Toast'
 import { MobileNavProvider, useAppBarMounted } from './components/ui/PageHeader'
 import { Sidebar } from './components/layout/Sidebar'
+import { BottomBar } from './components/layout/BottomBar'
+import { AddFormProvider } from './context/AddFormContext'
 import { OfflineBanner } from './components/ui/OfflineBanner'
 import { Spinner } from './components/ui/Spinner'
 import { AnalyticsLoadFailed, AnalyticsPageFallback } from './components/analytics/AnalyticsFallback'
@@ -123,6 +125,8 @@ function AppRoutes() {
   // the case where the current page renders no header at all, which would otherwise be a dead end.
   return (
     <MobileNavProvider onOpenMenu={openMenu} menuOpen={sidebarOpen}>
+      {/* The one Add form lives here, above the routes, so every page and the phone's ＋ reach it. */}
+      <AddFormProvider>
       <div className="flex h-dvh bg-ground font-sans">
         <a
           href="#main"
@@ -145,7 +149,14 @@ function AppRoutes() {
               containing block for absolutely positioned content (sr-only labels): without it
               they are placed against the document, stretch the page, and a second scrollbar
               appears next to this one. */}
-          <main id="main" tabIndex={-1} className="app-scroll relative flex-1 overflow-y-auto pt-14 md:pt-0">
+          {/* pb: the phone's bottom bar is fixed to the viewport like the app bar above, so the
+              scroller ends that much early — 56px plus the phone's own bottom inset — and the last
+              row of a page can always be scrolled clear of it. */}
+          <main
+            id="main"
+            tabIndex={-1}
+            className="app-scroll relative flex-1 overflow-y-auto pt-14 pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pt-0 md:pb-0"
+          >
             <div className="sticky top-14 md:top-0 z-10">
               <OfflineBanner />
             </div>
@@ -187,7 +198,9 @@ function AppRoutes() {
             </Routes>
           </main>
         </div>
+        <BottomBar onOpenMenu={openMenu} menuOpen={sidebarOpen} />
       </div>
+      </AddFormProvider>
     </MobileNavProvider>
   )
 }

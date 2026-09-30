@@ -27,7 +27,6 @@ export const en_analytics = {
   'analytics.group.everyday': 'Everyday spending',
   'analytics.group.bills': 'Bills',
   'analytics.group.loans': 'Loan payments',
-  'analytics.group.given': 'Given',
   'analytics.group.leftOver': 'Left over',
 
   // ── A. The period in one line ───────────────────────────────────────────────────────────────

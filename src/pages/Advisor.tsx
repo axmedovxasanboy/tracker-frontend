@@ -10,7 +10,7 @@ import { PayBankInstallmentModal } from '../components/overview/PayBankInstallme
 import { PayPersonalLoanModal } from '../components/overview/PayPersonalLoanModal'
 import { PayBucketModal } from '../components/overview/PayBucketModal'
 import { CheckInModal } from '../components/months/CheckInModal'
-import { TransactionModal } from '../components/transactions/TransactionModal'
+import { useAddForm } from '../context/AddFormContext'
 import { SpendHero } from '../components/home/SpendHero'
 import {
   ComingUpTile, LinkButton, NextStepsTile, TileHead, YouHaveTile, canPayUpcoming, isBucket, visibleSteps,
@@ -52,7 +52,7 @@ export function Advisor({ currency }: Props) {
   const { t, lang } = useLang()
   const navigate = useNavigate()
   const { showError, showSuccess } = useToast()
-  const { hasStableIncome, ready: settingsReady, error: settingsError, loading: settingsLoading } = useSettings()
+  const { hasStableIncome, loading: settingsLoading } = useSettings()
   const today = todayLocal()
   const month = today.slice(0, 7)
 
@@ -60,8 +60,9 @@ export function Advisor({ currency }: Props) {
   // Only for the first-run checklist, which needs to know whether anything was ever recorded.
   const summary = useApi(() => dashboardApi.getSummary(currency), [currency])
 
-  const [addOpen, setAddOpen] = useState(false)
-  const [addType, setAddType] = useState<TransactionType | undefined>()
+  // The Add form is the shell's: one instance for every page and the phone's ＋ button. It
+  // carries the income gate, and after a save this page's requests re-run on their own.
+  const addForm = useAddForm()
   // A bill opens on what is still to pay for it this month — never its full price a second time.
   const [subscription, setSubscription] = useState<{ record: MonthlyPaymentResponse; amount?: number } | null>(null)
   const [bank, setBank] = useState<{ id?: number; amount?: number } | null>(null)
@@ -77,21 +78,14 @@ export function Advisor({ currency }: Props) {
   const d = adv.data
   const refetch = () => { adv.refetch(); summary.refetch() }
 
+  const openAdd = (type?: TransactionType) => addForm.open(type)
+
+  /** The "set your income" step: to the field on this page, or to Settings when it is not here. */
   const focusIncomeSetup = () => {
     const el = document.getElementById(INCOME_FIELD_ID)
     if (!el) { navigate('/settings'); return }
     el.scrollIntoView({ block: 'center' })
     ;(el as HTMLInputElement).focus({ preventScroll: true })
-  }
-
-  // The income gate, without a dead button: until a monthly income exists the server refuses every
-  // write, so "Add" takes the owner to the one field that unblocks it. Only once the answer is
-  // known — a settings read still in flight, or one that failed, is not "no income".
-  const incomeGated = settingsReady && !settingsError && !hasStableIncome
-  const openAdd = (type?: TransactionType) => {
-    if (incomeGated) { focusIncomeSetup(); return }
-    setAddType(type)
-    setAddOpen(true)
   }
 
   const seeDue = () => {
@@ -213,7 +207,8 @@ export function Advisor({ currency }: Props) {
           <PageHeader
             title={t('nav.home')}
             subtitle={formatDate(today, lang, 'long')}
-            primary={{ label: t('action.add'), onClick: () => openAdd(), icon: <Plus className="w-4 h-4" aria-hidden="true" /> }}
+            // On a phone the bottom bar's ＋ is this button; the top bar does not repeat it.
+            primary={{ label: t('action.add'), onClick: () => openAdd(), icon: <Plus className="w-4 h-4" aria-hidden="true" />, hideOnPhone: true }}
             overflow={[
               { label: t('page.advisor.refresh'), onClick: refetch, icon: <RefreshCw className="w-4 h-4" aria-hidden="true" /> },
             ]}
@@ -248,6 +243,7 @@ export function Advisor({ currency }: Props) {
               currency={currency}
               cached={{ isCached: adv.isCached, cachedAt: adv.cachedAt }}
               onSeeDue={seeDue}
+              onReviewPlans={() => navigate('/savings')}
               fallback={youHave}
             />
 
@@ -299,11 +295,6 @@ export function Advisor({ currency }: Props) {
         ) : null}
       </TileGrid>
 
-      <TransactionModal
-        open={addOpen} onClose={() => setAddOpen(false)}
-        onSaved={refetch} defaultCurrency={currency} transaction={null}
-        presetType={addType}
-      />
       {/* These two dialogs leave the confirmation to their caller. */}
       <PaySubscriptionModal
         open={!!subscription} subscription={subscription?.record ?? null}
@@ -331,7 +322,10 @@ export function Advisor({ currency }: Props) {
         onSaved={() => { refetch(); showSuccess(t('page.investments.savedToast')) }}
       />
       <CheckInModal open={checkInOpen} onClose={() => setCheckInOpen(false)} onSaved={refetch} currency={currency} />
-      <AddGoalSheet open={goalFormOpen} onClose={() => setGoalFormOpen(false)} onSaved={refetch} />
+      <AddGoalSheet
+        open={goalFormOpen} onClose={() => setGoalFormOpen(false)} onSaved={refetch}
+        wishSupported={d?.goals !== undefined} means={d?.means ?? null}
+      />
     </div>
   )
 }

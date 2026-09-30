@@ -3,7 +3,7 @@ import type { ComponentProps, FormEvent, ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { AxiosError } from 'axios'
 import {
-  Banknote, CalendarClock, Check, ChevronDown, CreditCard, HandCoins, History as HistoryIcon,
+  AlertTriangle, Banknote, CalendarClock, Check, ChevronDown, CreditCard, HandCoins, History as HistoryIcon,
   Landmark, Pause, Pencil, Play, Plus, Receipt, Trash2, Wallet,
 } from 'lucide-react'
 import { PaySubscriptionModal } from '../components/finance/PaySubscriptionModal'
@@ -14,6 +14,7 @@ import type { MenuAction } from '../components/ui/ActionMenu'
 import { AmountInput } from '../components/ui/AmountInput'
 import { Button } from '../components/ui/Button'
 import { ErrorTile } from '../components/ui/ErrorTile'
+import { ExactAmount } from '../components/ui/ExactAmount'
 import { Field } from '../components/ui/Field'
 import { IncomeRequiredNotice } from '../components/ui/IncomeRequiredNotice'
 import { ListRow, ListTile } from '../components/ui/ListRow'
@@ -397,6 +398,10 @@ export function Loans() {
   const paidOffMonthly = obligations.filter(o => !o.asap && o.paidOff)
   const activeAsap = obligations.filter(o => o.asap && !o.paidOff)
   const paidOffAsap = obligations.filter(o => o.asap && o.paidOff)
+  const asapDrawn = activeAsap.length > 0
+  // Paid-off loans shown under "Loans you pay monthly": its own, plus the fast ones when their
+  // section is not drawn.
+  const paidOffHere = asapDrawn ? paidOffMonthly : [...paidOffMonthly, ...paidOffAsap]
 
   // ── Owed to you ──────────────────────────────────────────────────────────────
   const receivables: Receivable[] = (loansGiven.data ?? []).map(record => ({
@@ -413,6 +418,21 @@ export function Loans() {
   // "You owe" is only what is to be repaid as fast as possible; a monthly loan is not in it.
   const youOwe = snap(activeAsap.reduce((s, o) => s + (o.remaining ?? 0), 0))
   const owedToYou = snap(waitingFor.reduce((s, r) => s + r.record.pendingAmount, 0))
+  // The header's two figures, from the server when it sends them (see types/fixes.ts, §3.4).
+  const owe = advisor.data?.owe ?? null
+  const notCounted = owe?.notCounted ?? []
+
+  // "Owed to you", one entry per person: someone lent to three times is one line until unfolded.
+  const owedByPerson = (() => {
+    const groups = new Map<string, Receivable[]>()
+    for (const r of waitingFor) {
+      const key = r.record.borrowerId != null ? `id-${r.record.borrowerId}` : `name-${r.record.debtorName.trim().toLocaleLowerCase()}`
+      const list = groups.get(key)
+      if (list) list.push(r)
+      else groups.set(key, [r])
+    }
+    return [...groups.entries()].map(([key, loans]) => ({ key, loans }))
+  })()
 
   const core = [bills, bankLoans, loansTaken, debts, loansGiven]
   const coreLoading = core.some(q => q.loading)
@@ -430,6 +450,9 @@ export function Loans() {
   const [showPaidOffMonthly, setShowPaidOffMonthly] = useState(false)
   const [showPaidOffAsap, setShowPaidOffAsap] = useState(false)
   const [showReturned, setShowReturned] = useState(false)
+  // Which people's loans are unfolded under "Owed to you", and whether "People" is.
+  const [openPeople, setOpenPeople] = useState<Set<string>>(new Set())
+  const [showPeople, setShowPeople] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
 
   /** Every payment is refused until a monthly income is set; take the owner to it instead. */
@@ -962,7 +985,7 @@ export function Loans() {
       <PageHeader
         title={t('shell.nav.loans')}
         primary={{
-          label: t('action.add'),
+          label: t('action.new'),
           onClick: () => setChooserOpen(true),
           icon: <Plus className="h-4 w-4" aria-hidden="true" />,
         }}
@@ -992,25 +1015,64 @@ export function Loans() {
                 mdSpan={6}
                 label={t('shell.loans.everyMonth')}
                 value={money(billsMonthly + loansMonthly)}
+                exact={billsMonthly + loansMonthly}
                 caption={t('shell.loans.everyMonthSplit', { bills: money(billsMonthly), loans: money(loansMonthly) })}
                 icon={<CalendarClock className="h-4 w-4" aria-hidden="true" />}
               />
 
               <Tile span={6} mdSpan={6} as="section">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="min-w-0">
-                    <p className="text-label uppercase text-slate-500">{t('shell.loans.youOweFast')}</p>
-                    <p className="mt-3 text-title tabular-nums text-expense sm:text-stat" title={moneyExact(youOwe)}>
-                      {money(youOwe)}
-                    </p>
+                {owe ? (
+                  // Two figures that are always true: everything still to repay on loans whose
+                  // amount is known, and what is owed to the owner. A loan that cannot be counted
+                  // is named right under the total it is missing from — never silently left out.
+                  <>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="min-w-0">
+                        <p className="text-label uppercase text-slate-500">{t('fix.loans.leftToRepay')}</p>
+                        <p className="mt-3 text-title tabular-nums text-slate-900 sm:text-stat" title={moneyExact(owe.leftToRepay)}>
+                          {notCounted.length > 0 && <span aria-hidden="true">≥ </span>}{money(owe.leftToRepay)}
+                        </p>
+                        <ExactAmount amount={owe.leftToRepay} className="mt-0.5" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-label uppercase text-slate-500">{t('shell.loans.owedToYou')}</p>
+                        <p className="mt-3 text-title tabular-nums text-income sm:text-stat" title={moneyExact(owe.owedToYou)}>
+                          {money(owe.owedToYou)}
+                        </p>
+                        <ExactAmount amount={owe.owedToYou} className="mt-0.5" />
+                      </div>
+                    </div>
+                    {notCounted.length > 0 && (
+                      <p className="mt-3 flex items-start gap-2 text-sm font-medium text-amber-700">
+                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                        <span className="[overflow-wrap:anywhere]">
+                          {t('analytics.g.notCounting', { names: notCounted.map(n => n.name).join(', ') })}
+                        </span>
+                      </p>
+                    )}
+                    {owe.toRepayFast > 0 && (
+                      <p className="mt-2 text-sm tabular-nums text-slate-600">
+                        {t('fix.loans.toRepayFast', { amount: moneyFull(owe.toRepayFast) })}
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  // A server from before `owe`: the tile it has always been.
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="min-w-0">
+                      <p className="text-label uppercase text-slate-500">{t('shell.loans.youOweFast')}</p>
+                      <p className="mt-3 text-title tabular-nums text-expense sm:text-stat" title={moneyExact(youOwe)}>
+                        {money(youOwe)}
+                      </p>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-label uppercase text-slate-500">{t('shell.loans.owedToYou')}</p>
+                      <p className="mt-3 text-title tabular-nums text-income sm:text-stat" title={moneyExact(owedToYou)}>
+                        {money(owedToYou)}
+                      </p>
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <p className="text-label uppercase text-slate-500">{t('shell.loans.owedToYou')}</p>
-                    <p className="mt-3 text-title tabular-nums text-income sm:text-stat" title={moneyExact(owedToYou)}>
-                      {money(owedToYou)}
-                    </p>
-                  </div>
-                </div>
+                )}
               </Tile>
 
               <ListTile
@@ -1043,31 +1105,35 @@ export function Loans() {
                 }
               >
                 {activeMonthly.map(monthlyRow)}
-                {paidOffMonthly.length > 0 && (
+                {paidOffHere.length > 0 && (
                   <Disclosure
                     open={showPaidOffMonthly}
                     onToggle={() => setShowPaidOffMonthly(o => !o)}
-                    label={t('shell.loans.paidOffCount', { count: paidOffMonthly.length })}
+                    label={t('shell.loans.paidOffCount', { count: paidOffHere.length })}
                   />
                 )}
-                {showPaidOffMonthly && paidOffMonthly.map(monthlyRow)}
+                {showPaidOffMonthly && paidOffHere.map(o => (o.asap ? asapRow(o) : monthlyRow(o)))}
               </ListTile>
 
-              <ListTile
-                span={12}
-                header={<h2 className="text-sm font-semibold text-slate-900">{t('shell.loans.asapTitle')}</h2>}
-                empty={<p>{t('shell.loans.asapNone')}</p>}
-              >
-                {activeAsap.map(asapRow)}
-                {paidOffAsap.length > 0 && (
-                  <Disclosure
-                    open={showPaidOffAsap}
-                    onToggle={() => setShowPaidOffAsap(o => !o)}
-                    label={t('shell.loans.paidOffCount', { count: paidOffAsap.length })}
-                  />
-                )}
-                {showPaidOffAsap && paidOffAsap.map(asapRow)}
-              </ListTile>
+              {/* Drawn only while there is something to repay fast: a heading over nothing but
+                  "Paid off (2)" read as a section the owner had to understand. Its paid-off
+                  loans fold under the section above instead. */}
+              {asapDrawn && (
+                <ListTile
+                  span={12}
+                  header={<h2 className="text-sm font-semibold text-slate-900">{t('shell.loans.asapTitle')}</h2>}
+                >
+                  {activeAsap.map(asapRow)}
+                  {paidOffAsap.length > 0 && (
+                    <Disclosure
+                      open={showPaidOffAsap}
+                      onToggle={() => setShowPaidOffAsap(o => !o)}
+                      label={t('shell.loans.paidOffCount', { count: paidOffAsap.length })}
+                    />
+                  )}
+                  {showPaidOffAsap && paidOffAsap.map(asapRow)}
+                </ListTile>
+              )}
 
               <ListTile
                 span={12}
@@ -1080,7 +1146,30 @@ export function Loans() {
                   </div>
                 }
               >
-                {waitingFor.map(receivableRow)}
+                {owedByPerson.flatMap(({ key, loans }) => {
+                  // One loan is simply its row. Several fold under the person's name and total.
+                  if (loans.length === 1) return [receivableRow(loans[0])]
+                  const open = openPeople.has(key)
+                  const first = loans[0].record
+                  const total = snap(loans.reduce((sum, r) => sum + r.record.pendingAmount, 0))
+                  return [
+                    <PersonGroupRow
+                      key={`person-${key}`}
+                      name={first.debtorName}
+                      detail={plural(loans.length, t('fix.owed.loansOne', { count: loans.length }), t('fix.owed.loansMany', { count: loans.length }), lang)}
+                      amount={moneyFull(total, first.currency)}
+                      caption={t('shell.owed.stillOwed')}
+                      open={open}
+                      onToggle={() => setOpenPeople(prev => {
+                        const next = new Set(prev)
+                        if (next.has(key)) next.delete(key)
+                        else next.add(key)
+                        return next
+                      })}
+                    />,
+                    ...(open ? loans.map(receivableRow) : []),
+                  ]
+                })}
                 {returned.length > 0 && (
                   <Disclosure
                     open={showReturned}
@@ -1091,9 +1180,30 @@ export function Loans() {
                 {showReturned && returned.map(receivableRow)}
               </ListTile>
 
-              {/* Who money goes back and forth with — only on a server that keeps people. */}
-              {lendersOn && <PeopleTile title={t('shell.people.lendersTitle')} people={lenders.data?.people ?? []} />}
-              {borrowersOn && <PeopleTile title={t('shell.people.borrowersTitle')} people={borrowers.data?.people ?? []} />}
+              {/* Who money goes back and forth with — only on a server that keeps people. One
+                  closed row: it is reference, not something to read on every visit. */}
+              {(lendersOn || borrowersOn) && (
+                <Tile span={12} as="section" padding="none" className="overflow-hidden">
+                  <h2>
+                    <button
+                      type="button"
+                      onClick={() => setShowPeople(v => !v)}
+                      aria-expanded={showPeople}
+                      aria-controls={showPeople ? 'loans-people' : undefined}
+                      className="focus-ring focus-visible:ring-inset focus-visible:ring-offset-0 flex min-h-[48px] w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold text-slate-900 transition-colors hover:bg-slate-50"
+                    >
+                      {t('fix.people.title')}
+                      <ChevronDown className={`h-4 w-4 shrink-0 text-slate-500 transition-transform duration-200 ${showPeople ? 'rotate-180' : ''}`} aria-hidden="true" />
+                    </button>
+                  </h2>
+                  {showPeople && (
+                    <div id="loans-people" className="grid gap-x-8 gap-y-4 border-t border-hairline px-4 py-4 md:grid-cols-2">
+                      {lendersOn && <PeopleList title={t('shell.people.lendersTitle')} people={lenders.data?.people ?? []} />}
+                      {borrowersOn && <PeopleList title={t('shell.people.borrowersTitle')} people={borrowers.data?.people ?? []} />}
+                    </div>
+                  )}
+                </Tile>
+              )}
             </>
           )}
         </TileGrid>
@@ -1473,15 +1583,15 @@ function PersonField({ id, on, label, newLabel, people, value, name, onPick, onN
 
 const PEOPLE_SHOWN = 5
 
-/** The people money goes back and forth with, by how much, largest first — five, then "Show all". */
-function PeopleTile({ title, people }: { title: string; people: PersonSummary[] }) {
+/** One list of people, by how much, largest first — five, then "Show all". Inside the "People" row. */
+function PeopleList({ title, people }: { title: string; people: PersonSummary[] }) {
   const { t, lang } = useLang()
   const [all, setAll] = useState(false)
   const list = [...people].sort((a, b) => b.total - a.total)
   const shown = all ? list : list.slice(0, PEOPLE_SHOWN)
   return (
-    <Tile span={6} mdSpan={6} as="section">
-      <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
+    <div className="min-w-0">
+      <h3 className="text-label uppercase text-slate-500">{title}</h3>
       {list.length === 0 ? (
         <p className="mt-3 text-sm text-slate-500">{t('shell.people.none')}</p>
       ) : (
@@ -1508,7 +1618,43 @@ function PeopleTile({ title, people }: { title: string; people: PersonSummary[] 
           {all ? t('home.list.showLess') : t('home.list.showAll', { count: list.length })}
         </button>
       )}
-    </Tile>
+    </div>
+  )
+}
+
+/**
+ * Several loans to one person, as one line: their name, how many, and what they owe in all.
+ * Pressing it unfolds the loans themselves, each with its own "Got money back".
+ */
+function PersonGroupRow({ name, detail, amount, caption, open, onToggle }: {
+  name: string
+  detail: string
+  amount: string
+  caption: string
+  open: boolean
+  onToggle: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={open}
+      // Inset ring: ListTile clips its corners, and an outside ring would lose its side bands.
+      className="focus-ring focus-visible:ring-inset focus-visible:ring-offset-0 flex min-h-[56px] w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-50"
+    >
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-chip bg-teal-100 text-teal-600">
+        <HandCoins className="h-4 w-4" aria-hidden="true" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium text-slate-900">{name}</span>
+        <span className="block text-xs tabular-nums text-slate-500">{detail}</span>
+      </span>
+      <span className="shrink-0 text-right">
+        <span className="block whitespace-nowrap text-sm font-semibold tabular-nums text-income">{amount}</span>
+        <span className="block text-[11px] text-slate-500">{caption}</span>
+      </span>
+      <ChevronDown className={`h-4 w-4 shrink-0 text-slate-500 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
+    </button>
   )
 }
 

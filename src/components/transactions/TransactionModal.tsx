@@ -20,9 +20,7 @@ import { PayBucketModal } from '../overview/PayBucketModal'
 import { SAVINGS_ICON, SAVINGS_NAME_KEY } from '../savings/SavingsThisMonth'
 import { CashPart, ChipGroup, CompactDate, CONTROL, CONTROL_INVALID, LINK_BLOCK, useOptional } from './formParts'
 import { WalletPicker } from './WalletPicker'
-import {
-  readLastChild, readLastType, rememberChild, rememberType, rememberWallet, useWalletChoice, useWallets,
-} from './wallets'
+import { readLastChild, rememberChild, rememberWallet, useWalletChoice, useWallets } from './wallets'
 import type { WalletValue } from './wallets'
 import type {
   Bucket, Category, CategoryType, Currency, DonationResponse, InvestmentResponse, InvestmentType,
@@ -36,8 +34,9 @@ interface Props {
   transaction?: Transaction | null
   defaultCurrency: Currency
   /**
-   * Open a NEW transaction already set to Income or Expense. Without it the form starts on the
-   * direction the owner used last, else Expense.
+   * Open a NEW transaction already set to Income or Expense. Without it the form starts on
+   * Expense, always: nine entries in ten are expenses, and a form that remembered the salary
+   * recorded yesterday opened the next lunch on the income side.
    */
   presetType?: TransactionType
 }
@@ -146,8 +145,9 @@ function walletOf(tx: Transaction): { wallet: WalletValue; split: boolean; cash:
  * Add (or edit) one money movement: Income/Expense, the amount, a category, the wallet, an
  * optional note, the date — in that order, amount focused.
  *
- * Everything that can be remembered is: the direction used last, the wallet used last (else the
- * card holding the most), the sub-category last used under each category. A new entry is always a
+ * What helps is remembered — the wallet used last (else the card holding the most) and the
+ * sub-category last used under each category — but not the direction: a new entry is an expense
+ * until the owner says otherwise. A new entry is always a
  * plain income or expense; the special kinds are recorded where they live — linked from the foot
  * of the form — and an existing special row keeps its kind, shown read-only.
  */
@@ -367,7 +367,7 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
           .catch(() => {})
       }
     } else {
-      const type = presetType ?? readLastType() ?? 'EXPENSE'
+      const type = presetType ?? 'EXPENSE'
       setForm(defaultForm(defaultCurrency, type))
       setSplit(false); setCashPart(0)
       setSelectedRootId(undefined); setSubCategories([]); wantedRootRef.current = undefined
@@ -655,8 +655,7 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
         await transactionsApi.update(transaction.id, payload)
       } else {
         await transactionsApi.create(payload)
-        // The next entry starts where this one ended.
-        rememberType(form.type)
+        // The next entry starts on the wallet this one used.
         rememberWallet(wallet)
         if (activeCategory?.parentId != null) rememberChild(activeCategory.parentId, activeCategory.id)
       }

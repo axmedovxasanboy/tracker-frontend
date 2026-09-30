@@ -10,7 +10,7 @@ export const en_home = {
   // ── Home: the daily figure ──────────────────────────────────────────────────────────────────
   'home.hero.label': 'You can spend',
   'home.hero.perDay': 'a day',
-  'home.hero.until': 'until {date} · after bills, loans and savings',
+  'home.hero.until': 'until {date} · after bills, loans and what you set aside',
   'home.hero.shortLabel': 'You’ll be short',
   'home.hero.shortOn': 'on {date} — even if you spend nothing.',
   'home.hero.seeDue': 'See what’s due',
@@ -23,7 +23,7 @@ export const en_home = {
   'home.how.have': 'You have',
   'home.how.comingIn': 'Coming in by {date}',
   'home.how.goingOut': 'Bills and loans',
-  'home.how.savings': 'Savings',
+  'home.how.savings': 'Set aside',
   'home.how.result': '= {net} for {days} ≈ {perDay} a day',
   'home.how.dayOne': '{count} day',
   'home.how.dayMany': '{count} days',
@@ -39,16 +39,16 @@ export const en_home = {
   'home.upcoming.recorded': 'Recorded',
 
   // ── Home + Savings: this month's savings ────────────────────────────────────────────────────
-  'home.savings.title': 'Savings this month',
+  'home.savings.title': 'To set aside this month',
   'home.savings.open': 'Open Savings',
   'home.savings.ofTarget': '{paid} of {target}',
   'home.savings.page': 'Savings',
-  'home.savings.thisMonth': 'This month',
-  'home.savings.leftCaption': 'still to save this month',
-  'home.savings.allDone': 'This month’s savings are all in.',
-  'home.savings.nothing': 'Nothing to save this month.',
-  'home.savings.addMore': 'Add more',
-  'home.savings.over': '+{amount} over',
+  'home.savings.thisMonth': 'To set aside this month',
+  'home.savings.leftCaption': 'still to set aside this month',
+  'home.savings.allDone': 'Everything for this month is set aside.',
+  'home.savings.nothing': 'Nothing to set aside this month.',
+  'home.savings.addMore': 'Put in more',
+  'home.savings.over': '+{amount} more than asked',
   'home.savings.carried': 'incl. {amount} from {month}',
 
   // ── Home: You have ──────────────────────────────────────────────────────────────────────────
@@ -76,7 +76,7 @@ export const en_home = {
   'home.list.showLess': 'Show less',
 
   // ── Short forms: a goal ─────────────────────────────────────────────────────────────────────
-  'home.goal.addTitle': 'Add a goal',
+  'home.goal.addTitle': 'New goal',
   'home.goal.editTitle': 'Edit goal',
   'home.goal.name': 'Name',
   'home.goal.namePlaceholder': 'A home, a car, a trip…',

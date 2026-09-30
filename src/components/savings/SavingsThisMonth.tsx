@@ -28,8 +28,9 @@ const isBucketRow = (r: AdvisorSavingsRow): r is AdvisorSavingsRow & { bucket: B
 const isGoalRow = (r: AdvisorSavingsRow) => r.bucket === 'GOAL' && r.refId != null
 
 /**
- * This month's savings, one line each: "Donation · 0 of 884.000 UZS · Pay", or "✓ Done" once it is
- * in — with "Add more" beside it, since the owner often puts in more than the month asks. Each
+ * What this month asks to set aside, one line each: "Donation · 0 of 884.000 UZS · Give",
+ * "Investments · … · Put in", or "✓ Done" once it is in — with "Put in more" / "Give more" beside
+ * it, since the owner often puts in more than the month asks. Pay is for bills and loans only. Each
  * savings goal with a monthly payment follows the three, by its own name. The same rows on Home and
  * on Savings, so the two pages can never read differently.
  *
@@ -72,8 +73,9 @@ export function SavingsThisMonth({ rows, currency, month, onPay }: {
                 {done
                   ? moneyFull(r.paid, currency)
                   : t('home.savings.ofTarget', { paid: formatNumber(r.paid), target: moneyFull(due, currency) })}
+                {/* Grey, not amber: putting in more than asked is not a warning. */}
                 {over >= 1 && (
-                  <span className="font-medium text-amber-700">
+                  <span className="text-slate-500">
                     {' · '}{t('home.savings.over', { amount: moneyFull(over, currency) })}
                   </span>
                 )}
@@ -94,7 +96,7 @@ export function SavingsThisMonth({ rows, currency, month, onPay }: {
                   size="sm"
                   variant="ghost"
                   icon={<Plus className="h-3.5 w-3.5" aria-hidden="true" />}
-                  label={t('home.savings.addMore')}
+                  label={t(r.bucket === 'DONATION' ? 'fix.giveMore' : 'home.savings.addMore')}
                   aria-describedby={nameId}
                   onClick={() => onPay(r, 0)}
                 />
@@ -102,8 +104,8 @@ export function SavingsThisMonth({ rows, currency, month, onPay }: {
             ) : (
               <Button
                 size="sm"
-                label={t('page.shared.payButton')}
-                // Several "Pay" buttons share a page; the row name tells them apart when read out.
+                label={t(r.bucket === 'DONATION' ? 'fix.give' : 'cmp.action.topUp')}
+                // Several such buttons share a page; the row name tells them apart when read out.
                 aria-describedby={nameId}
                 onClick={() => onPay(r, r.remaining)}
                 className="shrink-0"

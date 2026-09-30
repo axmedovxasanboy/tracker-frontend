@@ -1,4 +1,17 @@
 import { shiftMonth } from '../../utils/format'
+import type { InvestmentResponse } from '../../types'
+import type { GoalKind } from '../../types/fixes'
+
+/**
+ * Whether a goal is a plan or a wish. The server says (`goalKind`); on a server from before wishes
+ * existed, a goal with a monthly payment is a plan and one without is a wish — which is how such a
+ * goal has always behaved: nothing was ever set aside for it.
+ */
+export function goalKindOf(g: Pick<InvestmentResponse, 'goalKind' | 'wish' | 'monthlyContribution'>): GoalKind {
+  if (g.goalKind === 'PLAN' || g.goalKind === 'WISH') return g.goalKind
+  if (g.wish) return 'WISH'
+  return (g.monthlyContribution ?? 0) > 0 ? 'PLAN' : 'WISH'
+}
 
 /**
  * A savings goal's plan, worked out the same way wherever it is shown — the goal form's hint and

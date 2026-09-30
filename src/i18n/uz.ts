@@ -31,8 +31,7 @@ export const uz: Partial<Record<keyof typeof en, string>> = {
   'action.clearFilters': 'Filtrlarni tozalash',
   'action.history': 'Tarix',
   'action.saving': 'Saqlanmoqda…',
-  'action.transfer': 'Oʻtkazma',
-
+  'action.transfer': 'Oʻtkazish',
   // ── Umumiy interfeys soʻzlari ───────────────────────────────────────────
   'ui.error.title': 'Serverga ulanib boʻlmadi',
   'ui.error.retry': 'Qayta urinish',
@@ -89,7 +88,7 @@ export const uz: Partial<Record<keyof typeof en, string>> = {
   'cat.nameEn': 'Nomi (inglizcha)',
   'cat.nameUz': 'Nomi (oʻzbekcha)',
   'cat.nameUzHint': 'Ilova oʻzbek tilida boʻlganda koʻrsatiladi. Boʻsh qoldirsangiz inglizcha nomi ishlatiladi.',
-  'cat.addCategory': 'Kategoriya qoʻshish',
+  'cat.addCategory': 'Yangi kategoriya',
   'cat.addSub': '"{name}" uchun ichki kategoriya qoʻshish',
   'cat.edit': '"{name}" ni tahrirlash',
   'cat.subOf': 'Ichki kategoriyasi:',

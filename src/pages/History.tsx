@@ -1,22 +1,25 @@
 import { useCallback, useDeferredValue, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { ArrowDownRight, ArrowUpRight, Pencil, Plus, Receipt, Trash2 } from 'lucide-react'
+import {
+  ArrowDownRight, ArrowLeftRight, ArrowUpRight, ChevronDown, ClipboardCheck, Pencil, Plus, Receipt, Trash2,
+} from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { TransactionModal } from '../components/transactions/TransactionModal'
+import { useAddForm } from '../context/AddFormContext'
 import { TransactionDetailModal } from '../components/transactions/TransactionDetailModal'
 import { TransactionFilters } from '../components/transactions/TransactionFilters'
 import { CategoryBars } from '../components/analytics/CategoryBars'
+import { SERIES_BG } from '../components/analytics/shared'
 import { LinkButton } from '../components/home/HomeTiles'
 import { Button } from '../components/ui/Button'
 import { CacheBadge } from '../components/ui/CacheBadge'
 import { ErrorTile } from '../components/ui/ErrorTile'
+import { ExactAmount } from '../components/ui/ExactAmount'
 import { IncomeRequiredNotice } from '../components/ui/IncomeRequiredNotice'
 import { ListRow, ListTile } from '../components/ui/ListRow'
 import { PageHeader } from '../components/ui/PageHeader'
 import { Skeleton } from '../components/ui/Skeleton'
 import { Tile, TileGrid } from '../components/ui/Tile'
 import { useApi } from '../hooks/useApi'
-import { useSettings } from '../context/SettingsContext'
 import { useToast } from '../context/ToastContext'
 import { useConfirm } from '../context/ConfirmContext'
 import { useLang } from '../i18n/LanguageContext'
@@ -27,6 +30,7 @@ import {
 } from '../utils/format'
 import type { Category, Currency, Transaction, TransactionFilters as Filters } from '../types'
 import type { MoneyFlow, MonthTransactions } from '../types/shell'
+import type { TransactionFlow } from '../types/fixes'
 
 // ────────────────────────────────────────────────────────────────────────────────
 // The month's rows, and what each one counts as
@@ -85,7 +89,8 @@ export async function fetchMonthTransactions(month: string): Promise<{
 const SAVING_SUB_TYPES = new Set(['DONATION', 'EMERGENCY_CONTRIBUTION', 'INVESTMENT', 'STOCK_PURCHASE'])
 
 /**
- * What a transaction counts as on History.
+ * What a transaction counts as on History — the page's OWN rule, kept only as the fallback for a
+ * server that does not send `flow` on each row (see `totalsOf`). With `flow` it is not consulted.
  *
  * In is money earned — borrowed money, money paid back to you and moves between your own wallets
  * all arrive in a wallet without being earned. Out is money spent, apart from moves between
@@ -111,6 +116,167 @@ export function flowOf(tx: Transaction): MoneyFlow {
   if (sub === 'LOAN_GIVEN') return 'lent'
   if (sub && SAVING_SUB_TYPES.has(sub)) return 'saved'
   return 'out'
+}
+
+/** The month in figures, added up from the listed rows. */
+export interface MonthTotals {
+  earned: number
+  /** Everyday spending + bills + loan payments, less what wallet checks found extra. */
+  out: number
+  saved: number
+  /** Donations — by the server's `flow`, or by the row's DONATION sub-type on an older server. */
+  given: number
+  borrowed: number
+  lent: number
+  returned: number
+  fromSavings: number
+  /** Out, in its three parts. Null when the server does not classify the rows. */
+  parts: { everyday: number; bills: number; loans: number } | null
+}
+
+/**
+ * The month's totals.
+ *
+ * Every figure is the sum of the listed rows by the server's own `flow` — the same rule Analytics
+ * uses, so the two pages cannot disagree. On a server from before `flow` (or an offline copy saved
+ * from one) no row carries it, and the page falls back to the rule it always had (`flowOf`): then
+ * Out is not split. A donation is Given, not Saved, either way — Analytics already shows it so, and
+ * the two pages must agree whichever server answers. One row without a `flow` sends the whole month
+ * down the old rule — half of each would be a total nobody could check.
+ */
+export function totalsOf(rows: Transaction[]): MonthTotals {
+  // UZS is the reporting currency; a dormant foreign cash pot never enters a total.
+  const uzs = rows.filter(tx => tx.currency === 'UZS')
+
+  if (uzs.length > 0 && uzs.every(tx => tx.flow != null)) {
+    const sum: Record<TransactionFlow, number> = {
+      EARNED: 0, BORROWED: 0, RETURNED: 0, FROM_SAVINGS: 0, CORRECTION: 0, LENT: 0,
+      SAVED: 0, GIVEN: 0, LOAN_PAYMENT: 0, BILL: 0, EVERYDAY: 0, TRANSFER: 0,
+    }
+    for (const tx of uzs) {
+      // A word this build does not know (a newer server) is left out rather than guessed at.
+      if (tx.flow! in sum) sum[tx.flow!] += tx.amount
+    }
+    // A wallet check that found MORE than expected is the same correction as one that found
+    // less, with the other sign: it comes back off everyday spending, never counted as earned.
+    const everyday = snap(sum.EVERYDAY - sum.CORRECTION)
+    const bills = snap(sum.BILL)
+    const loans = snap(sum.LOAN_PAYMENT)
+    return {
+      earned: snap(sum.EARNED),
+      out: snap(everyday + bills + loans),
+      saved: snap(sum.SAVED),
+      given: snap(sum.GIVEN),
+      borrowed: snap(sum.BORROWED),
+      lent: snap(sum.LENT),
+      returned: snap(sum.RETURNED),
+      fromSavings: snap(sum.FROM_SAVINGS),
+      parts: { everyday, bills, loans },
+    }
+  }
+
+  let earned = 0, spent = 0, saved = 0, given = 0, borrowed = 0, lent = 0, fromSavings = 0, returned = 0
+  for (const tx of uzs) {
+    const flow = flowOf(tx)
+    if (flow === 'in') earned += tx.amount
+    else if (flow === 'out') spent += tx.amount
+    else if (flow === 'surplus') spent -= tx.amount
+    else if (flow === 'saved') { if (tx.subType === 'DONATION') given += tx.amount; else saved += tx.amount }
+    else if (flow === 'borrowed') borrowed += tx.amount
+    else if (flow === 'lent') lent += tx.amount
+    else if (flow === 'fromSavings') fromSavings += tx.amount
+    else if (!isMoveLeg(tx) && tx.subType === 'LOAN_RETURNED_TO_ME') returned += tx.amount
+  }
+  return {
+    earned: snap(earned), out: snap(spent), saved: snap(saved), given: snap(given),
+    borrowed: snap(borrowed), lent: snap(lent), returned: snap(returned), fromSavings: snap(fromSavings),
+    parts: null,
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// The list: one line per thing that happened
+// ────────────────────────────────────────────────────────────────────────────────
+
+/** Half of a move between the owner's own wallets. */
+export const isMoveLeg = (tx: Transaction): boolean =>
+  tx.transferPairId != null || tx.subType === 'TRANSFER_IN' || tx.subType === 'TRANSFER_OUT'
+
+/** What a wallet check booked for one wallet: less than expected (an expense) or more (an income). */
+export const isCheckRow = (tx: Transaction): boolean => !isMoveLeg(tx) && tx.subType === 'EVERYDAY_SPENDING'
+
+/** The word a loan row carries instead of income-green / expense-red; null for any other row. */
+function loanWord(tx: Transaction): 'fix.chip.borrowed' | 'fix.chip.lent' | 'fix.chip.paidBack' | 'fix.chip.loanPayment' | null {
+  if (isMoveLeg(tx)) return null
+  switch (tx.subType) {
+    case 'LOAN_RECEIVED': return 'fix.chip.borrowed'
+    case 'LOAN_GIVEN': return 'fix.chip.lent'
+    case 'LOAN_RETURNED_TO_ME': return 'fix.chip.paidBack'
+    case 'LOAN_REPAYMENT':
+    case 'BANK_LOAN_PAYMENT': return 'fix.chip.loanPayment'
+    default: return null
+  }
+}
+
+/**
+ * One line of the list. The rows under it are the server's own and stay what they were — a merged
+ * line only changes how they are shown, so each can still be opened, changed and deleted.
+ */
+export type HistoryEntry =
+  | { kind: 'row'; key: string; date: string; tx: Transaction }
+  /** A move between two wallets: the row that left one and the row that arrived in the other. */
+  | { kind: 'move'; key: string; date: string; from: Transaction | null; to: Transaction | null }
+  /** One day's wallet check: what it booked, one row per wallet that was off. */
+  | { kind: 'check'; key: string; date: string; rows: Transaction[] }
+
+/** The rows behind a line — what search and the filters are asked about. */
+export function rowsOf(e: HistoryEntry): Transaction[] {
+  if (e.kind === 'row') return [e.tx]
+  if (e.kind === 'check') return e.rows
+  return [e.from, e.to].filter((tx): tx is Transaction => tx != null)
+}
+
+/**
+ * The month's rows as lines, in the order they arrived (newest day first).
+ *
+ * A move is two rows with the same `transferPairId`; they become one line wherever in the month
+ * the two sit — the whole month is loaded, so a pair is never cut in half by a page. A leg whose
+ * partner is not among the rows (it would take a broken record) stays a line of its own, still
+ * shown as a move and never as money earned or spent.
+ *
+ * A day's wallet-check rows become one line per currency, so an amount in one currency is never
+ * added to another's.
+ */
+export function entriesOf(rows: Transaction[]): HistoryEntry[] {
+  const entries: HistoryEntry[] = []
+  const moves = new Map<number, Extract<HistoryEntry, { kind: 'move' }>>()
+  const checks = new Map<string, Extract<HistoryEntry, { kind: 'check' }>>()
+  for (const tx of rows) {
+    if (isMoveLeg(tx)) {
+      const side = tx.type === 'EXPENSE' ? 'from' : 'to'
+      const open = tx.transferPairId != null ? moves.get(tx.transferPairId) : undefined
+      if (open && open[side] == null) { open[side] = tx; continue }
+      const entry: Extract<HistoryEntry, { kind: 'move' }> = {
+        // Keyed by the pair, not by whichever leg came first: the two can swap order between
+        // fetches, and an unfolded move must stay unfolded. (A stray third row keeps its own id.)
+        kind: 'move', key: tx.transferPairId != null && !open ? `move-${tx.transferPairId}` : `move-leg-${tx.id}`,
+        date: tx.transactionDate, from: null, to: null,
+      }
+      entry[side] = tx
+      entries.push(entry)
+      if (tx.transferPairId != null && !open) moves.set(tx.transferPairId, entry)
+    } else if (isCheckRow(tx)) {
+      const key = `check-${tx.transactionDate}-${tx.currency}`
+      const known = checks.get(key)
+      if (known) { known.rows.push(tx); continue }
+      const entry: Extract<HistoryEntry, { kind: 'check' }> = { kind: 'check', key, date: tx.transactionDate, rows: [tx] }
+      checks.set(key, entry)
+      entries.push(entry)
+    } else {
+      entries.push({ kind: 'row', key: `tx-${tx.id}`, date: tx.transactionDate, tx })
+    }
+  }
+  return entries
 }
 
 // ────────────────────────────────────────────────────────────────────────────────
@@ -141,7 +307,6 @@ export function History({ currency }: Props) {
   const confirm = useConfirm()
   const navigate = useNavigate()
   const { showSuccess } = useToast()
-  const { hasStableIncome, loading: settingsLoading, error: settingsError } = useSettings()
   const [searchParams] = useSearchParams()
 
   const thisMonth = monthLocal()
@@ -181,10 +346,19 @@ export function History({ currency }: Props) {
   const search = useDeferredValue(searchDraft)
   const [filtersExpanded, setFiltersExpanded] = useState(false)
 
-  const [modalOpen, setModalOpen] = useState(false)
-  const [editTarget, setEditTarget] = useState<Transaction | null>(null)
+  // Adding and changing a row both use the shell's one form; after a save the month re-loads on
+  // its own (see AddFormContext).
+  const addForm = useAddForm()
   const [detailTx, setDetailTx] = useState<Transaction | null>(null)
   const [deleting, setDeleting] = useState<number | null>(null)
+  // Which merged lines (a move, a day's wallet check) are unfolded to their own rows.
+  const [unfolded, setUnfolded] = useState<Set<string>>(new Set())
+  const toggleUnfolded = (key: string) => setUnfolded(prev => {
+    const next = new Set(prev)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    return next
+  })
 
   const updateFilters = useCallback((partial: Partial<Filters>) => {
     setFilters(prev => ({ ...prev, ...partial }))
@@ -208,15 +382,8 @@ export function History({ currency }: Props) {
     setFilters(prev => ({ ...prev, startDate: '', endDate: '' }))
   }
 
-  // The backend refuses every write until a monthly income exists. The button stays live and
-  // takes the owner to the one field that unblocks it, the way the other pages do. A failed
-  // settings read says nothing about the income, so it must not route anyone away.
-  const incomeMissing = !settingsLoading && !settingsError && !hasStableIncome
-  const openAdd = () => {
-    if (incomeMissing) { navigate('/'); return }
-    setEditTarget(null); setModalOpen(true)
-  }
-  const openEdit = (tx: Transaction) => { setEditTarget(tx); setModalOpen(true) }
+  const openAdd = () => addForm.open()
+  const openEdit = (tx: Transaction) => addForm.edit(tx)
 
   const handleDelete = async (id: number) => {
     if (!await confirm({ message: t('tx.confirmDelete'), destructive: true })) return
@@ -231,28 +398,12 @@ export function History({ currency }: Props) {
     }
   }
 
-  // ── The month in three figures ──────────────────────────────────────────────
-  const totals = useMemo(() => {
-    let earned = 0, spent = 0, saved = 0, borrowed = 0, lent = 0, fromSavings = 0
-    for (const tx of rows) {
-      // UZS is the reporting currency; a dormant foreign cash pot never enters a total.
-      if (tx.currency !== 'UZS') continue
-      const flow = flowOf(tx)
-      if (flow === 'in') earned += tx.amount
-      else if (flow === 'out') spent += tx.amount
-      else if (flow === 'surplus') spent -= tx.amount
-      else if (flow === 'saved') saved += tx.amount
-      else if (flow === 'borrowed') borrowed += tx.amount
-      else if (flow === 'lent') lent += tx.amount
-      else if (flow === 'fromSavings') fromSavings += tx.amount
-    }
-    return {
-      earned: snap(earned), spent: snap(spent), saved: snap(saved), borrowed: snap(borrowed), lent: snap(lent),
-      fromSavings: snap(fromSavings),
-    }
-  }, [rows])
+  // ── The month in figures ─────────────────────────────────────────────────────
+  const totals = useMemo(() => totalsOf(rows), [rows])
 
   // ── Where it went: Out, by top-level category ────────────────────────────────
+  // Only drawn when the server does not classify rows (`totals.parts` is null); with `flow` the
+  // tile shows Out's three parts instead, and the categories live on Analytics.
   const spending = useMemo(() => {
     // Sub-categories roll up into their parent — "Food" is one line, not four.
     const rootOf = new Map<number, Category>()
@@ -340,27 +491,77 @@ export function History({ currency }: Props) {
     return full
   }
 
+  // Search and the filters are asked about the rows themselves; a merged line shows when any of
+  // its rows match, and then shows whole — a move is never drawn as half of itself.
+  const entries = useMemo(() => entriesOf(rows), [rows])
+  const shown = useMemo(() => {
+    const ids = new Set(visible.map(tx => tx.id))
+    return entries.filter(e => rowsOf(e).some(tx => ids.has(tx.id)))
+  }, [entries, visible])
+
+  const walletOf = (tx: Transaction) => tx.card?.name ?? t('tx.cash')
+  const rowFor = (tx: Transaction, nested = false) => (
+    <Row
+      key={tx.id}
+      tx={tx}
+      nested={nested}
+      deleting={deleting === tx.id}
+      onOpen={() => setDetailTx(tx)}
+      onEdit={() => openEdit(tx)}
+      onDelete={() => handleDelete(tx.id)}
+    />
+  )
+
   const listRows: ReactNode[] = []
   let currentDay: string | null = null
-  for (const tx of visible) {
-    if (tx.transactionDate !== currentDay) {
-      currentDay = tx.transactionDate
+  for (const e of shown) {
+    if (e.date !== currentDay) {
+      currentDay = e.date
       listRows.push(
         <div key={`day-${currentDay}`} className="bg-slate-50 px-4 py-1.5">
           <span className="text-label uppercase text-slate-500">{dayLabel(currentDay)}</span>
         </div>,
       )
     }
-    listRows.push(
-      <Row
-        key={tx.id}
-        tx={tx}
-        deleting={deleting === tx.id}
-        onOpen={() => setDetailTx(tx)}
-        onEdit={() => openEdit(tx)}
-        onDelete={() => handleDelete(tx.id)}
-      />,
-    )
+    const under = rowsOf(e)
+    // Nothing to merge: one row is its own line (a lone leg of a move still reads as a move).
+    if (under.length === 1) { listRows.push(rowFor(under[0])); continue }
+
+    const open = unfolded.has(e.key)
+    if (e.kind === 'move') {
+      const leg = e.from ?? e.to!
+      listRows.push(
+        <GroupRow
+          key={e.key}
+          icon={<ArrowLeftRight className="h-4 w-4" aria-hidden="true" />}
+          title={t('fix.history.moved')}
+          detail={`${walletOf(e.from!)} → ${walletOf(e.to!)}`}
+          amount={moneyFull(leg.amount, leg.currency)}
+          open={open}
+          onToggle={() => toggleUnfolded(e.key)}
+        />,
+      )
+    } else {
+      // What the day's check came to: less than expected is spending nobody itemised.
+      const net = snap(under.reduce((sum, tx) => sum + (tx.type === 'EXPENSE' ? tx.amount : -tx.amount), 0))
+      const currencyOfCheck = under[0].currency
+      const found = net > 0
+        ? t('fix.history.checkShort', { amount: moneyFull(net, currencyOfCheck) })
+        : net < 0
+          ? t('fix.history.checkMore', { amount: moneyFull(-net, currencyOfCheck) })
+          : t('fix.history.checkEven')
+      listRows.push(
+        <GroupRow
+          key={e.key}
+          icon={<ClipboardCheck className="h-4 w-4" aria-hidden="true" />}
+          title={t('fix.history.check')}
+          detail={`${found} · ${t('fix.history.walletsMany', { count: under.length })}`}
+          open={open}
+          onToggle={() => toggleUnfolded(e.key)}
+        />,
+      )
+    }
+    if (open) for (const tx of under) listRows.push(rowFor(tx, true))
   }
 
   const monthLabel = formatMonth(month, lang)
@@ -397,6 +598,8 @@ export function History({ currency }: Props) {
           label: t('action.add'),
           onClick: openAdd,
           icon: <Plus className="h-4 w-4" aria-hidden="true" />,
+          // On a phone the bottom bar's ＋ is this button; the top bar does not repeat it.
+          hideOnPhone: true,
         }}
       />
 
@@ -418,20 +621,25 @@ export function History({ currency }: Props) {
                 <ErrorTile compact className={FULL} message={monthTx.error} onRetry={monthTx.refetch} />
               )}
 
-              {/* The hero: the month in three figures, added up from the very rows listed below. */}
+              {/* The hero: the month in figures, added up from the very rows listed below. */}
               <Tile span={6} mdSpan={6} padding="hero" as="section" className={dim}>
                 <h2 className="text-label uppercase text-slate-500">{monthLabel}</h2>
                 <dl className="mt-3 divide-y divide-hairline">
                   <HeroLine label={t('shell.history.in')} amount={totals.earned} tone="in" />
                   {/* Wallet checks that found more than recorded can outweigh a quiet month's spending;
                       Out still never reads below nothing. */}
-                  <HeroLine label={t('shell.history.out')} amount={Math.max(0, totals.spent)} tone="out" />
+                  <HeroLine label={t('shell.history.out')} amount={Math.max(0, totals.out)} tone="out" />
                   <HeroLine label={t('shell.history.saved')} amount={totals.saved} tone="neutral" />
+                  {/* A donation is given, not saved — its own line. */}
+                  {totals.given > 0 && (
+                    <HeroLine label={t('fix.given')} amount={totals.given} tone="neutral" />
+                  )}
                 </dl>
-                {(totals.borrowed > 0 || totals.lent > 0 || totals.fromSavings > 0) && (
+                {(totals.borrowed > 0 || totals.lent > 0 || totals.returned > 0 || totals.fromSavings > 0) && (
                   <div className="mt-3 space-y-1 text-sm text-slate-600 tabular-nums">
                     {totals.borrowed > 0 && <p>{t('shell.history.borrowed', { amount: moneyFull(totals.borrowed) })}</p>}
                     {totals.lent > 0 && <p>{t('shell.history.lent', { amount: moneyFull(totals.lent) })}</p>}
+                    {totals.returned > 0 && <p>{t('fix.history.returned', { amount: moneyFull(totals.returned) })}</p>}
                     {totals.fromSavings > 0 && <p>{t('shell.history.fromSavings', { amount: moneyFull(totals.fromSavings) })}</p>}
                   </div>
                 )}
@@ -451,7 +659,21 @@ export function History({ currency }: Props) {
 
               <Tile span={6} mdSpan={6} as="section" className={dim}>
                 <h2 className="text-title text-slate-900">{t('shell.history.whereItWent')}</h2>
-                {spending.top.length === 0 && spending.other === 0 ? (
+                {totals.parts ? (
+                  // Out in its three parts. Which categories the everyday part went to is
+                  // Analytics' question — the link under the month's figures goes there.
+                  totals.out <= 0 ? (
+                    <p className="mt-3 text-sm text-slate-500">{t('shell.history.nothingSpent', { month: monthLabel })}</p>
+                  ) : (
+                    <CategoryBars
+                      items={[
+                        { key: 'everyday', label: t('analytics.group.everyday'), amount: Math.max(0, totals.parts.everyday), colorClass: SERIES_BG.everyday },
+                        { key: 'bills', label: t('analytics.group.bills'), amount: totals.parts.bills, colorClass: SERIES_BG.bills },
+                        { key: 'loans', label: t('analytics.group.loans'), amount: totals.parts.loans, colorClass: SERIES_BG.loans },
+                      ].filter(it => it.amount > 0)}
+                    />
+                  )
+                ) : spending.top.length === 0 && spending.other === 0 ? (
                   <p className="mt-3 text-sm text-slate-500">{t('shell.history.nothingSpent', { month: monthLabel })}</p>
                 ) : (
                   <CategoryBars
@@ -468,7 +690,7 @@ export function History({ currency }: Props) {
                     ]}
                   />
                 )}
-                {categories.error && !categories.data && (
+                {!totals.parts && categories.error && !categories.data && (
                   <ErrorTile compact className="mt-3" message={categories.error} onRetry={categories.refetch} />
                 )}
               </Tile>
@@ -498,14 +720,6 @@ export function History({ currency }: Props) {
         </TileGrid>
       </div>
 
-      <TransactionModal
-        open={modalOpen}
-        onClose={() => { setModalOpen(false); setEditTarget(null) }}
-        onSaved={() => { monthTx.refetch() }}
-        transaction={editTarget}
-        defaultCurrency={currency}
-      />
-
       <TransactionDetailModal
         transaction={detailTx}
         open={!!detailTx}
@@ -524,20 +738,67 @@ function HeroLine({ label, amount, tone }: { label: string; amount: number; tone
   return (
     <div className="flex items-baseline justify-between gap-3 py-3 first:pt-0 last:pb-0">
       <dt className="text-sm font-medium text-slate-600">{label}</dt>
-      <dd className={`text-stat tabular-nums whitespace-nowrap ${colour}`} title={moneyExact(amount)}>
+      <dd className={`text-right text-stat tabular-nums whitespace-nowrap ${colour}`} title={moneyExact(amount)}>
         {money(amount)}
+        <ExactAmount amount={amount} />
       </dd>
     </div>
   )
 }
 
+/** The quiet chip a row's icon sits in when the row is neither money earned nor money spent. */
+const NEUTRAL_CHIP = 'flex h-9 w-9 shrink-0 items-center justify-center rounded-chip bg-slate-100 text-slate-600'
+
 /**
- * One transaction as a row: the description is the title, the category rides as a badge, and the
- * signed green/red amount is the one colour convention the app has always kept.
+ * A merged line — a move between wallets, or a day's wallet check. It is a disclosure: pressing
+ * it unfolds the rows it stands for, each with its own Edit and Delete, right under it.
+ *
+ * The chevron sits in the slot a row's ⋯ menu takes, so amounts stay in one column down the list.
  */
-function Row({ tx, deleting, onOpen, onEdit, onDelete }: {
+function GroupRow({ icon, title, detail, amount, open, onToggle }: {
+  icon: ReactNode
+  title: string
+  detail: string
+  amount?: string
+  open: boolean
+  onToggle: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={open}
+      // Inset ring: ListTile clips its corners, and an outside ring would lose its side bands.
+      className="focus-ring focus-visible:ring-inset focus-visible:ring-offset-0 flex min-h-[72px] w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-slate-50 sm:min-h-[56px] sm:py-2"
+    >
+      <span className={NEUTRAL_CHIP}>{icon}</span>
+      <span className="flex min-w-0 flex-1 flex-col sm:flex-row sm:items-baseline sm:gap-2">
+        <span className="truncate text-sm font-medium text-slate-900">{title}</span>
+        <span className="min-w-0 truncate text-xs tabular-nums text-slate-500 sm:shrink-[3]">{detail}</span>
+      </span>
+      {amount && (
+        <span className="shrink-0 whitespace-nowrap text-sm font-semibold tabular-nums text-slate-900">{amount}</span>
+      )}
+      <span className="-my-1.5 flex h-11 w-11 shrink-0 items-center justify-center text-slate-500" aria-hidden="true">
+        <ChevronDown className={`h-5 w-5 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+      </span>
+    </button>
+  )
+}
+
+/**
+ * One transaction as a row.
+ *
+ * Money earned is green and money spent is red — the one colour convention the app has always
+ * kept — and everything that is neither is neutral and says what it is in words: a move between
+ * wallets, a wallet check, and loans (borrowed, lent, paid back, a repayment), where green and red
+ * used to call borrowing "income" and lending "spending".
+ */
+function Row({ tx, deleting, nested = false, onOpen, onEdit, onDelete }: {
   tx: Transaction
   deleting: boolean
+  /** Under an unfolded merged line: tinted and indented, so it reads as part of it. */
+  nested?: boolean
   onOpen: () => void
   onEdit: () => void
   onDelete: () => void
@@ -545,27 +806,47 @@ function Row({ tx, deleting, onOpen, onEdit, onDelete }: {
   const { t, lang, categoryName } = useLang()
   const isSplit = (tx.cashAmount ?? 0) > 0 && (tx.cardAmount ?? 0) > 0 && !!tx.card
   const income = tx.type === 'INCOME'
+  const move = isMoveLeg(tx)
+  const check = isCheckRow(tx)
+  const loan = loanWord(tx)
+  const neutral = move || check || loan != null
+  const wallet = tx.card?.name ?? t('tx.cash')
   // Pay that arrived in one month for another — September's salary on 2 October — says so.
   const payMonth = income && tx.salaryMonth ? tx.salaryMonth.slice(0, 7) : null
   const forOtherMonth = payMonth != null && payMonth !== tx.transactionDate.slice(0, 7)
-  const subtitle = [tx.note || '', tx.card ? `${tx.card.name} ••${tx.card.lastFourDigits}` : '']
-    .filter(Boolean)
-    .join(' · ')
+  const subtitle = move
+    ? t(income ? 'fix.history.to' : 'fix.history.from', { wallet })
+    : check
+      ? `${wallet} · ${t(income ? 'fix.history.more' : 'fix.history.notItemised')}`
+      : [tx.note || '', tx.card ? `${tx.card.name} ••${tx.card.lastFourDigits}` : ''].filter(Boolean).join(' · ')
+  const actions = [
+    { label: t('action.edit'), icon: <Pencil className="h-4 w-4" aria-hidden="true" />, onClick: onEdit },
+    { label: t('action.delete'), icon: <Trash2 className="h-4 w-4" aria-hidden="true" />, onClick: onDelete, danger: true, disabled: deleting },
+  ]
+  const Arrow = income ? ArrowUpRight : ArrowDownRight
 
   return (
     <ListRow
       onClick={onOpen}
+      className={nested ? 'bg-slate-50/70 pl-8' : ''}
       leading={
-        <span className={`flex h-9 w-9 items-center justify-center rounded-chip ${income ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}>
-          {income
-            ? <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
-            : <ArrowDownRight className="h-4 w-4" aria-hidden="true" />}
-        </span>
+        move ? <span className={NEUTRAL_CHIP}><ArrowLeftRight className="h-4 w-4" aria-hidden="true" /></span>
+          : check ? <span className={NEUTRAL_CHIP}><ClipboardCheck className="h-4 w-4" aria-hidden="true" /></span>
+            : (
+              <span className={neutral ? NEUTRAL_CHIP : `flex h-9 w-9 items-center justify-center rounded-chip ${income ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}>
+                <Arrow className="h-4 w-4" aria-hidden="true" />
+              </span>
+            )
       }
-      title={tx.description}
-      badges={
+      title={move ? t('fix.history.moved') : check ? t('fix.history.check') : tx.description}
+      badges={move || check ? undefined : (
         <>
-          {tx.category && (
+          {loan && (
+            <span className="inline-flex items-center rounded-chip bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+              {t(loan)}
+            </span>
+          )}
+          {tx.category && !loan && (
             <span className="inline-flex items-center gap-1.5 rounded-chip bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
               <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: tx.category.color }} />
               {categoryName(tx.category)}
@@ -588,14 +869,12 @@ function Row({ tx, deleting, onOpen, onEdit, onDelete }: {
             </span>
           )}
         </>
-      }
+      )}
       subtitle={subtitle || undefined}
-      amount={`${income ? '+' : '-'}${moneyFull(tx.amount, tx.currency)}`}
-      amountTone={income ? 'in' : 'out'}
-      actions={[
-        { label: t('action.edit'), icon: <Pencil className="h-4 w-4" aria-hidden="true" />, onClick: onEdit },
-        { label: t('action.delete'), icon: <Trash2 className="h-4 w-4" aria-hidden="true" />, onClick: onDelete, danger: true, disabled: deleting },
-      ]}
+      // A move has no direction of its own — the money is still the owner's — so it has no sign.
+      amount={move ? moneyFull(tx.amount, tx.currency) : `${income ? '+' : '-'}${moneyFull(tx.amount, tx.currency)}`}
+      amountTone={neutral ? 'neutral' : income ? 'in' : 'out'}
+      actions={actions}
     />
   )
 }

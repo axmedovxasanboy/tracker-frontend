@@ -7,6 +7,7 @@ import { Tile } from '../ui/Tile'
 import type { TileSpan } from '../ui/Tile'
 import { Button } from '../ui/Button'
 import { CacheBadge } from '../ui/CacheBadge'
+import { ExactAmount } from '../ui/ExactAmount'
 import { IconChip } from '../ui/IconChip'
 import { LinkButton, TileHead } from '../home/HomeTiles'
 import { SAVINGS_ICON, SAVINGS_NAME_KEY } from '../savings/SavingsThisMonth'
@@ -165,6 +166,7 @@ export function PeriodHero({ d, period, cached, justStarted, onSeePrevious, onJu
       >
         {money(Math.abs(left))}
       </p>
+      <ExactAmount amount={Math.abs(left)} className="mt-0.5" />
       <p className="mt-2 text-sm text-slate-700">{sentence}</p>
 
       {/* The same three figures History shows for this month, in History's words. */}
@@ -172,6 +174,9 @@ export function PeriodHero({ d, period, cached, justStarted, onSeePrevious, onJu
         <span>{t('shell.history.in')} <span className="font-medium text-slate-900">{money(f.earned)}</span></span>
         <span>{t('shell.history.out')} <span className="font-medium text-slate-900">{money(out)}</span></span>
         <span>{t('shell.history.saved')} <span className="font-medium text-slate-900">{money(saved)}</span></span>
+        {given > 0 && (
+          <span>{t('fix.given')} <span className="font-medium text-slate-900">{money(given)}</span></span>
+        )}
       </p>
       {period.view === 'year' && (
         <p className="mt-1 text-sm tabular-nums text-slate-500">
@@ -227,8 +232,9 @@ export function PeriodHero({ d, period, cached, justStarted, onSeePrevious, onJu
             amount={moneyFull(saved)} share={shareOf(saved, f.earned)}
             onClick={() => onJump('saved')} actionHint={jumpHint} />
           {given > 0 && (
-            <LegendRow series="given" name={t('analytics.group.given')}
-              amount={moneyFull(given)} share={shareOf(given, f.earned)} />
+            <LegendRow series="given" name={t('fix.given')}
+              amount={moneyFull(given)} share={shareOf(given, f.earned)}
+              onClick={() => onJump('saved')} actionHint={jumpHint} />
           )}
           {left >= EVEN && (
             <LegendRow hatched name={t('analytics.group.leftOver')}
@@ -339,7 +345,7 @@ function HowItAddsUp({ d, out, saved, given }: {
           {line(t('shell.history.in'), '+', f.earned)}
           {line(t('shell.history.out'), '−', out)}
           {line(t('shell.history.saved'), '−', saved)}
-          {given > 0 && line(t('analytics.group.given'), '−', given)}
+          {given > 0 && line(t('fix.given'), '−', given)}
           <div className={strong}>
             <span className="min-w-0">{t('analytics.group.leftOver')}</span>
             <span className="shrink-0 whitespace-nowrap tabular-nums">{moneyFull(f.leftOver)}</span>
@@ -361,11 +367,13 @@ function HowItAddsUp({ d, out, saved, given }: {
 // ── Shared tile furniture ──────────────────────────────────────────────────────────────────────
 
 /** A tile's title, its one figure and its one sentence. */
-function TileLead({ title, headingRef, figure, exact, sentence, tone = 'neutral' }: {
+function TileLead({ title, headingRef, figure, exact, amount, sentence, tone = 'neutral' }: {
   title: string
   headingRef?: Ref<HTMLHeadingElement>
   figure?: string
   exact?: string
+  /** The amount behind `figure`, printed exactly under it when the short form hides digits. */
+  amount?: number
   sentence?: ReactNode
   tone?: 'neutral' | 'out'
 }) {
@@ -377,6 +385,7 @@ function TileLead({ title, headingRef, figure, exact, sentence, tone = 'neutral'
           {figure}
         </p>
       )}
+      {figure && amount != null && <ExactAmount amount={amount} />}
       {sentence && <p className="mt-1 text-sm text-slate-600">{sentence}</p>}
     </>
   )
@@ -484,6 +493,7 @@ export function EverydayTile({ d, period, span, headingRef, onCategory, onHistor
             headingRef={headingRef}
             figure={money(total)}
             exact={moneyExact(total)}
+            amount={total}
             sentence={sentence || undefined}
           />
           <CategoryBars items={items} className="mt-3 space-y-1" />
@@ -544,6 +554,7 @@ export function BillsLoansTile({ d, period, span, headingRef, onOpen }: {
             headingRef={headingRef}
             figure={money(paid)}
             exact={moneyExact(paid)}
+            amount={paid}
             sentence={share ? t('analytics.shareOfIn', { percent: share }) : undefined}
           />
           {income != null && (
@@ -572,7 +583,11 @@ export function BillsLoansTile({ d, period, span, headingRef, onOpen }: {
 
 const FIXED_SAVINGS: Exclude<AnalyticsSavingKind, 'GOAL'>[] = ['DONATION', 'EMERGENCY', 'INVESTMENTS']
 
-/** What was put aside, kind by kind, against what the month asked for (when it asked). */
+/**
+ * What was set aside, kind by kind, against what the month asked for (when it asked). With
+ * donations counted apart the tile is "Set aside" — saved and given together, which is what the
+ * month's ask covers — and its sentence says how much of it was each.
+ */
 export function SavedTile({ d, period, span, headingRef, onOpen }: {
   d: AnalyticsResponse
   period: PeriodInfo
@@ -581,12 +596,13 @@ export function SavedTile({ d, period, span, headingRef, onOpen }: {
   onOpen: () => void
 }) {
   const { t } = useLang()
-  const total = savedAndGiven(d.totals).saved
+  const { saved, given } = savedAndGiven(d.totals)
+  const total = saved + given
+  const title = t(DONATION_COUNTS_AS_SAVED ? 'shell.history.saved' : 'fix.setAside')
   const lines = d.savings ?? []
   // Always the three kinds in their fixed order, then each goal that was paid into or asked for.
   const rows: AnalyticsSavingLine[] = [
     ...FIXED_SAVINGS
-      .filter(kind => DONATION_COUNTS_AS_SAVED || kind !== 'DONATION')
       .map(kind => lines.find(l => l.kind === kind) ?? { kind, refId: null, name: null, saved: 0, asked: null }),
     ...lines.filter(l => l.kind === 'GOAL' && (l.saved > 0 || (l.asked ?? 0) > 0)),
   ]
@@ -594,6 +610,7 @@ export function SavedTile({ d, period, span, headingRef, onOpen }: {
   const share = shareOf(total, d.totals.earned)
   const sentence = [
     share ? t('analytics.shareOfIn', { percent: share }) : null,
+    given > 0 ? t('fix.savedGiven', { saved: money(saved), given: money(given) }) : null,
     period.view === 'year' && total > 0
       ? t('analytics.perMonth', { amount: money(total / Math.max(1, d.months.length)) })
       : null,
@@ -603,16 +620,17 @@ export function SavedTile({ d, period, span, headingRef, onOpen }: {
     <Tile span={span} mdSpan={6} as="section">
       {!anything ? (
         <>
-          <TileHead title={t('shell.history.saved')} headingRef={headingRef} />
+          <TileHead title={title} headingRef={headingRef} />
           <p className="mt-3 text-sm text-slate-500">{t('analytics.e.empty', { month: period.text })}</p>
         </>
       ) : (
         <>
           <TileLead
-            title={t('shell.history.saved')}
+            title={title}
             headingRef={headingRef}
             figure={money(total)}
             exact={moneyExact(total)}
+            amount={total}
             sentence={sentence || undefined}
           />
           <ul className="mt-2 divide-y divide-hairline">
@@ -767,6 +785,7 @@ export function OwnOweTile({ p, span }: { p: AnalyticsPosition; span: TileSpan }
       <p className={`mt-1 text-stat tabular-nums ${negative ? 'text-expense' : 'text-slate-900'}`} title={moneyExact(p.net)}>
         {money(p.net)}
       </p>
+      <ExactAmount amount={p.net} />
       <p className="mt-1 text-sm text-slate-600">{sentence}</p>
       {unknown.length > 0 && (
         <p className="mt-1 flex items-start gap-2 text-sm font-medium text-amber-700">

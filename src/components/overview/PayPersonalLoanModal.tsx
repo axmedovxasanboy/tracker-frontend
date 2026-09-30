@@ -10,8 +10,10 @@ import { useLang } from '../../i18n/LanguageContext'
 import { useToast } from '../../context/ToastContext'
 import { useApi } from '../../hooks/useApi'
 import { financeApi } from '../../api/finance'
+import { advisorApi } from '../../api/advisor'
 import { extractErrorMessage } from '../../api/client'
 import { money, moneyFull, snap, todayLocal } from '../../utils/format'
+import type { AdvisorResponse, AdvisorUpcoming } from '../../types'
 import { CompactDate, MONEY_INPUT, MONEY_INPUT_INVALID } from '../transactions/formParts'
 import { WalletPicker } from '../transactions/WalletPicker'
 import { rememberWallet, useWalletChoice, useWallets } from '../transactions/wallets'
@@ -30,22 +32,21 @@ type Pickable = {
   person: string
   total: number
   remaining: number
-  /** The loan's own monthly repayment plan; null for a debt or a loan without one. */
-  plan: number | null
   currency: Currency
 }
 
-const PAYDOWN_RATE = 0.34
-
-const hasPlan = (p: Pickable): boolean => p.plan != null && p.plan > 0
-
 /**
- * The monthly amount a loan asks for: its own plan when it has one, otherwise the app's usual
- * share of the original amount — capped at what is left, so the last month is never overpaid.
+ * What this month still asks of a loan — the server's figure, the one Home's "Coming up" and
+ * Loans & bills show. It is read from the advisor's upcoming list rather than worked out here: the
+ * repayment rule lives on the server, and a copy of it in this dialog once quoted an amount the
+ * other two screens did not. Null when the advisor lists nothing for the loan this month (already
+ * paid, not started, or the advisor could not be read) — the row then says only what is left.
  */
-function suggestedFor(p: Pickable): number {
-  const base = hasPlan(p) ? (p.plan as number) : p.total * PAYDOWN_RATE
-  return snap(Math.min(base, p.remaining))
+function dueThisMonth(p: Pickable, upcoming: AdvisorUpcoming[], month: string): number | null {
+  const kind = p.kind === 'loan-taken' ? 'LOAN' : 'DEBT'
+  const row = upcoming.find(u =>
+    u.kind === kind && u.refId === p.id && !u.recorded && u.date.slice(0, 7) === month)
+  return row ? snap(Math.min(row.amount, p.remaining)) : null
 }
 
 /** Pay back money borrowed from a person, or a debt: pick who, then how much and from where. */
@@ -54,6 +55,14 @@ export function PayPersonalLoanModal({ open, onClose, onSaved, defaultMonth }: P
   const { showSuccess } = useToast()
   const loansTaken = useApi(() => financeApi.getLoansTaken(), [])
   const debts = useApi(() => financeApi.getDebts(), [])
+  // Only for this month's amounts, and only while the dialog is up (it is mounted on Home at all
+  // times). A failure costs the dialog a hint, never its use.
+  const today = todayLocal()
+  const advisor = useApi<AdvisorResponse | null>(
+    () => open ? advisorApi.get(today, { silent: true }) : Promise.resolve({ data: null }),
+    [today, open])
+  const upcoming = advisor.data?.daily?.upcoming ?? []
+  const month = today.slice(0, 7)
   const [selected, setSelected] = useState<Pickable | null>(null)
   const [amount, setAmount] = useState(0)
   const [date, setDate] = useState(todayLocal())
@@ -70,7 +79,7 @@ export function PayPersonalLoanModal({ open, onClose, onSaved, defaultMonth }: P
     amount,
   })
 
-  // Stable: both hooks were given an empty dep array.
+  // Stable: the hooks' deps do not change while the dialog is up.
   const refetchLoans = loansTaken.refetch
   const refetchDebts = debts.refetch
 
@@ -96,7 +105,6 @@ export function PayPersonalLoanModal({ open, onClose, onSaved, defaultMonth }: P
         person: l.lenderName,
         total: l.totalAmount,
         remaining: l.remainingAmount,
-        plan: l.plannedMonthlyPayment ?? null,
         currency: l.currency,
       }))
       .filter(p => p.remaining > 0),
@@ -107,7 +115,6 @@ export function PayPersonalLoanModal({ open, onClose, onSaved, defaultMonth }: P
         person: d.creditorName,
         total: d.totalAmount,
         remaining: d.remainingAmount,
-        plan: null,
         currency: d.currency,
       }))
       .filter(p => p.remaining > 0),
@@ -129,7 +136,8 @@ export function PayPersonalLoanModal({ open, onClose, onSaved, defaultMonth }: P
 
   const pick = (p: Pickable) => {
     setSelected(p)
-    setAmount(suggestedFor(p))
+    // This month's amount when the server names one, else everything that is left.
+    setAmount(dueThisMonth(p, upcoming, month) ?? snap(p.remaining))
     setInvalid(null)
     setError(null)
   }
@@ -161,6 +169,10 @@ export function PayPersonalLoanModal({ open, onClose, onSaved, defaultMonth }: P
   }
 
   const loading = loansTaken.loading || debts.loading
+  // A row picked before the advisor answers would be priced at everything that is left, and
+  // nothing re-prices it afterwards — so the rows wait for it. Once it has answered OR failed they
+  // show: without it, the whole remaining amount is the honest prefill.
+  const pricing = advisor.loading || (advisor.data == null && !advisor.error)
   const refreshing = loansTaken.refreshing || debts.refreshing
   const hasData = (loansTaken.data ?? []).length + (debts.data ?? []).length > 0
   const loadError = loansTaken.error ?? debts.error
@@ -182,7 +194,7 @@ export function PayPersonalLoanModal({ open, onClose, onSaved, defaultMonth }: P
   return (
     <Modal open={open} onClose={onClose} title={t('home.form.loan.title')} maxWidth="max-w-lg" footer={footer}>
       <form id="pay-personal-form" noValidate onSubmit={handleSubmit} className="space-y-4">
-        {loading && !hasData ? (
+        {(loading && !hasData) || pricing ? (
           <Skeleton variant="row" count={3} bare />
         ) : loadError && !hasData ? (
           <ErrorTile message={loadError} onRetry={retry} />
@@ -222,10 +234,14 @@ export function PayPersonalLoanModal({ open, onClose, onSaved, defaultMonth }: P
                           {t('home.form.repay.leftToPay', { amount: money(p.remaining, p.currency) })}
                         </p>
                       </div>
-                      <div className="shrink-0 text-right whitespace-nowrap">
-                        <p className="text-xs text-slate-500">{t('home.form.loan.thisMonth')}</p>
-                        <p className="text-sm font-semibold text-slate-900 tabular-nums">{money(suggestedFor(p), p.currency)}</p>
-                      </div>
+                      {dueThisMonth(p, upcoming, month) != null && (
+                        <div className="shrink-0 text-right whitespace-nowrap">
+                          <p className="text-xs text-slate-500">{t('home.form.loan.thisMonth')}</p>
+                          <p className="text-sm font-semibold text-slate-900 tabular-nums">
+                            {money(dueThisMonth(p, upcoming, month)!, p.currency)}
+                          </p>
+                        </div>
+                      )}
                     </button>
                   )
                 })}

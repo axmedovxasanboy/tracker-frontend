@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { cardsApi } from '../../api/cards'
 import { cashBalancesApi } from '../../api/cashBalances'
-import type { CardResponse, Currency, TransactionType } from '../../types'
+import type { CardResponse, Currency } from '../../types'
 
 /**
  * Where money comes from or goes to, as one value: a card id, the cash pot, or — for the few
@@ -14,7 +14,6 @@ export type WalletValue = number | 'cash' | 'none' | null
 // window or blocked storage must cost the owner a default, never a crash.
 
 const LAST_WALLET_KEY = 'tracker.lastWallet'
-const LAST_TYPE_KEY = 'tracker.lastTxType'
 const LAST_CHILD_KEY = 'tracker.lastSubCategory'
 
 function read(key: string): string | null {
@@ -37,15 +36,6 @@ export function readLastWallet(): number | 'cash' | null {
 export function rememberWallet(v: WalletValue) {
   if (v === 'cash') write(LAST_WALLET_KEY, 'cash')
   else if (typeof v === 'number') write(LAST_WALLET_KEY, `card:${v}`)
-}
-
-export function readLastType(): TransactionType | null {
-  const v = read(LAST_TYPE_KEY)
-  return v === 'INCOME' || v === 'EXPENSE' ? v : null
-}
-
-export function rememberType(type: TransactionType) {
-  write(LAST_TYPE_KEY, type)
 }
 
 function readChildMap(): Record<string, number> {

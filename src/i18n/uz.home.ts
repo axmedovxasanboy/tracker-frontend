@@ -5,7 +5,7 @@ export const uz_home: Partial<Record<keyof typeof en_home, string>> = {
   // ── Bosh sahifa: kunlik summa ───────────────────────────────────────────────────────────────
   'home.hero.label': 'Sarflashingiz mumkin',
   'home.hero.perDay': 'kuniga',
-  'home.hero.until': '{date} gacha · toʻlovlar, qarzlar va jamgʻarmalardan keyin',
+  'home.hero.until': '{date} gacha · toʻlovlar, qarzlar va ajratiladigan puldan keyin',
   'home.hero.shortLabel': 'Pul yetmay qoladi',
   'home.hero.shortOn': '{date} kuni — hech narsa sarflamasangiz ham.',
   'home.hero.seeDue': 'Nimalar toʻlanishini koʻrish',
@@ -17,7 +17,7 @@ export const uz_home: Partial<Record<keyof typeof en_home, string>> = {
   'home.how.have': 'Sizda bor',
   'home.how.comingIn': '{date} gacha keladi',
   'home.how.goingOut': 'Toʻlovlar va qarzlar',
-  'home.how.savings': 'Jamgʻarmalar',
+  'home.how.savings': 'Ajratiladi',
   'home.how.result': '= {net} — {days} uchun ≈ kuniga {perDay}',
   'home.how.dayOne': '{count} kun',
   'home.how.dayMany': '{count} kun',
@@ -32,16 +32,16 @@ export const uz_home: Partial<Record<keyof typeof en_home, string>> = {
   'home.upcoming.recorded': 'Yozilgan',
 
   // ── Shu oydagi jamgʻarmalar ─────────────────────────────────────────────────────────────────
-  'home.savings.title': 'Shu oydagi jamgʻarmalar',
+  'home.savings.title': 'Shu oy ajratiladigan pul',
   'home.savings.open': 'Jamgʻarmalarni ochish',
   'home.savings.ofTarget': '{target} dan {paid}',
   'home.savings.page': 'Jamgʻarmalar',
-  'home.savings.thisMonth': 'Shu oy',
-  'home.savings.leftCaption': 'shu oy hali yigʻish kerak',
-  'home.savings.allDone': 'Shu oydagi jamgʻarmalar toʻliq bajarildi.',
-  'home.savings.nothing': 'Shu oy yigʻiladigan narsa yoʻq.',
-  'home.savings.addMore': 'Yana qoʻshish',
-  'home.savings.over': '+{amount} ortiq',
+  'home.savings.thisMonth': 'Shu oy ajratiladigan pul',
+  'home.savings.leftCaption': 'shu oy hali ajratish kerak',
+  'home.savings.allDone': 'Shu oy uchun hammasi ajratildi.',
+  'home.savings.nothing': 'Shu oy ajratiladigan narsa yoʻq.',
+  'home.savings.addMore': 'Yana jamgʻarish',
+  'home.savings.over': '+{amount} soʻralganidan koʻp',
   'home.savings.carried': 'shundan {amount} — {month} oyidan qolgan',
 
   // ── Sizda bor ───────────────────────────────────────────────────────────────────────────────
@@ -69,7 +69,7 @@ export const uz_home: Partial<Record<keyof typeof en_home, string>> = {
   'home.list.showLess': 'Kamroq koʻrsatish',
 
   // ── Qisqa shakllar: maqsad ──────────────────────────────────────────────────────────────────
-  'home.goal.addTitle': 'Maqsad qoʻshish',
+  'home.goal.addTitle': 'Yangi maqsad',
   'home.goal.editTitle': 'Maqsadni tahrirlash',
   'home.goal.name': 'Nomi',
   'home.goal.namePlaceholder': 'Uy, mashina, sayohat…',

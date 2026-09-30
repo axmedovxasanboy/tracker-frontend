@@ -136,8 +136,12 @@ export function PageHeader({ title, subtitle, chip, monthStepper, primary, overf
   subtitle?: string
   chip?: { text: string; tone?: 'neutral' | 'attention' }
   monthStepper?: { label: string; onPrev?: () => void; onNext?: () => void }
-  /** EXACTLY ONE filled button per page. Everything else belongs in `overflow`. */
-  primary?: { label: string; onClick: () => void; icon?: ReactNode }
+  /**
+   * EXACTLY ONE filled button per page. Everything else belongs in `overflow`.
+   * `hideOnPhone`: the action is "Add", which the phone's bottom bar carries on every page — a
+   * second one in the top bar, a thumb's length above it, would be the same button twice.
+   */
+  primary?: { label: string; onClick: () => void; icon?: ReactNode; hideOnPhone?: boolean }
   overflow?: OverflowAction[]
   info?: { label: string; onClick: () => void }
 }) {
@@ -196,7 +200,7 @@ export function PageHeader({ title, subtitle, chip, monthStepper, primary, overf
             </button>
           )}
           <h1 className="flex-1 min-w-0 px-1 truncate text-title text-slate-900">{title}</h1>
-          {primary && (
+          {primary && !primary.hideOnPhone && (
             // max-w keeps a long label ("Add transaction") from pushing the page title out of
             // the 390px bar; the button truncates its own text instead.
             <Button variant="primary" size="sm" label={primary.label} icon={primary.icon}
@@ -250,7 +254,9 @@ export function PageHeader({ title, subtitle, chip, monthStepper, primary, overf
                 </button>
               </div>
             )}
-            {primaryButton && (inBar ? <div className="hidden md:block">{primaryButton}</div> : primaryButton)}
+            {primaryButton && (inBar || primary?.hideOnPhone
+              ? <div className="hidden md:block">{primaryButton}</div>
+              : primaryButton)}
             {inBar
               ? <div className="hidden md:block"><OverflowMenu actions={actions} /></div>
               : <OverflowMenu actions={actions} />}

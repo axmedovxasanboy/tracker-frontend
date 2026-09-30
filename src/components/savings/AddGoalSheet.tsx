@@ -10,8 +10,13 @@ import { financeApi } from '../../api/finance'
 import { extractErrorMessage } from '../../api/client'
 import { formatDate, moneyFull, monthLocal, shiftMonth, todayLocal } from '../../utils/format'
 import { CONTROL, CONTROL_INVALID, MONEY_INPUT, MONEY_INPUT_INVALID, useOptional } from '../transactions/formParts'
-import { goalPlan, lastDayOf } from './goalPlan'
+import { useRadioGroupKeys } from '../../hooks/useRadioGroupKeys'
+import { goalKindOf, goalPlan, lastDayOf } from './goalPlan'
+import { planWarning } from './means'
 import type { InvestmentRequest, InvestmentResponse } from '../../types'
+import type { AdvisorMeans, GoalKind } from '../../types/fixes'
+
+const KINDS: GoalKind[] = ['PLAN', 'WISH']
 
 const FORM_ID = 'add-goal-form'
 
@@ -55,20 +60,39 @@ function startOf(goal: InvestmentResponse | null | undefined): string {
 }
 
 /**
- * A savings goal: what for, how much, how much a month, by when — and, if any, how much is already
- * put by.
+ * The start month the form opens on. A goal that never had a monthly payment never had payments
+ * to start, so it opens on next month like a new goal — not on the month the wish was written down.
+ */
+function formStartOf(goal: InvestmentResponse | null | undefined): string {
+  if (goal && !((goal.monthlyContribution ?? 0) > 0)) return startOf(null)
+  return startOf(goal) || startOf(null)
+}
+
+/**
+ * A savings goal: what for, how much — and whether it is a plan or a wish.
+ *
+ * A PLAN has a monthly payment: the app sets that aside each month and Home's daily figure counts
+ * on it. A WISH is kept on the list and asks for nothing until it is made a plan. The choice is
+ * only offered when the server knows about wishes (`wishSupported`); on an older one every goal is
+ * a plan, as it always was, and the form is the one it always was.
  *
  * Saved as a savings-goal holding. What the owner "already has" is an opening balance: it was put
  * by before, so no wallet is touched and nothing is recorded as spent today. Adding to the goal
  * later is "Add money", which does move money from a wallet. With a target and a deadline, the
  * monthly payment is suggested until the owner types one of their own.
  */
-export function AddGoalSheet({ open, onClose, onSaved, goal }: {
+export function AddGoalSheet({ open, onClose, onSaved, goal, wishSupported = false, means, startAs }: {
   open: boolean
   onClose: () => void
   onSaved: () => void
   /** Edit this goal instead of adding one. */
   goal?: InvestmentResponse | null
+  /** The server stores wishes (`Investment.wish`), so the Plan | Wish choice can be offered. */
+  wishSupported?: boolean
+  /** Whether a normal month has room — for the warning under a plan's monthly payment. */
+  means?: AdvisorMeans | null
+  /** Open on this kind — "Make it a plan" on a wish that never had a monthly payment. */
+  startAs?: GoalKind
 }) {
   const { t, lang } = useLang()
   const optional = useOptional()
@@ -83,6 +107,7 @@ export function AddGoalSheet({ open, onClose, onSaved, goal }: {
   /** YYYY-MM: the month the first payment is due. */
   const [start, setStart] = useState('')
   const [have, setHave] = useState(0)
+  const [kind, setKind] = useState<GoalKind>('PLAN')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [invalid, setInvalid] = useState<'name' | 'target' | 'monthly' | 'start' | null>(null)
@@ -98,11 +123,18 @@ export function AddGoalSheet({ open, onClose, onSaved, goal }: {
     setMonthly(goal?.monthlyContribution ?? 0)
     setMonthlySuggested(false)
     setDeadline(goal?.targetDate ? goal.targetDate.slice(0, 7) : '')
-    setStart(startOf(goal))
+    setStart(formStartOf(goal))
     setHave(0)
+    setKind(wishSupported ? startAs ?? (goal ? goalKindOf(goal) : 'PLAN') : 'PLAN')
     setError(null)
     setInvalid(null)
+    // `wishSupported` and `startAs` are read once per open: they seed the form, they do not follow it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, goal])
+
+  const isPlan = kind === 'PLAN'
+  const initialKind: GoalKind = wishSupported && goal ? goalKindOf(goal) : 'PLAN'
+  const kindKeys = useRadioGroupKeys(KINDS, kind, v => { setKind(v); setInvalid(null); setError(null) })
 
   const month = monthLocal()
   // What is still missing: an edited goal counts what it already holds.
@@ -116,7 +148,7 @@ export function AddGoalSheet({ open, onClose, onSaved, goal }: {
   const suggestion = target > 0 && deadline ? plan.needed : null
   useEffect(() => {
     if (reset.current) { reset.current = false; return }
-    if (!open || (monthly > 0 && !monthlySuggested)) return
+    if (!open || !isPlan || (monthly > 0 && !monthlySuggested)) return
     if (suggestion != null && suggestion !== monthly) {
       setMonthly(suggestion)
       setMonthlySuggested(true)
@@ -124,7 +156,7 @@ export function AddGoalSheet({ open, onClose, onSaved, goal }: {
       setMonthly(0)
       setMonthlySuggested(false)
     }
-  }, [open, suggestion, monthly, monthlySuggested])
+  }, [open, isPlan, suggestion, monthly, monthlySuggested])
 
   const clear = (field: 'name' | 'target' | 'monthly' | 'start') => {
     if (invalid === field) { setInvalid(null); setError(null) }
@@ -133,7 +165,7 @@ export function AddGoalSheet({ open, onClose, onSaved, goal }: {
   const dirty = goal
     ? name !== goal.name || target !== (goal.targetAmount ?? 0)
       || monthly !== (goal.monthlyContribution ?? 0) || deadline !== (goal.targetDate?.slice(0, 7) ?? '')
-      || start !== startOf(goal)
+      || start !== formStartOf(goal) || kind !== initialKind
     : !!name.trim() || target > 0 || have > 0 || !!deadline || (monthly > 0 && !monthlySuggested)
       || start !== startOf(null)
 
@@ -141,17 +173,22 @@ export function AddGoalSheet({ open, onClose, onSaved, goal }: {
     e.preventDefault()
     if (!name.trim()) { setInvalid('name'); setError(t('home.goal.err.name')); nameRef.current?.focus(); return }
     if (target <= 0) { setInvalid('target'); setError(t('home.goal.err.target')); return }
-    if (!(monthly > 0)) { setInvalid('monthly'); setError(t('home.goal.err.monthly')); return }
-    if (!start) { setInvalid('start'); setError(t('home.goal.err.start')); return }
+    // Only a plan has a monthly payment and a month it starts in.
+    if (isPlan && !(monthly > 0)) { setInvalid('monthly'); setError(t('home.goal.err.monthly')); return }
+    if (isPlan && !start) { setInvalid('start'); setError(t('home.goal.err.start')); return }
     setSaving(true); setError(null); setInvalid(null)
     const targetDate = deadline ? lastDayOf(deadline) : null
     const paymentStartDate = `${start}-01`
+    // Sent only to a server that knows the field; an older one keeps every goal a plan.
+    const wishPatch = wishSupported ? { wish: !isPlan } : {}
     try {
       if (goal) {
-        await financeApi.updateInvestment(goal.id, requestFrom(goal, {
+        await financeApi.updateInvestment(goal.id, requestFrom(goal, isPlan
           // targetDate is always sent: an explicit null is how the server removes a deadline.
-          name: name.trim(), targetAmount: target, monthlyContribution: monthly, targetDate, paymentStartDate,
-        }))
+          ? { name: name.trim(), targetAmount: target, monthlyContribution: monthly, targetDate, paymentStartDate, ...wishPatch }
+          // A wish keeps the monthly payment and start month it had, so making it a plan again
+          // restores it as it was.
+          : { name: name.trim(), targetAmount: target, targetDate, ...wishPatch }))
       } else {
         await financeApi.createInvestment({
           name: name.trim(),
@@ -165,9 +202,9 @@ export function AddGoalSheet({ open, onClose, onSaved, goal }: {
           targetAmount: target,
           currentValue: null,
           openingBalance: true,
-          monthlyContribution: monthly,
           targetDate,
-          paymentStartDate,
+          ...(isPlan ? { monthlyContribution: monthly, paymentStartDate } : { monthlyContribution: null }),
+          ...wishPatch,
         })
       }
       showSuccess(t(goal ? 'home.goal.savedToast' : 'home.goal.addedToast', { name: name.trim() }))
@@ -179,6 +216,16 @@ export function AddGoalSheet({ open, onClose, onSaved, goal }: {
       setError(zeroRefused ? t('home.goal.err.zeroStart') : extractErrorMessage(err))
     } finally { setSaving(false) }
   }
+
+  // Does a normal month still have room with this monthly payment? The server's `means` already
+  // counts this goal's stored payment when it is a plan, so that comes off before the new one goes on.
+  // A month can also be short before any plan; that has its own wording (see means.ts), so a
+  // negative amount is never shown as something "left" or blamed on this payment.
+  const counted = goal && initialKind === 'PLAN' ? goal.monthlyContribution ?? 0 : 0
+  const warning = isPlan ? planWarning(means, monthly, counted) : null
+  const tooMuch = warning
+    ? t(warning.key, Object.fromEntries(Object.entries(warning.amounts).map(([k, v]) => [k, moneyFull(v)])))
+    : null
 
   // "At 1.000.000 UZS a month you'll reach it around Mar 2027" — amber when that is after the deadline.
   const planLine = plan.reach && monthly > 0
@@ -206,6 +253,32 @@ export function AddGoalSheet({ open, onClose, onSaved, goal }: {
       }
     >
       <form id={FORM_ID} noValidate onSubmit={handleSubmit} className="space-y-4">
+        {wishSupported && (
+          <div>
+            <p id="goal-kind-label" className="mb-1 text-xs font-medium text-slate-600">{t('fix.goal.kind')}</p>
+            <div role="radiogroup" aria-labelledby="goal-kind-label" aria-describedby="goal-kind-help"
+              className="flex gap-1 rounded-control bg-slate-100 p-1">
+              {KINDS.map((k, i) => (
+                <button
+                  key={k}
+                  type="button"
+                  role="radio"
+                  aria-checked={kind === k}
+                  {...kindKeys(i)}
+                  onClick={() => { setKind(k); setInvalid(null); setError(null) }}
+                  className={`focus-ring min-h-[44px] flex-1 rounded-chip px-2 text-sm font-semibold transition-colors focus-visible:ring-offset-slate-100 ${
+                    kind === k ? 'bg-white text-indigo-600 shadow-tile' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {t(k === 'PLAN' ? 'fix.goal.kind.plan' : 'fix.goal.kind.wish')}
+                </button>
+              ))}
+            </div>
+            <p id="goal-kind-help" className="mt-1.5 text-xs leading-snug text-slate-500">
+              {t(isPlan ? 'fix.goal.kind.planHelp' : 'fix.goal.kind.wishHelp')}
+            </p>
+          </div>
+        )}
         <Field id="goal-name" label={t('home.goal.name')} required error={invalid === 'name' ? error ?? undefined : undefined}>
           <input ref={nameRef} value={name}
             onChange={e => { setName(e.target.value); clear('name') }}
@@ -217,23 +290,29 @@ export function AddGoalSheet({ open, onClose, onSaved, goal }: {
             onChange={v => { setTarget(v); clear('target') }}
             className={invalid === 'target' ? MONEY_INPUT_INVALID : MONEY_INPUT} />
         </Field>
-        <Field id="goal-monthly" label={t('home.goal.monthly')} required error={invalid === 'monthly' ? error ?? undefined : undefined}>
-          <AmountInput value={monthly} currency="UZS" suffix="UZS"
-            aria-describedby={planLine || monthlySuggested ? 'goal-monthly-plan' : undefined}
-            onChange={v => { setMonthly(v); setMonthlySuggested(false); clear('monthly') }}
-            className={invalid === 'monthly' ? MONEY_INPUT_INVALID : MONEY_INPUT} />
-        </Field>
-        {(planLine || monthlySuggested) && (
-          <div id="goal-monthly-plan" className="-mt-2 space-y-0.5 text-xs leading-snug tabular-nums">
-            {monthlySuggested && <p className="text-slate-500">{t('home.goal.monthlySuggested')}</p>}
-            {planLine && <p className={plan.late ? 'font-medium text-amber-700' : 'text-slate-600'}>{planLine}</p>}
-          </div>
+        {isPlan && (
+          <>
+            <Field id="goal-monthly" label={t('home.goal.monthly')} required error={invalid === 'monthly' ? error ?? undefined : undefined}>
+              <AmountInput value={monthly} currency="UZS" suffix="UZS"
+                aria-describedby={planLine || monthlySuggested || tooMuch ? 'goal-monthly-plan' : undefined}
+                onChange={v => { setMonthly(v); setMonthlySuggested(false); clear('monthly') }}
+                className={invalid === 'monthly' ? MONEY_INPUT_INVALID : MONEY_INPUT} />
+            </Field>
+            {(planLine || monthlySuggested || tooMuch) && (
+              <div id="goal-monthly-plan" className="-mt-2 space-y-0.5 text-xs leading-snug tabular-nums">
+                {monthlySuggested && <p className="text-slate-500">{t('home.goal.monthlySuggested')}</p>}
+                {planLine && <p className={plan.late ? 'font-medium text-amber-700' : 'text-slate-600'}>{planLine}</p>}
+                {/* A warning, not a refusal: the owner may know about money the app does not. */}
+                {tooMuch && <p aria-live="polite" className="font-medium text-amber-700">{tooMuch}</p>}
+              </div>
+            )}
+            <Field id="goal-start" label={t('home.goal.start')} required error={invalid === 'start' ? error ?? undefined : undefined}>
+              <input type="month" required value={start}
+                onChange={e => { setStart(e.target.value); clear('start') }}
+                className={invalid === 'start' ? CONTROL_INVALID : CONTROL} />
+            </Field>
+          </>
         )}
-        <Field id="goal-start" label={t('home.goal.start')} required error={invalid === 'start' ? error ?? undefined : undefined}>
-          <input type="month" required value={start}
-            onChange={e => { setStart(e.target.value); clear('start') }}
-            className={invalid === 'start' ? CONTROL_INVALID : CONTROL} />
-        </Field>
         <Field id="goal-deadline" label={optional(t('home.goal.deadline'))}>
           <input type="month" value={deadline} min={month}
             onChange={e => setDeadline(e.target.value)} className={CONTROL} />

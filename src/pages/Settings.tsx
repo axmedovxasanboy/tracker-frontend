@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
@@ -37,6 +37,9 @@ export function Settings() {
   const { refetch: refetchGate } = useSettings()
 
   const [income, setIncome] = useState(0)
+  // True from the first keystroke until a save: the page's requests re-run whenever money is
+  // recorded from the shell's Add form, and that must not wipe a figure still being typed.
+  const incomeEdited = useRef(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // Set on the first successful save of this visit, so the page can say what comes next
@@ -53,7 +56,7 @@ export function Settings() {
   const [resetError, setResetError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (settings.data) setIncome(settings.data.monthlyStableIncome ?? 0)
+    if (settings.data && !incomeEdited.current) setIncome(settings.data.monthlyStableIncome ?? 0)
   }, [settings.data])
 
   const savedIncome = settings.data?.monthlyStableIncome ?? 0
@@ -69,6 +72,7 @@ export function Settings() {
     setSaving(true); setError(null)
     try {
       await settingsApi.update({ monthlyStableIncome: income, monthlyStableIncomeCurrency: 'UZS' })
+      incomeEdited.current = false
       settings.refetch()
       refetchGate()
       setSavedNow(true)
@@ -150,7 +154,7 @@ export function Settings() {
                   error={error ?? undefined}
                 >
                   <AmountInput
-                    value={income} onChange={setIncome} currency="UZS"
+                    value={income} onChange={v => { incomeEdited.current = true; setIncome(v) }} currency="UZS"
                     suffix="UZS" className={`${INPUT} pr-14`}
                   />
                 </Field>

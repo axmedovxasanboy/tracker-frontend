@@ -171,7 +171,7 @@ export function BalanceTransferModal({ open, onClose, onSaved, preselectedToCard
             below sm: a select will not shrink past its widest option, and two of them side by side
             overflow a 390px sheet however the flex items are sized. */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
-          <Field id="bt-from" label={t('cmp.balanceTransfer.fromCard')} className="flex-1">
+          <Field id="bt-from" label={t('cmp.balanceTransfer.fromCard')} required className="flex-1">
             <select
               required
               value={form.fromCardId || ''}
@@ -197,7 +197,7 @@ export function BalanceTransferModal({ open, onClose, onSaved, preselectedToCard
             </span>
           </div>
 
-          <Field id="bt-to" label={t('cmp.balanceTransfer.toCard')} className="flex-1">
+          <Field id="bt-to" label={t('cmp.balanceTransfer.toCard')} required className="flex-1">
             <select
               required
               value={form.toCardId || ''}
@@ -283,14 +283,6 @@ export function BalanceTransferModal({ open, onClose, onSaved, preselectedToCard
             placeholder={t('cmp.balanceTransfer.descriptionPlaceholder')}
           />
         </Field>
-
-        {/* The side effect, stated before the user commits: a transfer is booked as two
-            transactions, so both wallet balances and History move. */}
-        <p className="rounded-control border border-hairline px-3 py-2.5 text-xs leading-relaxed text-slate-600">
-          {t('cmp.balanceTransfer.infoPrefix')} <strong className="font-semibold text-slate-900">{t('tx.expense')}</strong>{' '}
-          {t('cmp.balanceTransfer.infoMid')} <strong className="font-semibold text-slate-900">{t('tx.income')}</strong>{' '}
-          {t('cmp.balanceTransfer.infoSuffix')}
-        </p>
 
         {error && <p role="alert" className="text-sm text-expense">{error}</p>}
       </form>

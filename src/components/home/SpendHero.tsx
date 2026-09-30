@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import { AlertTriangle, ArrowDown, CheckCircle2, ChevronDown, ChevronUp, Wallet } from 'lucide-react'
+import { AlertTriangle, ArrowDown, CheckCircle2, ChevronDown, ChevronUp, Target, Wallet } from 'lucide-react'
 import { Tile } from '../ui/Tile'
 import { Button } from '../ui/Button'
 import { CacheBadge } from '../ui/CacheBadge'
@@ -12,18 +12,25 @@ import type { AdvisorDaily, AdvisorResponse, Currency } from '../../types'
  * Home's one big number: how much the owner can spend each day until the money runs short, after
  * the bills, the loan payments and the savings this stretch still asks for.
  *
- * Three shapes, one tile:
+ * Four shapes, one tile:
  * - the daily figure, with the recent pace beside it and the arithmetic one tap away;
+ * - amber, when the figure is fine on paper but the owner's own pace runs the money out before
+ *   the stretch ends: then the DATE is the headline, the reason is one sentence, and the daily
+ *   figure is what it would take. A big calm number over a small warning read as "all is well"
+ *   when it was not — the server now says which it is (`daily.verdict`), and without that field
+ *   (an older server) the tile is exactly the one it was;
  * - red, when even spending nothing leaves the owner short on some date;
  * - "You have" — the wallet total — while there is no daily figure (no monthly income set yet,
  *   or a backend that does not send one).
  */
-export function SpendHero({ d, currency, cached, onSeeDue, fallback }: {
+export function SpendHero({ d, currency, cached, onSeeDue, onReviewPlans, fallback }: {
   d: AdvisorResponse
   currency: Currency
   cached: { isCached: boolean; cachedAt: string | null }
   /** Bring "Coming up" into view — the answer to "short on what?". */
   onSeeDue: () => void
+  /** Open Savings, where a plan can be made a wish or given a smaller payment. */
+  onReviewPlans: () => void
   /** Rendered when there is no daily figure: the wallet total and its check. */
   fallback: ReactNode
 }) {
@@ -63,6 +70,68 @@ export function SpendHero({ d, currency, cached, onSeeDue, fallback }: {
   }
 
   const pace = daily.paceDaily
+
+  // The pace cannot be kept. Only on the server's word, and only with the date it turns on.
+  if (daily.verdict === 'OVER_PACE' && daily.runsOutOn) {
+    const b = daily.breakdown
+    const until = formatDate(daily.until, lang, 'dayShort')
+    // Each sentence needs its own figures; with one missing, the plain fact is still true.
+    const why = daily.cause === 'GOALS' && b?.goals != null && (daily.safePerDayNoGoals ?? 0) > 0
+      ? t('fix.hero.causeGoals', { goals: money(b.goals, currency), until, safe: money(daily.safePerDayNoGoals ?? 0, currency) })
+      : daily.cause === 'SAVINGS' && b && (daily.safePerDayNoSavings ?? 0) > 0
+        ? t('fix.hero.causeSavings', { savings: money(b.savings, currency), until, safe: money(daily.safePerDayNoSavings ?? 0, currency) })
+        : pace == null ? null
+          : daily.cause === 'PACE' && (daily.safePerDayNoSavings ?? 0) > 0
+            ? t('fix.hero.causePace', { pace: money(pace, currency), safe: money(daily.safePerDayNoSavings ?? 0, currency) })
+            : t('fix.hero.paceOnly', { pace: money(pace, currency) })
+    // Plans are worth reviewing when they, or what is set aside, are what takes the room.
+    const plansFirst = daily.cause === 'GOALS' || daily.cause === 'SAVINGS'
+    return (
+      <Tile span={12} padding="hero" as="section">
+        <div className="flex items-start justify-between gap-3">
+          <h2 className="text-label uppercase text-amber-700">{t('fix.hero.overLabel')}</h2>
+          <div className="flex shrink-0 items-center gap-2">
+            {badge}
+            <span className="flex h-9 w-9 items-center justify-center rounded-chip bg-amber-50 text-amber-700" aria-hidden="true">
+              <AlertTriangle className="h-4 w-4" />
+            </span>
+          </div>
+        </div>
+        <p className="mt-3 text-hero tabular-nums text-slate-900">
+          {formatDate(daily.runsOutOn, lang, 'dayShort')}
+        </p>
+        {why && <p className="mt-2 text-sm text-slate-700">{why}</p>}
+        <p className="mt-1 text-sm font-medium tabular-nums text-slate-900">
+          {t('fix.hero.toReach', { until, safe: money(daily.safePerDay, currency) })}
+        </p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {plansFirst && (
+            <Button
+              label={t('fix.hero.reviewPlans')}
+              icon={<Target className="h-4 w-4" aria-hidden="true" />}
+              onClick={onReviewPlans}
+            />
+          )}
+          <Button
+            variant={plansFirst ? 'ghost' : 'secondary'}
+            label={t('home.hero.seeDue')}
+            icon={<ArrowDown className="h-4 w-4" aria-hidden="true" />}
+            onClick={onSeeDue}
+          />
+          {!plansFirst && (
+            <Button
+              variant="ghost"
+              label={t('fix.hero.reviewPlans')}
+              icon={<Target className="h-4 w-4" aria-hidden="true" />}
+              onClick={onReviewPlans}
+            />
+          )}
+        </div>
+        {b && <HowItWorks daily={daily} currency={currency} />}
+      </Tile>
+    )
+  }
+
   return (
     <Tile span={12} padding="hero" as="section">
       <div className="flex items-start justify-between gap-3">
@@ -150,10 +219,24 @@ function HowItWorks({ daily, currency }: { daily: AdvisorDaily; currency: Curren
             <span className="text-slate-600">{t('home.how.goingOut')}</span>
             <span className="tabular-nums text-expense">−{moneyFull(b.goingOut, currency)}</span>
           </div>
-          <div className={row}>
-            <span className="text-slate-600">{t('home.how.savings')}</span>
-            <span className="tabular-nums text-expense">−{moneyFull(b.savings, currency)}</span>
-          </div>
+          {/* One line, or its two halves when the server tells them apart and there are plans. */}
+          {b.setAside != null && b.goals != null && b.goals > 0 ? (
+            <>
+              <div className={row}>
+                <span className="text-slate-600">{t('home.how.savings')}</span>
+                <span className="tabular-nums text-expense">−{moneyFull(b.setAside, currency)}</span>
+              </div>
+              <div className={row}>
+                <span className="text-slate-600">{t('fix.goals.plans')}</span>
+                <span className="tabular-nums text-expense">−{moneyFull(b.goals, currency)}</span>
+              </div>
+            </>
+          ) : (
+            <div className={row}>
+              <span className="text-slate-600">{t('home.how.savings')}</span>
+              <span className="tabular-nums text-expense">−{moneyFull(b.savings, currency)}</span>
+            </div>
+          )}
           <p className="mt-1 rounded-control bg-slate-50 px-3 py-2.5 text-sm tabular-nums text-slate-900">
             {t('home.how.result', {
               net: moneyFull(b.net, currency),

@@ -1,3 +1,7 @@
+import type {
+  AdvisorBreakdownFix, AdvisorDailyFix, AdvisorGoal, AdvisorMeans, AdvisorOwe, GoalKind, TransactionFlow,
+} from './fixes'
+
 export type TransactionType = 'INCOME' | 'EXPENSE'
 export type TransactionSubType =
   | 'REGULAR_INCOME' | 'LOAN_RECEIVED' | 'LOAN_RETURNED_TO_ME'
@@ -88,6 +92,8 @@ export interface Transaction {
   repaidDebtId: number | null
   /** Salary-tree income only: the month this pay is for, YYYY-MM; null = its own month. Absent on an older server. */
   salaryMonth?: string | null
+  /** What the row counts as, decided by the server. Absent on an older server (see types/fixes.ts). */
+  flow?: TransactionFlow
 }
 
 export interface PageResponse<T> {
@@ -396,6 +402,10 @@ export interface InvestmentResponse {
   value?: number
   growth?: number
   growthPercent?: number | null
+  /** A savings goal kept as a wish: nothing is set aside for it. Absent on an older server. */
+  wish?: boolean
+  /** PLAN or WISH for a savings goal, null for anything else. Absent on an older server. */
+  goalKind?: GoalKind | null
 }
 
 export interface InvestmentRequest {
@@ -423,6 +433,8 @@ export interface InvestmentRequest {
   /** The month a savings goal's payments start, YYYY-MM-01. On update, a key left out keeps the
    *  stored month and null resets it to the purchase month. */
   paymentStartDate?: string | null
+  /** A savings goal as a wish (true) or a plan (false). Left out, the stored value is kept. */
+  wish?: boolean
 }
 
 export interface InvestmentContributeRequest {
@@ -681,7 +693,7 @@ export interface AdvisorIncomePart {
 }
 
 /** The window from today to `tightestOn`, in the words the "How is this worked out?" line uses. */
-export interface AdvisorDailyBreakdown {
+export interface AdvisorDailyBreakdown extends AdvisorBreakdownFix {
   have: number
   comingIn: number
   /** Bills and loan payments due inside the window. */
@@ -697,7 +709,7 @@ export interface AdvisorDailyBreakdown {
  * Optional on the response because the backend ships separately — a client must fall back to
  * "You have" plus the suggestions when it is absent.
  */
-export interface AdvisorDaily {
+export interface AdvisorDaily extends AdvisorDailyFix {
   /** The most the owner can spend each day without running short before `until`. */
   safePerDay: number
   until: string
@@ -767,4 +779,10 @@ export interface AdvisorResponse {
   savingsThisMonth?: AdvisorSavingsRow[]
   /** The month a salary recorded today is most likely for, YYYY-MM. Absent on an older backend. */
   suggestedSalaryMonth?: string
+  /** Whether a normal month fits what is asked of it. Absent on an older backend; null without an income. */
+  means?: AdvisorMeans | null
+  /** Every savings goal, plans first. Absent on an older backend. */
+  goals?: AdvisorGoal[]
+  /** What is left to repay and what is owed to the owner. Absent on an older backend. */
+  owe?: AdvisorOwe
 }

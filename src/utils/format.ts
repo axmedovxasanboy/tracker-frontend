@@ -165,6 +165,18 @@ export function money(amount: number, currency: Currency = 'UZS'): string {
 
 
 /**
+ * Whether the compact form of `amount` leaves digits out — "13,6 M" for 13.614.000 does, "8 M" for
+ * exactly 8.000.000 does not. Decides whether a tile owes the reader the exact figure as well.
+ */
+export function compactHides(amount: number): boolean {
+  const abs = Math.abs(snap(amount))
+  if (abs < 1_000) return false
+  // One decimal of the unit is what `money()` keeps: 100 for k, 100.000 for M, 100.000.000 for B.
+  const step = abs >= 1_000_000_000 ? 100_000_000 : abs >= 1_000_000 ? 100_000 : 100
+  return abs % step !== 0
+}
+
+/**
  * Lists, detail rows, ExplainModal rows and form summaries: "29.500.000 UZS".
  * UZS never renders a decimal, so no figure ever ends in ",00".
  */

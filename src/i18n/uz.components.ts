@@ -13,9 +13,9 @@ export const uz_components: Partial<Record<keyof typeof en_components, string>> 
   'cmp.err.amountCannotExceedRemaining': 'Summa qolgan miqdordan ({amount}) oshmasligi kerak.',
   'cmp.err.pickLoanToPay': 'Toʻlash uchun qarzni tanlang.',
   'cmp.err.pickBankLoanToPay': 'Toʻlash uchun bank kreditini tanlang.',
-  'cmp.err.selectBothCards': 'Ikkala tomonni ham tanlang',
+  'cmp.err.selectBothCards': 'Ikkala hamyonni ham tanlang.',
   'cmp.err.cashToCash': 'Kamida bir tomonda karta tanlang — naqddan naqdga oʻtkazish hech narsani oʻzgartirmaydi.',
-  'cmp.err.walletsMustDiffer': 'Joʻnatuvchi va qabul qiluvchi har xil boʻlishi kerak',
+  'cmp.err.walletsMustDiffer': 'Ikki xil hamyonni tanlang.',
   'cmp.err.enterValidAmount': 'Toʻgʻri summa kiriting',
   'cmp.err.valueNegative': 'Qiymat manfiy boʻlishi mumkin emas.',
   'cmp.err.nameFund': 'Favqulodda jamgʻarmangizga nom bering.',
@@ -25,8 +25,7 @@ export const uz_components: Partial<Record<keyof typeof en_components, string>> 
   'cmp.pageHeader.nextMonth': 'Keyingi oy',
 
   'cmp.state.transferring': 'Oʻtkazilmoqda…',
-
-  'cmp.action.topUp': 'Pul qoʻshish',
+  'cmp.action.topUp': 'Jamgʻarish',
   'cmp.action.useThis': 'shuni ishlatish',
 
   // ── Savings names ─────────────────────────────────────────────────────────
@@ -42,8 +41,8 @@ export const uz_components: Partial<Record<keyof typeof en_components, string>> 
   'cmp.investmentType.other': 'Boshqa',
 
   // ── ContributeInvestmentModal ─────────────────────────────────────────────
-  'cmp.contributeInvestment.title': '{name} ga qoʻshish',
-  'cmp.contributeInvestment.submit': 'Qoʻshish',
+  'cmp.contributeInvestment.title': '{name} ga jamgʻarish',
+  'cmp.contributeInvestment.submit': 'Jamgʻarish',
   'cmp.contributeInvestment.countsInvestments': 'Hamyondan boʻlsa, bu shu oyning investitsiyalariga hisoblanadi.',
   'cmp.contributeInvestment.countsEmergency': 'Hamyondan boʻlsa, bu shu oyning favqulodda jamgʻarmasiga hisoblanadi.',
 
@@ -53,7 +52,7 @@ export const uz_components: Partial<Record<keyof typeof en_components, string>> 
   'cmp.updateValue.currentValueLabel': 'Joriy qiymat ({currency})',
   'cmp.updateValue.submit': 'Qiymatni yangilash',
   'cmp.updateValue.whatChanged': 'Nima oʻzgardi?',
-  'cmp.updateValue.addedMoney': 'Pul qoʻshdim',
+  'cmp.updateValue.addedMoney': 'Pul jamgʻardim',
   'cmp.updateValue.addedMoneyHint': 'Hamyondan kiritgan pulingiz — shu oyning jamgʻarmasiga hisoblanadi.',
   'cmp.updateValue.valueMoved': 'Qiymati oshdi yoki tushdi',
   'cmp.updateValue.valueMovedHint': 'Aksiyalar qimmatlashdi yoki arzonladi — pul qoʻshilmadi.',
@@ -78,19 +77,19 @@ export const uz_components: Partial<Record<keyof typeof en_components, string>> 
   'cmp.paySubscription.title': '{name} ni toʻlash',
 
   // ── CheckInModal ──────────────────────────────────────────────────────────
-  'cmp.closeMonth.noWallets': 'Solishtirish uchun hamyon yoʻq.',
+  'cmp.closeMonth.noWallets': 'Tekshirish uchun hamyon yoʻq.',
   'cmp.closeMonth.appThinks': 'Ilova hisobiga koʻra:',
   'cmp.closeMonth.spent': 'Sarflandi ',
-  'cmp.closeMonth.surplus': 'Ortiqcha ',
+  'cmp.closeMonth.surplus': 'Kutilganidan koʻp ',
   'cmp.checkIn.recordFirst': 'Biror xaridni eslayapsizmi? Avval uni yozib qoʻying — kundalik xarajatga faqat izohsiz qolgan farq aylanishi kerak.',
   'cmp.checkIn.walletLabel': '{name} — hozirgi qoldiq',
   'cmp.checkIn.matches': 'Mos keladi',
-  'cmp.checkIn.willRecord': 'Bu tekshiruv yozadigan kundalik xarajat: {amount}',
-  'cmp.checkIn.willRecordSurplus': 'Bu tekshiruv kutilganidan {amount} ortiq pulni yozadi.',
+  'cmp.checkIn.willRecord': 'Bu tekshiruv {amount} kundalik xarajat yozadi.',
+  'cmp.checkIn.willRecordSurplus': 'Bu tekshiruv kutilganidan {amount} koʻp pulni yozadi.',
   'cmp.checkIn.willRecordNothing': 'Hammasi mos — hech narsa yozilmaydi.',
-  'cmp.checkIn.savedSpent': 'Tekshiruv saqlandi — {amount} kundalik xarajat yozildi.',
-  'cmp.checkIn.savedSurplus': 'Tekshiruv saqlandi — kutilganidan {amount} ortiq pul topildi.',
-  'cmp.checkIn.savedMatched': 'Tekshiruv saqlandi — hamyonlaringiz allaqachon mos edi.',
+  'cmp.checkIn.savedSpent': 'Hamyonlar tekshirildi — {amount} kundalik xarajat yozildi.',
+  'cmp.checkIn.savedSurplus': 'Hamyonlar tekshirildi — kutilganidan {amount} koʻp pul topildi.',
+  'cmp.checkIn.savedMatched': 'Hamyonlar tekshirildi — ular allaqachon mos edi.',
   'cmp.checkIn.loadFailed': 'Hamyonlarni yuklab boʻlmadi.',
 
   // ── PayBankInstallmentModal ───────────────────────────────────────────────
@@ -100,34 +99,33 @@ export const uz_components: Partial<Record<keyof typeof en_components, string>> 
   'cmp.payBankInstallment.recordedToast': 'Qoʻshildi · bank krediti toʻlovi {amount}',
 
   // ── PayBucketModal ────────────────────────────────────────────────────────
-  'cmp.payBucket.titleDonation': 'Xayriya qoʻshish',
-  'cmp.payBucket.titleEmergency': 'Favqulodda jamgʻarmangizga qoʻshish',
-  'cmp.payBucket.titleInvestments': 'Investitsiyaga qoʻshish',
+  'cmp.payBucket.titleDonation': 'Xayriya qilish',
+  'cmp.payBucket.titleEmergency': 'Favqulodda jamgʻarmaga jamgʻarish',
+  'cmp.payBucket.titleInvestments': 'Investitsiyaga jamgʻarish',
   'cmp.payBucket.recipient': 'Qabul qiluvchi',
   'cmp.payBucket.recipientPlaceholder': 'Kimga xayriya qildingiz',
   'cmp.payBucket.anonymous': 'Anonim',
   'cmp.payBucket.fundNamePlaceholder': 'Favqulodda jamgʻarma, yomgʻirli kun uchun va h.k.',
   'cmp.payBucket.investmentNamePlaceholder': 'Apple Inc., Koʻchmas mulk va h.k.',
   'cmp.payBucket.brokerPlatform': 'Broker / Platforma',
-  'cmp.payBucket.recordedToast': 'Qoʻshildi · {bucket} {amount}',
-  'cmp.payBucket.emergencyFundOption': 'Favqulodda jamgʻarma — hisobsiz',
-  'cmp.payBucket.payInto': 'Qayerga toʻlanadi',
-  'cmp.payBucket.newAccount': 'Yangi hisob…',
+  'cmp.payBucket.recordedToast': 'Xayriya qilindi · {amount}',
+  'cmp.payBucket.emergencyFundOption': 'Favqulodda jamgʻarma',
+  'cmp.payBucket.payInto': 'Qayerga',
+  'cmp.payBucket.newAccount': 'Yangi…',
   'cmp.payBucket.pickAccount': 'Qayerga borishini tanlang.',
-  'cmp.payBucket.noWalletHint': 'Bu shu oyning jamgʻarmasiga hisoblanmaydi — hamyonlaringizdan pul chiqmaydi.',
-  'cmp.payBucket.addedTo': '{account} ga qoʻshildi',
-  'cmp.payBucket.addedInvestments': '{account} ga qoʻshildi — shu oyning investitsiyalariga hisoblanadi',
-  'cmp.payBucket.addedEmergency': '{account} ga qoʻshildi — shu oyning favqulodda jamgʻarmasiga hisoblanadi',
-
+  'cmp.payBucket.noWalletHint': 'Bu shu oy ajratilgan pulga hisoblanmaydi — hamyonlaringizdan pul chiqmaydi.',
+  'cmp.payBucket.addedTo': '{account} ga jamgʻarildi',
+  'cmp.payBucket.addedInvestments': '{account} ga jamgʻarildi — shu oyning investitsiyalariga hisoblanadi',
+  'cmp.payBucket.addedEmergency': '{account} ga jamgʻarildi — shu oyning favqulodda jamgʻarmasiga hisoblanadi',
   // ── PayPersonalLoanModal ──────────────────────────────────────────────────
   'cmp.payPersonalLoan.noLoans': 'Qolgan qoldigʻi bor shaxsiy qarz yoʻq.',
   'cmp.payPersonalLoan.recordedToast': 'Qoʻshildi · {name} {amount}',
 
   // ── BalanceTransferModal ──────────────────────────────────────────────────
-  'cmp.balanceTransfer.title': 'Balansni oʻtkazish',
-  'cmp.balanceTransfer.fromCard': 'Qaysi kartadan *',
-  'cmp.balanceTransfer.toCard': 'Qaysi kartaga *',
-  'cmp.balanceTransfer.selectCard': 'Kartani tanlang…',
+  'cmp.balanceTransfer.title': 'Pul oʻtkazish',
+  'cmp.balanceTransfer.fromCard': 'Qayerdan',
+  'cmp.balanceTransfer.toCard': 'Qayerga',
+  'cmp.balanceTransfer.selectCard': 'Hamyonni tanlang…',
   'cmp.balanceTransfer.fromBalance': 'Manba qoldigʻi',
   'cmp.balanceTransfer.toBalance': 'Maqsad qoldigʻi',
   'cmp.balanceTransfer.exceedsBalance': 'Mavjud qoldiqdan oshadi ({balance})',
@@ -135,8 +133,7 @@ export const uz_components: Partial<Record<keyof typeof en_components, string>> 
   'cmp.balanceTransfer.infoPrefix': 'Ikkita tranzaksiya yaratiladi: manba kartada',
   'cmp.balanceTransfer.infoMid': ', maqsad kartada esa',
   'cmp.balanceTransfer.infoSuffix': '. Ikkalasi ham Tarix sahifasida koʻrinadi.',
-  'cmp.transfer.success': '{amount} muvaffaqiyatli oʻtkazildi',
-
+  'cmp.transfer.success': '{amount} oʻtkazildi',
   // ── TransactionDetailModal ────────────────────────────────────────────────
   'cmp.txDetail.title': 'Tranzaksiya tafsilotlari',
   'cmp.txDetail.transactionType': 'Tranzaksiya turi',

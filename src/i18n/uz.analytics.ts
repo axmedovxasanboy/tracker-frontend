@@ -27,7 +27,6 @@ export const uz_analytics: Record<keyof typeof en_analytics, string> = {
   'analytics.group.everyday': 'Kundalik xarajatlar',
   'analytics.group.bills': 'Toʻlovlar',
   'analytics.group.loans': 'Qarz toʻlovlari',
-  'analytics.group.given': 'Xayriya',
   'analytics.group.leftOver': 'Ortib qoldi',
 
   // ── A. Davr bir qatorda ─────────────────────────────────────────────────────────────────────

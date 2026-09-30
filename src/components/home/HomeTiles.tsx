@@ -6,6 +6,7 @@ import {
 import { Tile } from '../ui/Tile'
 import type { TileMdSpan, TileSpan } from '../ui/Tile'
 import { Button } from '../ui/Button'
+import { ExactAmount } from '../ui/ExactAmount'
 import { useLang } from '../../i18n/LanguageContext'
 import type { TKey } from '../../i18n/LanguageContext'
 import { formatDate, formatMonth, money, moneyFull, plural } from '../../utils/format'
@@ -228,6 +229,8 @@ export function YouHaveTile({ d, currency, span, mdSpan, hero = false, onCheck, 
       <p className={`mt-3 tabular-nums text-slate-900 ${hero ? 'text-hero whitespace-nowrap' : 'text-stat'}`}>
         {money(d.have, currency)}
       </p>
+      {/* With several wallets the rows below add up to it; with one or none, this is the only place. */}
+      {d.wallets.length <= 1 && <ExactAmount amount={d.have} currency={currency} className="mt-0.5" />}
       {extra}
       {d.wallets.length > 0 && (
         <ul className="mt-3 divide-y divide-hairline">
@@ -284,6 +287,8 @@ export function NextStepsTile({ steps, currency, span, mdSpan, onAct }: {
     }
     // The new "short" warning names the date; an older server sends it without one.
     if (s.code === 'advisor.s.short' && p.date) return t('home.s.short', vars)
+    // A donation is given, not put in.
+    if (s.code === 'advisor.s.setAside' && (p.bucket ?? s.bucket) === 'DONATION') return t('fix.s.give', vars)
     const key = SUGGESTION_KEY[s.code]
     return key ? t(key, vars) : s.text
   }
@@ -294,7 +299,7 @@ export function NextStepsTile({ steps, currency, span, mdSpan, onAct }: {
       case 'PAY_BANK':
       case 'PAY_DEBT': return t('page.shared.payButton')
       case 'CHECK_IN': return t('page.advisor.btn.checkIn')
-      case 'SET_ASIDE': return s.bucket === 'SAVINGS' ? t('action.add') : t('page.shared.payButton')
+      case 'SET_ASIDE': return t(s.bucket === 'DONATION' ? 'fix.give' : 'cmp.action.topUp')
       case 'ADD_GOAL': return t('page.advisor.btn.addGoal')
       case 'SET_INCOME': return t('page.advisor.btn.setIncome')
       default: return null

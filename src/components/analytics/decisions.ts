@@ -7,10 +7,12 @@ import type { AnalyticsFlow } from '../../types/analytics'
  */
 
 /**
- * A donation counts inside "Saved", as it does on History. Set to `false` and donations leave
- * "Saved" everywhere on the page and become their own "Given" segment in "Where it went".
+ * Whether a donation counts inside "Saved". The owner's answer (2026-09-30): no — a donation is
+ * "Given". So "Saved" excludes donations everywhere on the page, "Given" is its own segment in
+ * "Where it went", and the tile that lists both is titled "Set aside". History follows the same
+ * rule (pages/History.tsx), so the word shows the same figure on both pages.
  */
-export const DONATION_COUNTS_AS_SAVED: boolean = true
+export const DONATION_COUNTS_AS_SAVED: boolean = false
 
 /** The blunt line under the hero: "Without the bonus this month would be … short." */
 export const SHOW_WITHOUT_BONUS_LINE: boolean = true

@@ -20,7 +20,7 @@ const PARTS: { key: Part; series: Series; nameKey: TKey }[] = [
   { key: 'loans', series: 'loans', nameKey: 'analytics.group.loans' },
   { key: 'saved', series: 'saved', nameKey: 'shell.history.saved' },
   // Only when a donation is not counted as saved (see decisions.ts).
-  ...(DONATION_COUNTS_AS_SAVED ? [] : [{ key: 'given' as const, series: 'given' as const, nameKey: 'analytics.group.given' as const }]),
+  ...(DONATION_COUNTS_AS_SAVED ? [] : [{ key: 'given' as const, series: 'given' as const, nameKey: 'fix.given' as const }]),
 ]
 
 interface Row {
@@ -186,6 +186,10 @@ export function MonthByMonthTile({ d, onMonth }: {
             <th scope="col" className="py-1.5 pl-1 text-right font-medium">{t('shell.history.in')}</th>
             <th scope="col" className="py-1.5 pl-1 text-right font-medium">{t('shell.history.out')}</th>
             <th scope="col" className="py-1.5 pl-1 text-right font-medium">{t('shell.history.saved')}</th>
+            {/* Given has its own column whenever it is counted apart — else the row would not add up. */}
+            {!DONATION_COUNTS_AS_SAVED && (
+              <th scope="col" className="py-1.5 pl-1 text-right font-medium">{t('fix.given')}</th>
+            )}
             <th scope="col" className="py-1.5 pl-1 text-right font-medium">{t('analytics.group.leftOver')}</th>
           </tr>
         </thead>
@@ -208,6 +212,9 @@ export function MonthByMonthTile({ d, onMonth }: {
                 <td className="whitespace-nowrap pl-1 text-right text-slate-900" title={moneyExact(r.earned)}>{compact(r.earned)}</td>
                 <td className="whitespace-nowrap pl-1 text-right text-slate-900" title={moneyExact(r.out)}>{compact(r.out)}</td>
                 <td className="whitespace-nowrap pl-1 text-right text-slate-900" title={moneyExact(r.saved)}>{compact(r.saved)}</td>
+                {!DONATION_COUNTS_AS_SAVED && (
+                  <td className="whitespace-nowrap pl-1 text-right text-slate-900" title={moneyExact(r.given)}>{compact(r.given)}</td>
+                )}
                 <td
                   className={`whitespace-nowrap pl-1 text-right font-semibold ${r.leftOver <= -EVEN ? 'text-expense' : 'text-slate-900'}`}
                   title={moneyExact(r.leftOver)}

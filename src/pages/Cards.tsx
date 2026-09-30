@@ -15,6 +15,7 @@ import { Button, DisabledHint } from '../components/ui/Button'
 import { Field } from '../components/ui/Field'
 import { ListRow } from '../components/ui/ListRow'
 import { ErrorTile } from '../components/ui/ErrorTile'
+import { ExactAmount } from '../components/ui/ExactAmount'
 import { CacheBadge } from '../components/ui/CacheBadge'
 import { IncomeRequiredNotice } from '../components/ui/IncomeRequiredNotice'
 import { Skeleton } from '../components/ui/Skeleton'
@@ -129,6 +130,7 @@ function CardTile({ card, onOpen, onTopUp, onExplain, onEdit, onDelete }: {
         <p className="mt-2 text-stat tabular-nums text-slate-900" title={moneyExact(balance, card.currency)}>
           {money(balance, card.currency)}
         </p>
+        <ExactAmount amount={balance} currency={card.currency} className="mt-0.5" />
 
         {/* Always painted. The row this replaces was `sm:opacity-0 sm:group-hover:opacity-100` —
             a viewport query, so on a touch tablet these actions did not exist at all. */}
@@ -534,6 +536,7 @@ export function Cards() {
               rows={2}
               label={t('shell.wallets.youHave')}
               value={money(held)}
+              exact={held}
               icon={<Wallet className="h-4 w-4" />}
               onInfo={() => setInfo('total')}
             >
@@ -611,15 +614,9 @@ export function Cards() {
               </div>
 
               <p className="mt-3 text-stat tabular-nums text-slate-900" title={moneyExact(cashTotal)}>{money(cashTotal)}</p>
+              <ExactAmount amount={cashTotal} className="mt-0.5" />
 
-              {cashPot ? (
-                // Only when it explains something: the figure you typed, moved by cash spending since.
-                cashPot.initialBalance !== cashPot.currentBalance && (
-                  <p className="mt-2 text-sm tabular-nums text-slate-600">
-                    {t('page.cards.startingAmount', { amount: moneyFull(cashPot.initialBalance) })}
-                  </p>
-                )
-              ) : (
+              {!cashPot && (
                 <p className="mt-2 text-sm text-slate-600">{t('page.cards.cashBalancesEmptyHint')}</p>
               )}
 

@@ -2,6 +2,26 @@ import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from '
 import { extractErrorMessage } from '../api/client'
 import { getOnlineGeneration, subscribeOnlineRecovery } from '../context/BackendStatusContext'
 
+// ── "Something was written" ─────────────────────────────────────────────────────────────────────
+// The shell's Add form saves from any page, and cannot know which of that page's requests are now
+// stale. It bumps this instead, and every mounted hook re-runs — as a refresh, so whatever is on
+// screen stays readable while the new figures arrive.
+let dataGeneration = 0
+const dataListeners = new Set<() => void>()
+
+/** Tell every mounted `useApi` that the data behind it may have changed. */
+export function notifyDataChanged(): void {
+  dataGeneration += 1
+  dataListeners.forEach(fn => fn())
+}
+
+function subscribeDataChanged(onChange: () => void): () => void {
+  dataListeners.add(onChange)
+  return () => { dataListeners.delete(onChange) }
+}
+
+const getDataGeneration = () => dataGeneration
+
 interface UseApiState<T> {
   data: T | null
   loading: boolean
@@ -98,11 +118,13 @@ export function useApi<T>(
   // `api/client.ts` substitutes a localStorage payload up to seven days old for a failed GET, and
   // resolves it as a success — so the figures survived the recovery that was supposed to fix them.
   const onlineGeneration = useSyncExternalStore(subscribeOnlineRecovery, getOnlineGeneration)
+  // So does a write made from the shell (see `notifyDataChanged`).
+  const dataChanged = useSyncExternalStore(subscribeDataChanged, getDataGeneration)
 
   useEffect(() => {
     execute()
     return () => { runIdRef.current++ }
-  }, [execute, onlineGeneration])
+  }, [execute, onlineGeneration, dataChanged])
 
   return { ...state, refetch: execute }
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Check, Copy, Info, Save } from 'lucide-react'
 import { Button } from '../components/ui/Button'
 import { ErrorTile } from '../components/ui/ErrorTile'
@@ -47,12 +47,15 @@ export function DeveloperSettings() {
 
   const [webhookUrl, setWebhookUrl] = useState('')
   const [webViewUrl, setWebViewUrl] = useState('')
+  // True from the first keystroke until a save: a re-run of the settings read (the shell's Add
+  // form triggers one on every page) must not wipe an address still being typed.
+  const edited = useRef(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
 
   useEffect(() => {
-    if (settings.data) {
+    if (settings.data && !edited.current) {
       setWebhookUrl(settings.data.telegramWebhookUrl ?? '')
       setWebViewUrl(settings.data.telegramWebViewUrl ?? '')
     }
@@ -79,6 +82,7 @@ export function DeveloperSettings() {
         telegramWebViewUrl: webViewUrl.trim(),
       }
       await settingsApi.update(req)
+      edited.current = false
       settings.refetch()
       showSuccess(t('page.developer.savedToast'))
     } catch (err: unknown) {
@@ -116,7 +120,7 @@ export function DeveloperSettings() {
         label={t('page.developer.webhookUrlHeading')}
         help={`${t('page.developer.webhookDescPre')} setWebhook ${t('page.developer.webhookDescPost')} https://your-tunnel.example/webhook`}
         value={webhookUrl}
-        onChange={setWebhookUrl}
+        onChange={v => { edited.current = true; setWebhookUrl(v) }}
         placeholder="https://your-tunnel.example/webhook"
         warning={webhookWarn}
         copied={copied === 'webhook'}
@@ -128,7 +132,7 @@ export function DeveloperSettings() {
         label={t('page.developer.webViewUrlHeading')}
         help={t('page.developer.webViewDesc')}
         value={webViewUrl}
-        onChange={setWebViewUrl}
+        onChange={v => { edited.current = true; setWebViewUrl(v) }}
         placeholder="https://your-frontend.example"
         warning={webViewWarn}
         copied={copied === 'webview'}
