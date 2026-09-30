@@ -324,19 +324,30 @@ function RuleReasons({ p }: { p: ProfileResponse }) {
   const why = reasonText(p.rule?.reason)
   const next = p.nextMonth
   const nextWhy = next ? reasonText(next.reason) : null
-  if (!why && !next) return null
+  // Monthly loan payments under 10% of the income do not lighten the rule — said, so a loan the
+  // owner knows they pay is not silently missing from the reason above.
+  const smallLoans = (flag: boolean | undefined, limit: number | undefined): string | null =>
+    !flag ? null
+      : limit != null ? t('shell.profile.smallLoans', { limit: moneyFull(limit) }) : t('shell.profile.smallLoansNoLimit')
+  const small = smallLoans(p.rule?.smallMonthlyLoans, p.rule?.monthlyLoanLimit)
+  const nextSmall = next ? smallLoans(next.smallMonthlyLoans, next.monthlyLoanLimit ?? p.rule?.monthlyLoanLimit) : null
+  if (!why && !small && !next) return null
 
   return (
     <div className="mt-4 border-t border-hairline pt-4">
       {why && <p className="text-sm text-slate-600">{why}</p>}
+      {small && <p className={`${why ? 'mt-1 ' : ''}text-xs leading-snug tabular-nums text-slate-500`}>{small}</p>}
       {next && (
-        <p className={`${why ? 'mt-3 ' : ''}rounded-control bg-slate-50 px-3 py-2.5 text-xs leading-relaxed tabular-nums text-slate-600`}>
-          {t(nextWhy ? 'shell.profile.fromMonth' : 'shell.profile.fromMonthShort', {
-            month: formatMonth(next.month, lang),
-            percents: known(next.buckets).map(b => `${percentText(b.percent)}%`).join(' · '),
-            reason: nextWhy ?? '',
-          })}
-        </p>
+        <div className={`${why || small ? 'mt-3 ' : ''}rounded-control bg-slate-50 px-3 py-2.5 text-xs leading-relaxed tabular-nums text-slate-600`}>
+          <p>
+            {t(nextWhy ? 'shell.profile.fromMonth' : 'shell.profile.fromMonthShort', {
+              month: formatMonth(next.month, lang),
+              percents: known(next.buckets).map(b => `${percentText(b.percent)}%`).join(' · '),
+              reason: nextWhy ?? '',
+            })}
+          </p>
+          {nextSmall && <p className="mt-1 text-slate-500">{nextSmall}</p>}
+        </div>
       )}
     </div>
   )

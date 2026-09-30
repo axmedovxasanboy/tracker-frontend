@@ -26,6 +26,9 @@ export interface ProfileNextMonth {
   loanPayments: number
   leftForSavings: number
   buckets: { bucket: Bucket; percent: number; normalMonthAmount: number }[]
+  /** As on `rule`, for that month. Not sent today — read when a server does. */
+  smallMonthlyLoans?: boolean
+  monthlyLoanLimit?: number
 }
 
 /** One kind of income this month: a category (or none), by the name it carries. */
@@ -109,7 +112,17 @@ export interface ProfileResponse {
   /** How `savingsBase` is made up. Absent on an older server. */
   baseParts?: ProfileBaseParts
   /** Null while the monthly income is unset. */
-  rule: { reason: ProfileReason; cutoff: number | null } | null
+  rule: {
+    reason: ProfileReason
+    cutoff: number | null
+    /**
+     * Monthly loan payments to people are at or under `monthlyLoanLimit`, so they do not count as
+     * "money you owe" for the rule (a fast-repay loan always counts). Absent on an older server.
+     */
+    smallMonthlyLoans?: boolean
+    /** 10% of the monthly income. */
+    monthlyLoanLimit?: number
+  } | null
   /** Always the three, in this order: DONATION, EMERGENCY, INVESTMENTS. */
   buckets: ProfileBucket[]
   totalPercent: number
