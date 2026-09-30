@@ -5,6 +5,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { TransactionModal } from '../components/transactions/TransactionModal'
 import { TransactionDetailModal } from '../components/transactions/TransactionDetailModal'
 import { TransactionFilters } from '../components/transactions/TransactionFilters'
+import { CategoryBars } from '../components/analytics/CategoryBars'
+import { LinkButton } from '../components/home/HomeTiles'
 import { Button } from '../components/ui/Button'
 import { CacheBadge } from '../components/ui/CacheBadge'
 import { ErrorTile } from '../components/ui/ErrorTile'
@@ -128,6 +130,7 @@ const HALF = 'md:col-span-6 xl:col-span-6'
 const FULL = 'md:col-span-6 xl:col-span-12'
 
 const YM = /^\d{4}-\d{2}$/
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/
 
 interface Props {
   currency: Currency
@@ -143,7 +146,9 @@ export function History({ currency }: Props) {
 
   const thisMonth = monthLocal()
   const [month, setMonth] = useState(() => {
-    const asked = searchParams.get('month') ?? searchParams.get('startDate')?.slice(0, 7) ?? ''
+    // `from` is how Analytics links to one day (or a few): its month is the month to open.
+    const asked = searchParams.get('month') ?? searchParams.get('startDate')?.slice(0, 7)
+      ?? searchParams.get('from')?.slice(0, 7) ?? ''
     return YM.test(asked) && asked <= thisMonth ? asked : thisMonth
   })
 
@@ -153,9 +158,17 @@ export function History({ currency }: Props) {
       const v = searchParams.get(key)
       return v && !Number.isNaN(Number(v)) ? Number(v) : ''
     }
+    // `from` / `to` (YYYY-MM-DD) open the list already narrowed to those days — a day tapped on
+    // Analytics. Only days inside the month on screen count; anything else is ignored.
+    const day = (key: string): string => {
+      const v = searchParams.get(key) ?? ''
+      return ISO_DAY.test(v) && v.slice(0, 7) === month ? v : ''
+    }
     const type = searchParams.get('type')
     return {
       ...DEFAULT_FILTERS,
+      startDate: day('from'),
+      endDate: day('to'),
       type: type === 'INCOME' || type === 'EXPENSE' ? type : '',
       categoryId: num('categoryId'),
       cardId: num('cardId'),
@@ -427,6 +440,13 @@ export function History({ currency }: Props) {
                     <CacheBadge isCached cachedAt={monthTx.cachedAt} />
                   </div>
                 )}
+                {/* The same month, from further away: where it all went, and how it compares. */}
+                <div className="mt-2">
+                  <LinkButton
+                    label={t('analytics.fromHistory', { month: formatDate(month, lang, 'monthName') })}
+                    onClick={() => navigate(`/analytics?month=${month}`)}
+                  />
+                </div>
               </Tile>
 
               <Tile span={6} mdSpan={6} as="section" className={dim}>
@@ -434,36 +454,19 @@ export function History({ currency }: Props) {
                 {spending.top.length === 0 && spending.other === 0 ? (
                   <p className="mt-3 text-sm text-slate-500">{t('shell.history.nothingSpent', { month: monthLabel })}</p>
                 ) : (
-                  <ul className="mt-4 space-y-3">
-                    {(() => {
-                      const peak = Math.max(spending.top[0]?.amount ?? 0, spending.other)
-                      const bar = (key: string, label: string, amount: number, color: string) => (
-                        <li key={key}>
-                          <div className="flex items-baseline justify-between gap-3">
-                            <span className="min-w-0 truncate text-sm text-slate-700">{label}</span>
-                            <span className="shrink-0 text-sm font-semibold tabular-nums text-slate-900" title={moneyExact(amount)}>
-                              {money(amount)}
-                            </span>
-                          </div>
-                          <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100" aria-hidden="true">
-                            <div
-                              className="h-full rounded-full"
-                              style={{
-                                width: `${peak > 0 ? Math.max(3, (amount / peak) * 100) : 0}%`,
-                                backgroundColor: color,
-                              }}
-                            />
-                          </div>
-                        </li>
-                      )
-                      return (
-                        <>
-                          {spending.top.map(e => bar(`c-${e.category.id}`, categoryName(e.category), e.amount, e.category.color))}
-                          {spending.other > 0 && bar('other', t('shell.history.other'), spending.other, '#94a3b8')}
-                        </>
-                      )
-                    })()}
-                  </ul>
+                  <CategoryBars
+                    items={[
+                      ...spending.top.map(e => ({
+                        key: `c-${e.category.id}`,
+                        label: categoryName(e.category),
+                        amount: e.amount,
+                        color: e.category.color,
+                      })),
+                      ...(spending.other > 0
+                        ? [{ key: 'other', label: t('shell.history.other'), amount: spending.other, color: '#94a3b8' }]
+                        : []),
+                    ]}
+                  />
                 )}
                 {categories.error && !categories.data && (
                   <ErrorTile compact className="mt-3" message={categories.error} onRetry={categories.refetch} />

@@ -30,6 +30,28 @@ export default {
         expense: '#be123c',
         ground: '#F5F5F7',      // the one page background — never tint a page or a section
         hairline: 'rgba(0,0,0,.06)',
+        // The Analytics page's chart marks (ANALYTICS-SPEC.md §7). Marks only — text never wears
+        // these. Each set was run through the data-viz palette validator in the order it is
+        // stacked on the page (colour-blind separation, normal-vision floor, 3:1 on white):
+        //   in:    pay → bonus → other            one hue, dark → light
+        //   out:   everyday → bills → loans → saved (→ given)
+        //   own:   wallets → emergency → investments → goals
+        // `income` (#047857) is `chart.bonus`'s twin on purpose: In stays the app's green.
+        chart: {
+          pay: '#064e3b',
+          bonus: '#047857',
+          other: '#10b981',
+          everyday: '#2563eb',
+          bills: '#d97706',
+          loans: '#7c3aed',
+          saved: '#db2777',
+          given: '#0891b2',
+          wallets: '#0369a1',
+          emergency: '#d97706',
+          investments: '#0d9488',
+          goals: '#4f46e5',
+          muted: '#94a3b8',     // last month's line, "Other", "Not itemised"
+        },
       },
       // The one layer the contract's z-scale names that Tailwind has no default for. Without it
       // `z-60` compiles to nothing and a toast fired from an open dialog falls behind it.

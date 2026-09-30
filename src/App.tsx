@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { BackendStatusProvider } from './context/BackendStatusContext'
 import { ToastProvider } from './context/ToastContext'
@@ -12,6 +12,7 @@ import { MobileNavProvider, useAppBarMounted } from './components/ui/PageHeader'
 import { Sidebar } from './components/layout/Sidebar'
 import { OfflineBanner } from './components/ui/OfflineBanner'
 import { Spinner } from './components/ui/Spinner'
+import { AnalyticsLoadFailed, AnalyticsPageFallback } from './components/analytics/AnalyticsFallback'
 import { Advisor } from './pages/Advisor'
 import { History } from './pages/History'
 import { Cards } from './pages/Cards'
@@ -24,6 +25,16 @@ import { Developer } from './pages/Developer'
 import { Login } from './pages/Login'
 import { Signup } from './pages/Signup'
 import type { Currency } from './types'
+
+/**
+ * Analytics is the one page that draws charts, so it is the one page loaded on demand: the chart
+ * library rides in its chunk and the other pages never download it. A chunk that cannot be
+ * fetched (a tab left open across a deploy) becomes a retry tile instead of a blank app.
+ */
+const Analytics = lazy(() =>
+  import('./pages/Analytics')
+    .then(m => ({ default: m.Analytics }))
+    .catch(() => ({ default: AnalyticsLoadFailed })))
 
 // Multi-currency support was removed — the app is UZS-only. Kept as a constant (rather than
 // inlining 'UZS' at every call site) so prop names below stay simple and unchanged.
@@ -139,9 +150,13 @@ function AppRoutes() {
               <OfflineBanner />
             </div>
             <Routes>
-              {/* The six places (2026-09 rebuild). */}
+              {/* The six places (2026-09 rebuild), then Profile and Analytics. */}
               <Route path="/" element={<Advisor currency={currency} />} />
               <Route path="/history" element={<History currency={currency} />} />
+              <Route
+                path="/analytics"
+                element={<Suspense fallback={<AnalyticsPageFallback />}><Analytics /></Suspense>}
+              />
               <Route path="/wallets" element={<Cards />} />
               <Route path="/savings" element={<Savings />} />
               <Route path="/loans" element={<Loans />} />
@@ -152,7 +167,8 @@ function AppRoutes() {
                   route stays so bookmarks and the Telegram web-view URL keep working. */}
               <Route path="/developer" element={<Developer />} />
               {/* Old addresses: bookmarks, the bot's links and muscle memory still land somewhere. */}
-              <Route path="/summary" element={<Moved to="/history" />} />
+              {/* The old Summary was the page with the charts; Analytics is where those live now. */}
+              <Route path="/summary" element={<Moved to="/analytics" />} />
               <Route path="/transactions" element={<Moved to="/history" />} />
               <Route path="/months" element={<Moved to="/history" />} />
               <Route path="/cards" element={<Moved to="/wallets" />} />
