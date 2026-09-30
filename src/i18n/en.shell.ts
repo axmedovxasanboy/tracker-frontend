@@ -180,9 +180,10 @@ export const en_shell = {
   'shell.profile.bonus': 'Bonus this month',
   'shell.profile.base': 'Savings base',
   'shell.profile.levelResultNext': 'Level {n} (Level {next} at {amount})',
-  // The percentages apply to salary + avans + bonus; what is left after bills only picks them.
+  // The percentages apply to the monthly income + bonus; what is left after bills only picks them.
   'shell.profile.baseLadder': 'Your savings base',
-  'shell.profile.incomeUntilSalary': 'Your monthly income — until your salary arrives',
+  'shell.profile.incomeFromSettings': 'Monthly income (from Settings)',
+  'shell.profile.baseNote': 'Recording your salary doesn’t change these targets — only a bonus does. Change your monthly income in Settings.',
   'shell.profile.setAsideTitle': 'To set aside this month',
   'shell.profile.percentOf': '{percent}% of {base}',
   'shell.profile.withoutBonus': 'In a month without a bonus: {amount}',
@@ -194,7 +195,7 @@ export const en_shell = {
   'shell.profile.setAsideSoFar': 'Set aside this month',
   'shell.profile.ofIncome': '{percent}% of your income',
   'shell.profile.ofTarget': 'of {amount}',
-  'shell.profile.ofBase': '{percent}% of your salary + avans + bonus',
+  'shell.profile.ofBase': '{percent}% of your monthly income + bonus',
   'shell.profile.overAdvice': '+{amount} over the advice',
   'shell.profile.carried': '+ {amount} carried from {month}',
 } as const

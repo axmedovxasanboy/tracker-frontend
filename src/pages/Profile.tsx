@@ -181,7 +181,7 @@ function SoFarTile({ p }: { p: ProfileResponse }) {
   const { t, lang, categoryName } = useLang()
   const income = p.incomeThisMonth
   const allocated = p.allocatedThisMonth
-  // Only what the savings percentages apply to — salary, avans, bonus. Other income, and the
+  // The owner's pay — salary, avans, bonus (the server's `inBase`). Other income, and the
   // borrowed or paid-back money the server already leaves out, are not listed (owner's call).
   const incomeLines = (income?.lines ?? [])
     .filter(l => l.inBase !== false)
@@ -347,6 +347,12 @@ function RuleReasons({ p }: { p: ProfileResponse }) {
 function LadderTile({ p, onChangeIncome }: { p: ProfileResponse; onChangeIncome: () => void }) {
   const { t, categoryName } = useLang()
   const parts = p.baseParts
+  // The base is the monthly income from Settings plus this month's bonus: recording salary or
+  // avans never moves the targets. The server then lists the bonus lines only; when the lines do
+  // not add up to the bonus (none sent, or an older server's salary lines), one rung carries it.
+  const bonusLines = [...(parts?.lines ?? [])].sort((a, b) => b.amount - a.amount)
+  const bonusLinesAddUp = !!parts && bonusLines.length > 0
+    && Math.abs(bonusLines.reduce((sum, l) => sum + l.amount, 0) - parts.bonus) < 1
   return (
     // Last on the page and alone in its row, so it takes the full width with the two ladders side
     // by side (stacked on a phone) rather than leaving half a row empty.
@@ -376,19 +382,24 @@ function LadderTile({ p, onChangeIncome }: { p: ProfileResponse; onChangeIncome:
         </div>
 
         <div>
-          {/* The savings base: what the percentages apply to — salary, avans and bonus. The divider
-              only separates the two ladders while they are stacked. */}
+          {/* The savings base: what the percentages apply to — the monthly income and any bonus. The
+              divider only separates the two ladders while they are stacked. */}
           <h3 className="mt-4 border-t border-hairline pt-3 text-label uppercase text-slate-500 md:mt-3 md:border-t-0 md:pt-0">{t('shell.profile.baseLadder')}</h3>
           <dl className="mt-1">
             {parts ? (
               parts.usesStableIncome ? (
-                // Before the salary lands, the income in Settings stands in for it; a bonus still adds.
                 <>
-                  <Rung label={t('shell.profile.incomeUntilSalary')} amount={parts.stableIncome} />
-                  {parts.bonus > 0 && <Rung sign="+" label={t('shell.profile.bonus')} amount={parts.bonus} />}
+                  <Rung label={t('shell.profile.incomeFromSettings')} amount={parts.stableIncome} />
+                  {bonusLinesAddUp
+                    ? bonusLines.map((l, i) => (
+                      <Rung key={`${l.categoryId ?? 'none'}-${i}`} sign="+"
+                        label={categoryName({ name: l.name, nameUz: l.nameUz })} amount={l.amount} />
+                    ))
+                    : parts.bonus > 0 && <Rung sign="+" label={t('shell.profile.bonus')} amount={parts.bonus} />}
                 </>
               ) : (
-                [...(parts.lines ?? [])].sort((a, b) => b.amount - a.amount).map((l, i) => (
+                // An older server builds the base from the salary, avans and bonus it received.
+                bonusLines.map((l, i) => (
                   <Rung key={`${l.categoryId ?? 'none'}-${i}`} sign={i === 0 ? undefined : '+'}
                     label={categoryName({ name: l.name, nameUz: l.nameUz })} amount={l.amount} />
                 ))
@@ -404,6 +415,9 @@ function LadderTile({ p, onChangeIncome }: { p: ProfileResponse; onChangeIncome:
             )}
             <Rung sign="=" strong label={t('shell.profile.base')} amount={p.savingsBase} />
           </dl>
+          {parts?.usesStableIncome && (
+            <p className="mt-1 text-xs leading-snug text-slate-500">{t('shell.profile.baseNote')}</p>
+          )}
         </div>
       </div>
     </Tile>

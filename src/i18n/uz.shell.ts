@@ -174,7 +174,8 @@ export const uz_shell: Partial<Record<keyof typeof en_shell, string>> = {
   'shell.profile.base': 'Jamgʻarma asosi',
   'shell.profile.levelResultNext': '{n}-daraja ({next}-daraja: {amount} dan)',
   'shell.profile.baseLadder': 'Jamgʻarma asosingiz',
-  'shell.profile.incomeUntilSalary': 'Oylik daromadingiz — maosh kelguncha',
+  'shell.profile.incomeFromSettings': 'Oylik daromad (Sozlamalardan)',
+  'shell.profile.baseNote': 'Maoshni yozish bu maqsadlarni oʻzgartirmaydi — faqat bonus oʻzgartiradi. Oylik daromadni Sozlamalarda oʻzgartiring.',
   'shell.profile.setAsideTitle': 'Shu oy ajratiladigan pul',
   'shell.profile.percentOf': '{base} ning {percent}%',
   'shell.profile.withoutBonus': 'Bonussiz oyda: {amount}',
@@ -185,7 +186,7 @@ export const uz_shell: Partial<Record<keyof typeof en_shell, string>> = {
   'shell.profile.setAsideSoFar': 'Shu oy ajratilgan',
   'shell.profile.ofIncome': 'daromadingizning {percent}%',
   'shell.profile.ofTarget': '{amount} dan',
-  'shell.profile.ofBase': 'maosh, avans va bonusingizning {percent}%',
+  'shell.profile.ofBase': 'oylik daromadingiz va bonusingizning {percent}%',
   'shell.profile.overAdvice': '+{amount} tavsiyadan ortiq',
   'shell.profile.carried': '+ {amount} {month} oyidan oʻtgan',
 }

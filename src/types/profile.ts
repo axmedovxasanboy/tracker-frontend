@@ -34,18 +34,22 @@ export interface ProfileIncomeLine {
   name: string
   nameUz: string | null
   amount: number
-  /** False for income the savings base leaves out (anything but salary, avans and bonus). */
+  /** False for income that is not pay (anything but salary, avans and bonus). */
   inBase?: boolean
 }
 
-/** What the savings base is made of: salary + avans + bonus received this month. */
+/**
+ * What the savings base is made of: the monthly income from Settings + this month's bonus.
+ * Recording salary or avans never moves it. (An older server built it from the salary, avans and
+ * bonus received, with `usesStableIncome` false once the salary had arrived.)
+ */
 export interface ProfileBaseParts {
   salaryReceived: number
   stableIncome: number
-  /** The Settings income stands in while this month's salary has not arrived yet. */
+  /** Always true now; false only on an older server, once this month's salary had arrived. */
   usesStableIncome: boolean
   bonus: number
-  /** Salary, avans and bonus lines, largest first. */
+  /** The bonus-category lines, possibly none (an older server: salary, avans and bonus lines). */
   lines: ProfileIncomeLine[]
 }
 
@@ -64,7 +68,7 @@ export interface ProfileAllocatedLine {
   amount: number
   /** Null while there is no income this month. */
   percentOfIncome: number | null
-  /** Its share of the savings base (salary + avans + bonus). Absent on an older server. */
+  /** Its share of the savings base (monthly income + bonus). Absent on an older server. */
   percentOfBase?: number | null
   /** What this month asks for; null when nothing is asked. */
   target: number | null
@@ -100,7 +104,7 @@ export interface ProfileResponse {
   loanPayments: number
   leftForSavings: number
   bonusThisMonth: number
-  /** What the percentages apply to: salary + avans + bonus received this month. */
+  /** What the percentages apply to: the monthly income from Settings + this month's bonus. */
   savingsBase: number
   /** How `savingsBase` is made up. Absent on an older server. */
   baseParts?: ProfileBaseParts
