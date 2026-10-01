@@ -27,9 +27,15 @@ const TONE: Record<ListRowTone, string> = {
  *
  * The card layout it replaces spent ~110px on ~45px of content, because the actions had a row of
  * their own at the foot and every secondary field wrapped onto its own line. Here the row is a
- * single line on a pointer screen (title · detail … amount) and two lines on a phone, where the
+ * single line on a pointer screen (title · detail … amount) and two or three on a phone, where the
  * 72px height is also the touch target. Rows carry no background, no border and no radius of
  * their own: `ListTile` frames the whole list once and separates them with one hairline.
+ *
+ * On a phone the title is what a row is read by, so it has a line to itself beside the amount and
+ * may wrap to a second; the badges and the detail sit on the line under it, which runs the full
+ * width — under the amount too. (Sharing one line, title and badge were left ~84px at 390px and
+ * "Kartoshka puli" read "K.".) The amount never wraps. The two layouts are separate blocks, one
+ * hidden at each width, so the pointer layout is exactly what it was.
  *
  * `actions` are collapsed into the shared `ActionMenu` so they cost width, never height. Its
  * `revealOnHover` mode is scoped to this row's own `group/row`, never to a `group` an ancestor may
@@ -57,6 +63,12 @@ export function ListRow({
   const hasCaption = amountCaption != null && amountCaption !== ''
   // A phone stacks the detail under the title, so only a row that HAS a second line pays for one.
   const height = hasSubtitle || hasCaption ? 'min-h-[72px]' : 'min-h-[56px]'
+  const amountBlock = (
+    <>
+      <p className={`whitespace-nowrap text-sm font-semibold tabular-nums ${TONE[amountTone]}`}>{amount}</p>
+      {hasCaption && <p className="text-[11px] tabular-nums text-slate-500">{amountCaption}</p>}
+    </>
+  )
 
   return (
     <div
@@ -84,8 +96,22 @@ export function ListRow({
     >
       {leading && <div className="shrink-0">{leading}</div>}
 
-      {/* Stacked on a phone (two lines, 72px), one baseline-aligned line from sm up. */}
-      <div className="flex min-w-0 flex-1 flex-col sm:flex-row sm:items-baseline sm:gap-2">
+      {/* Below sm: title (up to two lines) beside the amount, then badges and detail under both. */}
+      <div className="min-w-0 flex-1 sm:hidden">
+        <div className="flex items-start gap-3">
+          <span className="line-clamp-2 min-w-0 flex-1 text-sm font-medium tabular-nums text-slate-900 [overflow-wrap:anywhere]">{title}</span>
+          {amount != null && <div className="shrink-0 text-right">{amountBlock}</div>}
+        </div>
+        {(badges || hasSubtitle) && (
+          <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+            {badges}
+            {hasSubtitle && <p className="min-w-0 truncate text-xs tabular-nums text-slate-500">{subtitle}</p>}
+          </div>
+        )}
+      </div>
+
+      {/* From sm up: one baseline-aligned line, and the amount in a column of its own. */}
+      <div className="hidden min-w-0 flex-1 sm:flex sm:items-baseline sm:gap-2">
         <div className="flex min-w-0 items-center gap-1.5">
           <span className="truncate text-sm font-medium tabular-nums text-slate-900">{title}</span>
           {badges && <span className="flex shrink-0 items-center gap-1.5">{badges}</span>}
@@ -95,14 +121,14 @@ export function ListRow({
         )}
       </div>
 
-      {amount != null && (
-        <div className="shrink-0 text-right">
-          <p className={`whitespace-nowrap text-sm font-semibold tabular-nums ${TONE[amountTone]}`}>{amount}</p>
-          {hasCaption && <p className="text-[11px] tabular-nums text-slate-500">{amountCaption}</p>}
+      {amount != null && <div className="hidden shrink-0 text-right sm:block">{amountBlock}</div>}
+
+      {actions && actions.length > 0 && (
+        // On a phone the 44px target leans into the row's own padding, which hands the title 12px.
+        <div className="shrink-0 max-sm:-ml-1 max-sm:-mr-2">
+          <ActionMenu actions={actions} revealOnHover />
         </div>
       )}
-
-      {actions && actions.length > 0 && <ActionMenu actions={actions} revealOnHover />}
     </div>
   )
 }

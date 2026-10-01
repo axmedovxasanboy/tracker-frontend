@@ -1,3 +1,4 @@
+import type { ProfileLevelFields } from './levels'
 /**
  * `GET /profile` — the owner's level and savings rule, worked out from their monthly income.
  * Money is UZS, as numbers; months are YYYY-MM.
@@ -89,7 +90,7 @@ export interface ProfileAllocatedThisMonth {
   lines: ProfileAllocatedLine[]
 }
 
-export interface ProfileResponse {
+export interface ProfileResponse extends ProfileLevelFields {
   username: string
   month: string
   missingStableIncome: boolean

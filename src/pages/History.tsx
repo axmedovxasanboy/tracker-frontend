@@ -779,7 +779,7 @@ function GroupRow({ icon, title, detail, amount, open, onToggle }: {
       {amount && (
         <span className="shrink-0 whitespace-nowrap text-sm font-semibold tabular-nums text-slate-900">{amount}</span>
       )}
-      <span className="-my-1.5 flex h-11 w-11 shrink-0 items-center justify-center text-slate-500" aria-hidden="true">
+      <span className="-my-1.5 flex h-11 w-11 shrink-0 items-center justify-center text-slate-500 max-sm:-ml-1 max-sm:-mr-2" aria-hidden="true">
         <ChevronDown className={`h-5 w-5 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
       </span>
     </button>

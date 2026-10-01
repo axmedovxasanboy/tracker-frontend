@@ -1,0 +1,76 @@
+/**
+ * English strings for levels and savings rules (LEVELS-ALLOCATION-SPEC.md §2.7).
+ * `uz.levels.ts` is a full Record of these keys, so a missing translation is a compile error.
+ */
+export const en_levels = {
+
+  // ── The Savings rules page ──────────────────────────────────────────────────────────────────────────
+  'lvl.title': 'Savings rules',
+  'lvl.settingsHelp': 'How much each level sets aside, with loans and without.',
+  'lvl.change': 'Change',
+  'lvl.now': 'Now',
+  'lvl.yourSituation': 'Your situation',
+  'lvl.thisMonth': 'This month',
+  'lvl.tabs': 'Level',
+  'lvl.tabNow': 'Level {n}, the one you are on',
+  'lvl.band.first': 'Level {n} · under {to} left after bills',
+  'lvl.band.middle': 'Level {n} · {from} to {to} left after bills',
+  'lvl.band.top': 'Level {n} · {from} or more left after bills',
+  'lvl.band.five': 'Level 5 · after three months in a row with {amount} of pay or more on Level 4. It stays until three months in a row under it.',
+  'lvl.s.noDebt': 'No loans',
+  'lvl.s.bank': 'Bank loan',
+  'lvl.s.people': 'Loans from people',
+  'lvl.s.both': 'Bank loan and loans from people',
+  'lvl.s.heavy': 'Heavy loans (over 70% of income)',
+  'lvl.s.more': '{cutoff} or more left',
+  'lvl.s.under': 'under {cutoff} left',
+  'lvl.s.withLine': '{name} — {line}',
+  'lvl.monthAmount': '= {amount} a month',
+  'lvl.future': 'From {month}: {percents}',
+  'lvl.changes': 'Changes:',
+  'lvl.changeFrom': 'from {month}',
+  'lvl.first': '(first)',
+  'lvl.removeVersion': 'Remove the change from {month}',
+  'lvl.removeConfirm': 'From {month}, Level {n} goes back to the rules it had before.',
+  'lvl.removed': 'Removed: Level {n} from {month}.',
+  'lvl.outdated': 'Update the server to see the savings rules.',
+  'lvl.noIncome': 'Set your monthly income to see which rule applies to you.',
+
+  // ── Editing one situation ───────────────────────────────────────────────────────────────────────────
+  'lvl.edit.title': 'Level {n} · {situation}',
+  'lvl.edit.splitAt': 'Split at',
+  'lvl.edit.splitHelp': 'UZS left after bills and loans. One line for the bank-loan rows and the loans-from-people rows.',
+  'lvl.edit.notAsked': '0 = not asked',
+  'lvl.edit.money': 'At your income that is {amounts} a month.',
+  'lvl.edit.moneyNow': 'This month that is {amounts}.',
+  'lvl.err.number': 'A number from 0 to 100, like 5 or 2,5',
+  'lvl.err.each': 'Up to 100% each',
+  'lvl.err.total': 'Together at most 100%',
+  'lvl.err.split': 'Enter an amount',
+  'lvl.saved': 'Saved: Level {n} from {month}.',
+
+  // ── Level 5 — the dialog, and the way back down ─────────────────────────────────────────────────────
+  'lvl5.title': 'You’re on Level 5',
+  'lvl5.pay': 'Your pay was {amount} or more three months in a row:',
+  'lvl5.from': 'From {month}, Level 5’s savings rule applies.',
+  'lvl5.situation': 'Your situation: {name}',
+  'lvl5.others': 'Level 5’s other situations are in Savings rules.',
+  'lvl5.keep': 'Keep these',
+  'lvl5.later': 'Later',
+  'lvl.down.title': 'Back to Level {n} from {month}',
+  'lvl.down.body': 'Your pay was under {amount} three months in a row ({months}), so Level {n}’s savings rule applies again: {percents}.',
+  'lvl.down.bodyShort': 'Your pay was under {amount} three months in a row ({months}), so Level {n}’s savings rule applies again.',
+  'lvl.ok': 'OK',
+
+  // ── Profile ─────────────────────────────────────────────────────────────────────────────────────────
+  'lvl.p.road4': 'Level 5 after three months in a row with {amount} of pay or more.',
+  'lvl.p.soFar': '{n} of 3 so far',
+  'lvl.p.monthSoFar': '{amount} so far',
+  'lvl.p.restart': 'No months yet. The count starts again from {month}.',
+  'lvl.p.since': 'Since {month}',
+  'lvl.p.stays': 'It stays while your pay is {amount} or more; three months in a row under it and you go back to Level {n}.',
+  'lvl.p.underSoFar': 'Under it so far: {n} of 3 ({months}).',
+  'lvl.p.firstMonth': 'Level 5’s rule applies from {month}',
+  'lvl.p.ruleFrom': 'These percentages apply from {month}.',
+  'lvl.p.ruleLine': 'Level {n} · {situation}',
+} as const

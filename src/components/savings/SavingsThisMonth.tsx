@@ -65,10 +65,14 @@ export function SavingsThisMonth({ rows, currency, month, onPay }: {
         const icon = isBucketRow(r) ? SAVINGS_ICON[r.bucket] : GOAL_ICON
         const nameId = `savings-row-${key}`
         return (
-          <li key={key} className="flex min-h-[56px] items-center gap-3 py-2">
+          // A done row carries two things on its right — the "Done" mark and "Put in more" — and on
+          // a phone they left the name about 60px. There they drop to a line of their own under the
+          // text (the row wraps); from `sm` up it is the single line it always was.
+          <li key={key} className={`flex min-h-[56px] items-center gap-x-3 gap-y-1 py-2 ${done ? 'flex-wrap sm:flex-nowrap' : ''}`}>
             <IconChip tone={icon.tone}>{icon.icon}</IconChip>
             <div className="min-w-0 flex-1">
-              <p id={nameId} className="truncate text-sm font-medium text-slate-900">{name}</p>
+              {/* Two lines rather than an ellipsis on a phone: the name is what the row is read by. */}
+              <p id={nameId} className="text-sm font-medium text-slate-900 max-sm:line-clamp-2 max-sm:[overflow-wrap:anywhere] sm:truncate">{name}</p>
               <p className="text-xs tabular-nums text-slate-500">
                 {done
                   ? moneyFull(r.paid, currency)
@@ -87,7 +91,8 @@ export function SavingsThisMonth({ rows, currency, month, onPay }: {
               )}
             </div>
             {done ? (
-              <div className="flex shrink-0 items-center gap-2">
+              // pl-12 on a phone: under the text, clear of the icon (36px + the 12px gap).
+              <div className="flex w-full items-center justify-between gap-2 pl-12 sm:w-auto sm:shrink-0 sm:justify-start sm:pl-0">
                 <span className="flex items-center gap-1.5 text-sm font-medium text-income">
                   <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
                   {t('ui.status.done')}
@@ -99,6 +104,8 @@ export function SavingsThisMonth({ rows, currency, month, onPay }: {
                   label={t(r.bucket === 'DONATION' ? 'fix.giveMore' : 'home.savings.addMore')}
                   aria-describedby={nameId}
                   onClick={() => onPay(r, 0)}
+                  // A full 44px on a phone, where it has a line of its own to be tall in.
+                  className="max-sm:h-11"
                 />
               </div>
             ) : (

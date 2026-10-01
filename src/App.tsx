@@ -12,6 +12,8 @@ import { MobileNavProvider, useAppBarMounted } from './components/ui/PageHeader'
 import { Sidebar } from './components/layout/Sidebar'
 import { BottomBar } from './components/layout/BottomBar'
 import { AddFormProvider } from './context/AddFormContext'
+import { LevelsProvider } from './context/LevelsContext'
+import { SavingsRules } from './pages/SavingsRules'
 import { OfflineBanner } from './components/ui/OfflineBanner'
 import { Spinner } from './components/ui/Spinner'
 import { AnalyticsLoadFailed, AnalyticsPageFallback } from './components/analytics/AnalyticsFallback'
@@ -127,6 +129,8 @@ function AppRoutes() {
     <MobileNavProvider onOpenMenu={openMenu} menuOpen={sidebarOpen}>
       {/* The one Add form lives here, above the routes, so every page and the phone's ＋ reach it. */}
       <AddFormProvider>
+      {/* Asks once per load whether a level change waits to be shown; never holds the page up. */}
+      <LevelsProvider>
       <div className="flex h-dvh bg-ground font-sans">
         <a
           href="#main"
@@ -174,6 +178,7 @@ function AppRoutes() {
               <Route path="/profile" element={<Profile />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/settings/categories" element={<Categories />} />
+              <Route path="/settings/rules" element={<SavingsRules />} />
               {/* Developer is out of the nav — Settings › Advanced is the way in — but the
                   route stays so bookmarks and the Telegram web-view URL keep working. */}
               <Route path="/developer" element={<Developer />} />
@@ -200,6 +205,7 @@ function AppRoutes() {
         </div>
         <BottomBar onOpenMenu={openMenu} menuOpen={sidebarOpen} />
       </div>
+      </LevelsProvider>
       </AddFormProvider>
     </MobileNavProvider>
   )

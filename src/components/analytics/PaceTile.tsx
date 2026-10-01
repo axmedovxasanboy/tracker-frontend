@@ -56,22 +56,26 @@ export function PaceTile({ d, period, onDay }: {
   const monthName = formatDate(period.month, lang, 'monthName')
 
   // ── The sentence ─────────────────────────────────────────────────────────────
+  // On screen only the comparison with the month before — the figure above already says the rest.
+  // The chart's accessible name keeps the plain total as well, since the chart itself is not read.
   const dayCount = daily.length
-  let sentence = plural(
+  const plain = plural(
     dayCount,
     t('analytics.c.plainOne', { amount: money(total) }),
     t('analytics.c.plain', { amount: money(total) }),
     lang,
   )
+  let comparison: string | null = null
   if (previousDaily && period.previousName && lastDate) {
     const lastDay = Number(lastDate.slice(8, 10))
     const sameDay = previousDaily.find(p => p.day === lastDay) ?? previousDaily[previousDaily.length - 1]
     const diff = total - sameDay.cumulative
     const vars = { date: formatDate(lastDate, lang, 'dayShort'), amount: money(Math.abs(diff)), month: period.previousName }
-    sentence = Math.abs(diff) < EVEN
+    comparison = Math.abs(diff) < EVEN
       ? t('analytics.c.sameAs', vars)
       : t(diff < 0 ? 'analytics.c.lessThan' : 'analytics.c.moreThan', vars)
   }
+  const chartLabel = comparison ? `${plain} ${comparison}` : plain
 
   // ── The chart's rows: every day of the month, so the line visibly stops at today ──
   const [year, monthNo] = period.month.split('-').map(Number)
@@ -139,7 +143,7 @@ export function PaceTile({ d, period, onDay }: {
           {t('analytics.c.perDay', { amount: money(e.perDay) })}
         </p>
       )}
-      <p className="mt-1 text-sm text-slate-600">{sentence}</p>
+      {comparison && <p className="mt-1 text-sm text-slate-600">{comparison}</p>}
 
       {showChart && (
         <>
@@ -157,7 +161,7 @@ export function PaceTile({ d, period, onDay }: {
             </ul>
           )}
           <figure
-            aria-label={sentence}
+            aria-label={chartLabel}
             className={`mt-3 h-[180px] w-full min-w-0 sm:h-[200px] ${CHART_CHROME}`}
           >
             <ResponsiveContainer width="100%" height="100%" minWidth={0}>

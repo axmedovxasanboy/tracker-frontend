@@ -7,7 +7,6 @@ import { Tile } from '../ui/Tile'
 import type { TileSpan } from '../ui/Tile'
 import { Button } from '../ui/Button'
 import { CacheBadge } from '../ui/CacheBadge'
-import { ExactAmount } from '../ui/ExactAmount'
 import { IconChip } from '../ui/IconChip'
 import { LinkButton, TileHead } from '../home/HomeTiles'
 import { SAVINGS_ICON, SAVINGS_NAME_KEY } from '../savings/SavingsThisMonth'
@@ -39,8 +38,6 @@ export interface PeriodInfo {
   month: string
   /** A heading: "September 2026", "Last 12 months". */
   label: string
-  /** The same inside a sentence: "September 2026", "the last 12 months". */
-  text: string
   /** The month before the one on screen, by name ("August") — only when it has data. */
   previousName: string | null
 }
@@ -48,11 +45,12 @@ export interface PeriodInfo {
 // ── A. The period in one line ──────────────────────────────────────────────────────────────────
 
 /**
- * The hero: what was left of what came in, and where the rest went — one figure, one sentence,
- * and two bars on a shared scale ("In" above "Where it went"). The lists under the bars are the
- * bars' text equivalent; the four places money goes jump to the tile that details them.
+ * The hero: what was left of what came in, and where the rest went — one figure, History's In /
+ * Out / Saved line, and two bars on a shared scale ("In" above "Where it went"). The lists under
+ * the bars are the bars' text equivalent; the four places money goes jump to the tile that
+ * details them. Kept short on purpose: the rows carry the exact amounts, the tiles the detail.
  */
-export function PeriodHero({ d, period, cached, justStarted, onSeePrevious, onJump, onHistory }: {
+export function PeriodHero({ d, period, cached, justStarted, onSeePrevious, onJump }: {
   d: AnalyticsResponse
   period: PeriodInfo
   cached: { isCached: boolean; cachedAt: string | null }
@@ -61,9 +59,8 @@ export function PeriodHero({ d, period, cached, justStarted, onSeePrevious, onJu
   /** Go to the month before — offered on an empty or just-started current month. */
   onSeePrevious?: { label: string; go: () => void }
   onJump: (to: 'everyday' | 'fixed' | 'saved') => void
-  onHistory?: () => void
 }) {
-  const { t, lang } = useLang()
+  const { t } = useLang()
   const f = d.totals
   const { saved, given } = savedAndGiven(f)
   // A wallet check that found more than expected can outweigh a quiet period's spending; a bar
@@ -82,7 +79,7 @@ export function PeriodHero({ d, period, cached, justStarted, onSeePrevious, onJu
           <h2 className="text-label uppercase text-slate-500">{period.label}</h2>
           <CacheBadge isCached={cached.isCached} cachedAt={cached.cachedAt} />
         </div>
-        <p className="mt-3 text-title text-slate-900">{t('analytics.a.empty', { month: period.text })}</p>
+        <p className="mt-3 text-title text-slate-900">{t('analytics.a.empty')}</p>
         <NotYetLine count={d.notYetCount} />
         {onSeePrevious && (
           <div className="mt-4">
@@ -92,12 +89,6 @@ export function PeriodHero({ d, period, cached, justStarted, onSeePrevious, onJu
       </Tile>
     )
   }
-
-  const sentence = Math.abs(left) < EVEN
-    ? t('analytics.a.even')
-    : left > 0
-      ? t('analytics.a.kept', { amount: money(left), in: money(f.earned) })
-      : t(saved + given > 0 ? 'analytics.a.over' : 'analytics.a.overSpent', { amount: money(-left) })
 
   const inSegments: SplitSegment[] = [
     { key: 'pay', value: f.earnedPay, series: 'pay' },
@@ -142,7 +133,6 @@ export function PeriodHero({ d, period, cached, justStarted, onSeePrevious, onJu
   ].filter(Boolean)
 
   const months = Math.max(1, d.months.length)
-  const jumpHint = t('analytics.a.goTo')
 
   return (
     <Tile span={12} padding="hero" as="section">
@@ -166,11 +156,9 @@ export function PeriodHero({ d, period, cached, justStarted, onSeePrevious, onJu
       >
         {money(Math.abs(left))}
       </p>
-      <ExactAmount amount={Math.abs(left)} className="mt-0.5" />
-      <p className="mt-2 text-sm text-slate-700">{sentence}</p>
 
       {/* The same three figures History shows for this month, in History's words. */}
-      <p className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-sm tabular-nums text-slate-500">
+      <p className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 text-sm tabular-nums text-slate-500">
         <span>{t('shell.history.in')} <span className="font-medium text-slate-900">{money(f.earned)}</span></span>
         <span>{t('shell.history.out')} <span className="font-medium text-slate-900">{money(out)}</span></span>
         <span>{t('shell.history.saved')} <span className="font-medium text-slate-900">{money(saved)}</span></span>
@@ -221,20 +209,20 @@ export function PeriodHero({ d, period, cached, justStarted, onSeePrevious, onJu
         <ul aria-label={t('shell.history.whereItWent')}>
           <LegendRow series="everyday" name={t('analytics.group.everyday')}
             amount={moneyFull(everyday)} share={shareOf(everyday, f.earned)}
-            onClick={() => onJump('everyday')} actionHint={jumpHint} />
+            onClick={() => onJump('everyday')} />
           <LegendRow series="bills" name={t('analytics.group.bills')}
             amount={moneyFull(f.bills)} share={shareOf(f.bills, f.earned)}
-            onClick={() => onJump('fixed')} actionHint={jumpHint} />
+            onClick={() => onJump('fixed')} />
           <LegendRow series="loans" name={t('analytics.group.loans')}
             amount={moneyFull(f.loanPayments)} share={shareOf(f.loanPayments, f.earned)}
-            onClick={() => onJump('fixed')} actionHint={jumpHint} />
+            onClick={() => onJump('fixed')} />
           <LegendRow series="saved" name={t('shell.history.saved')}
             amount={moneyFull(saved)} share={shareOf(saved, f.earned)}
-            onClick={() => onJump('saved')} actionHint={jumpHint} />
+            onClick={() => onJump('saved')} />
           {given > 0 && (
             <LegendRow series="given" name={t('fix.given')}
               amount={moneyFull(given)} share={shareOf(given, f.earned)}
-              onClick={() => onJump('saved')} actionHint={jumpHint} />
+              onClick={() => onJump('saved')} />
           )}
           {left >= EVEN && (
             <LegendRow hatched name={t('analytics.group.leftOver')}
@@ -260,7 +248,7 @@ export function PeriodHero({ d, period, cached, justStarted, onSeePrevious, onJu
           <NotYetLine count={d.notYetCount} />
           {justStarted && onSeePrevious && (
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-              <p className="text-sm text-slate-500">{t('analytics.a.justStarted', { month: period.label })}</p>
+              <p className="text-sm text-slate-500">{t('analytics.a.justStarted')}</p>
               <LinkButton label={t('analytics.a.seeMonth', { month: onSeePrevious.label })} onClick={onSeePrevious.go} />
             </div>
           )}
@@ -268,15 +256,6 @@ export function PeriodHero({ d, period, cached, justStarted, onSeePrevious, onJu
       )}
 
       <HowItAddsUp d={d} out={out} saved={saved} given={given} />
-
-      {onHistory && (
-        <div className="mt-1">
-          <LinkButton
-            label={t('analytics.seeHistory', { month: formatDate(period.month, lang, 'monthName') })}
-            onClick={onHistory}
-          />
-        </div>
-      )}
     </Tile>
   )
 }
@@ -366,14 +345,15 @@ function HowItAddsUp({ d, out, saved, given }: {
 
 // ── Shared tile furniture ──────────────────────────────────────────────────────────────────────
 
-/** A tile's title, its one figure and its one sentence. */
-function TileLead({ title, headingRef, figure, exact, amount, sentence, tone = 'neutral' }: {
+/**
+ * A tile's title, its one figure and at most one short line. The exact amount is the figure's
+ * tooltip only: on this page the rows under it already print every amount in full.
+ */
+function TileLead({ title, headingRef, figure, exact, sentence, tone = 'neutral' }: {
   title: string
   headingRef?: Ref<HTMLHeadingElement>
   figure?: string
   exact?: string
-  /** The amount behind `figure`, printed exactly under it when the short form hides digits. */
-  amount?: number
   sentence?: ReactNode
   tone?: 'neutral' | 'out'
 }) {
@@ -385,7 +365,6 @@ function TileLead({ title, headingRef, figure, exact, amount, sentence, tone = '
           {figure}
         </p>
       )}
-      {figure && amount != null && <ExactAmount amount={amount} />}
       {sentence && <p className="mt-1 text-sm text-slate-600">{sentence}</p>}
     </>
   )
@@ -470,10 +449,10 @@ export function EverydayTile({ d, period, span, headingRef, onCategory, onHistor
     }] : []),
   ]
 
+  // The share only — the first bar already names the biggest part.
   const share = shareOf(total, d.totals.earned)
   const sentence = [
     share ? t('analytics.shareOfIn', { percent: share }) : null,
-    top.length > 0 ? t('analytics.b.biggest', { category: nameOf(top[0]), amount: money(top[0].amount) }) : null,
     period.view === 'year' && total > 0
       ? t('analytics.perMonth', { amount: money(total / Math.max(1, d.months.length)) })
       : null,
@@ -484,7 +463,7 @@ export function EverydayTile({ d, period, span, headingRef, onCategory, onHistor
       {items.length === 0 ? (
         <>
           <TileHead title={t('analytics.group.everyday')} headingRef={headingRef} />
-          <p className="mt-3 text-sm text-slate-500">{t('analytics.b.empty', { month: period.text })}</p>
+          <p className="mt-3 text-sm text-slate-500">{t('analytics.b.empty')}</p>
         </>
       ) : (
         <>
@@ -493,7 +472,6 @@ export function EverydayTile({ d, period, span, headingRef, onCategory, onHistor
             headingRef={headingRef}
             figure={money(total)}
             exact={moneyExact(total)}
-            amount={total}
             sentence={sentence || undefined}
           />
           <CategoryBars items={items} className="mt-3 space-y-1" />
@@ -545,7 +523,7 @@ export function BillsLoansTile({ d, period, span, headingRef, onOpen }: {
       {paid <= 0 ? (
         <>
           <TileHead title={t('analytics.d.title')} headingRef={headingRef} />
-          <p className="mt-3 text-sm text-slate-500">{t('analytics.d.empty', { month: period.text })}</p>
+          <p className="mt-3 text-sm text-slate-500">{t('analytics.d.empty')}</p>
         </>
       ) : (
         <>
@@ -554,7 +532,6 @@ export function BillsLoansTile({ d, period, span, headingRef, onOpen }: {
             headingRef={headingRef}
             figure={money(paid)}
             exact={moneyExact(paid)}
-            amount={paid}
             sentence={share ? t('analytics.shareOfIn', { percent: share }) : undefined}
           />
           {income != null && (
@@ -607,10 +584,10 @@ export function SavedTile({ d, period, span, headingRef, onOpen }: {
     ...lines.filter(l => l.kind === 'GOAL' && (l.saved > 0 || (l.asked ?? 0) > 0)),
   ]
   const anything = rows.some(r => r.saved > 0 || (r.asked ?? 0) > 0)
+  // The share only — the rows below already split it into saved and given.
   const share = shareOf(total, d.totals.earned)
   const sentence = [
     share ? t('analytics.shareOfIn', { percent: share }) : null,
-    given > 0 ? t('fix.savedGiven', { saved: money(saved), given: money(given) }) : null,
     period.view === 'year' && total > 0
       ? t('analytics.perMonth', { amount: money(total / Math.max(1, d.months.length)) })
       : null,
@@ -621,7 +598,7 @@ export function SavedTile({ d, period, span, headingRef, onOpen }: {
       {!anything ? (
         <>
           <TileHead title={title} headingRef={headingRef} />
-          <p className="mt-3 text-sm text-slate-500">{t('analytics.e.empty', { month: period.text })}</p>
+          <p className="mt-3 text-sm text-slate-500">{t('analytics.e.empty')}</p>
         </>
       ) : (
         <>
@@ -630,7 +607,6 @@ export function SavedTile({ d, period, span, headingRef, onOpen }: {
             headingRef={headingRef}
             figure={money(total)}
             exact={moneyExact(total)}
-            amount={total}
             sentence={sentence || undefined}
           />
           <ul className="mt-2 divide-y divide-hairline">
@@ -691,7 +667,7 @@ export function BiggestTile({ d, period, span, onHistory }: {
     <Tile span={span} mdSpan={6} as="section">
       <TileHead title={t('analytics.f.title')} />
       {rows.length === 0 ? (
-        <p className="mt-3 text-sm text-slate-500">{t('analytics.f.empty', { month: period.text })}</p>
+        <p className="mt-3 text-sm text-slate-500">{t('analytics.f.empty')}</p>
       ) : (
         <ul className="mt-2 divide-y divide-hairline">
           {rows.map(r => {
@@ -764,13 +740,6 @@ export function OwnOweTile({ p, span }: { p: AnalyticsPosition; span: TileSpan }
   const own = Math.max(0, p.own)
   const scale = Math.max(own, p.loansLeft)
 
-  const sentence = known.length > 0
-    ? t('analytics.g.sentence', { own: money(own), loans: money(p.loansLeft) })
-    : unknown.length > 0
-      // Every loan's amount is unknown: say only what is known, and the line below says the rest.
-      ? t('analytics.g.sentenceOwnOnly', { own: money(own) })
-      : t('analytics.g.sentenceNoLoans', { own: money(own) })
-
   return (
     <Tile span={span} mdSpan={6} as="section">
       <div className="flex items-start justify-between gap-3">
@@ -785,8 +754,7 @@ export function OwnOweTile({ p, span }: { p: AnalyticsPosition; span: TileSpan }
       <p className={`mt-1 text-stat tabular-nums ${negative ? 'text-expense' : 'text-slate-900'}`} title={moneyExact(p.net)}>
         {money(p.net)}
       </p>
-      <ExactAmount amount={p.net} />
-      <p className="mt-1 text-sm text-slate-600">{sentence}</p>
+      {/* No sentence: the two bars below carry both totals. */}
       {unknown.length > 0 && (
         <p className="mt-1 flex items-start gap-2 text-sm font-medium text-amber-700">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />

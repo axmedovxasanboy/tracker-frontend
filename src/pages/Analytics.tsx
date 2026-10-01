@@ -144,12 +144,11 @@ export function Analytics() {
     return `${formatDate(first, lang, 'monthShort')} – ${formatDate(last, lang, 'monthShort')}`
   })()
   const period: PeriodInfo = view === 'month'
-    ? { view, month, label: monthLabel, text: monthLabel, previousName: d?.previous ? previousName : null }
+    ? { view, month, label: monthLabel, previousName: d?.previous ? previousName : null }
     : {
         view,
         month: thisMonth,
         label: rangeLabel ?? t('analytics.period.last12'),
-        text: rangeLabel ?? t('analytics.period.last12Text'),
         previousName: null,
       }
 
@@ -193,7 +192,6 @@ export function Analytics() {
         justStarted={justStarted}
         onSeePrevious={seePrevious}
         onJump={jump}
-        onHistory={monthView ? openHistory : undefined}
       />
     )
 

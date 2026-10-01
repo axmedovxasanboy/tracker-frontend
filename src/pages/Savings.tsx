@@ -241,7 +241,7 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
       <li key={g.id} className="py-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p id={nameId} className="truncate text-sm font-medium text-slate-900">{g.name}</p>
+            <p id={nameId} className="text-sm font-medium text-slate-900 max-sm:line-clamp-2 max-sm:[overflow-wrap:anywhere] sm:truncate">{g.name}</p>
             <p className="text-xs tabular-nums text-slate-500">
               {target != null
                 ? t('home.goals.ofTarget', { value: moneyFull(value, g.currency), target: moneyFull(target, g.currency) })

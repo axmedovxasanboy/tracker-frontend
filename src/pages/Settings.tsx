@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
-  AlertTriangle, CalendarClock, ChevronDown, ChevronRight, CreditCard, Lock, Save, Send, Sliders, Tags, Trash2,
+  AlertTriangle, CalendarClock, ChevronDown, ChevronRight, CreditCard, Lock, Percent, Save, Send, Sliders, Tags, Trash2,
 } from 'lucide-react'
 import { AmountInput } from '../components/ui/AmountInput'
 import { Button, DisabledHint } from '../components/ui/Button'
@@ -12,16 +12,19 @@ import { Modal } from '../components/ui/Modal'
 import { PageHeader } from '../components/ui/PageHeader'
 import { Skeleton } from '../components/ui/Skeleton'
 import { Tile, TileGrid } from '../components/ui/Tile'
+import { IncomeFromChips, IncomeHistoryLine, incomeMonths } from '../components/settings/IncomeFrom'
 import { DeveloperSettings } from './Developer'
 import { useApi } from '../hooks/useApi'
 import { useToast } from '../context/ToastContext'
 import { useConfirm } from '../context/ConfirmContext'
 import { useAuth } from '../context/AuthContext'
 import { useSettings } from '../context/SettingsContext'
+import { useLevels } from '../context/LevelsContext'
 import { useLang } from '../i18n/LanguageContext'
 import { settingsApi } from '../api/settings'
 import { extractErrorMessage } from '../api/client'
-import { formatMonth, money, moneyExact } from '../utils/format'
+import { formatDate, formatMonth, money, moneyExact, moneyFull, monthLocal } from '../utils/format'
+import type { StableIncomeEntry } from '../types'
 
 const INPUT = 'w-full h-11 rounded-control border border-slate-200 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-500 focus-ring'
 
@@ -35,6 +38,8 @@ export function Settings() {
   // The shared settings context gates every Add button; saving here must refresh it,
   // otherwise the gate stays closed until a full page reload.
   const { refetch: refetchGate } = useSettings()
+  // The Savings rules row exists only on a server with levels (a 404 there hides it).
+  const { available: levelsAvailable } = useLevels()
 
   const [income, setIncome] = useState(0)
   // True from the first keystroke until a save: the page's requests re-run whenever money is
@@ -61,6 +66,48 @@ export function Settings() {
 
   const savedIncome = settings.data?.monthlyStableIncome ?? 0
   const incomeIsSet = savedIncome > 0
+
+  // ── From which month (STABLE-INCOME-HISTORY.md §2) ──
+  // The income is kept month by month on a server that sends its history; there, a CHANGED amount
+  // asks which month it applies from, so the months before it keep their targets. The very first
+  // amount does not ask — it applies from the first month. On an older server (no history in the
+  // response) the field saves exactly as it always did, with no question.
+  const history = settings.data?.stableIncomeHistory
+  const thisMonth = monthLocal()
+  const fromMonths = incomeMonths(settings.data?.stableIncomeFirstMonth ?? history?.[0]?.month, thisMonth)
+  const defaultFrom = fromMonths.includes(thisMonth) ? thisMonth : fromMonths[0]
+  const [fromPicked, setFromPicked] = useState<string | null>(null)
+  const from = fromPicked && fromMonths.includes(fromPicked) ? fromPicked : defaultFrom
+  const asksMonth = history !== undefined && (history.length > 0 || incomeIsSet)
+    && income > 0 && Math.abs(income - savedIncome) >= 1
+  const [removing, setRemoving] = useState<string | null>(null)
+
+  const removeEntry = async (entry: StableIncomeEntry) => {
+    const month = formatDate(entry.month, lang, 'monthShort')
+    const ok = await confirm({
+      title: t('fix.income.removeTitle'),
+      message: t('fix.income.removeConfirm', { month }),
+      destructive: true,
+      confirmLabel: t('action.delete'),
+      cancelLabel: t('action.cancel'),
+    })
+    if (!ok || !history) return
+    // What the month falls back to: the change before it, or — for the oldest — the one after.
+    const sorted = [...history].sort((a, b) => a.month.localeCompare(b.month))
+    const at = sorted.findIndex(e => e.month === entry.month)
+    const fallback = sorted[at - 1] ?? sorted[at + 1]
+    setRemoving(entry.month)
+    try {
+      await settingsApi.removeStableIncome(entry.month)
+      settings.refetch()
+      refetchGate()
+      showSuccess(fallback
+        ? t('fix.income.removed', { month, amount: moneyFull(fallback.amount) })
+        : t('page.settings.savedToast'))
+    } catch (err: unknown) {
+      setError(extractErrorMessage(err))
+    } finally { setRemoving(null) }
+  }
   const trackingLock = settings.data?.allocationTrackingStartMonth ?? null
 
   /**
@@ -71,12 +118,19 @@ export function Settings() {
     e.preventDefault()
     setSaving(true); setError(null)
     try {
-      await settingsApi.update({ monthlyStableIncome: income, monthlyStableIncomeCurrency: 'UZS' })
+      await settingsApi.update({
+        monthlyStableIncome: income,
+        monthlyStableIncomeCurrency: 'UZS',
+        ...(asksMonth ? { stableIncomeFrom: from } : {}),
+      })
       incomeEdited.current = false
+      setFromPicked(null)
       settings.refetch()
       refetchGate()
       setSavedNow(true)
-      showSuccess(t('page.settings.savedToast'))
+      showSuccess(asksMonth
+        ? t('fix.income.savedFrom', { amount: moneyFull(income), month: formatDate(from, lang, 'monthShort') })
+        : t('page.settings.savedToast'))
     } catch (err: unknown) {
       setError(extractErrorMessage(err))
     } finally { setSaving(false) }
@@ -159,6 +213,12 @@ export function Settings() {
                   />
                 </Field>
 
+                {history && <IncomeHistoryLine history={history} onRemove={removeEntry} busyMonth={removing} />}
+
+                {asksMonth && (
+                  <IncomeFromChips months={fromMonths} value={from} onChange={setFromPicked} disabled={saving} />
+                )}
+
                 <div className="mt-auto space-y-2">
                   <Button
                     type="submit" variant="primary" loading={saving}
@@ -203,6 +263,25 @@ export function Settings() {
               <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
             </Link>
           </Tile>
+
+          {/* Savings rules: the percentages of every level — the same kind of way in. */}
+          {levelsAvailable === true && (
+            <Tile span={6} as="section" padding="none">
+              <Link
+                to="/settings/rules"
+                className="focus-ring flex min-h-[64px] items-center gap-3 rounded-tile px-5 py-4 transition-colors hover:bg-slate-50"
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-chip bg-slate-100 text-slate-500">
+                  <Percent className="h-4 w-4" aria-hidden="true" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-slate-900">{t('lvl.title')}</span>
+                  <span className="block text-xs leading-snug text-slate-500">{t('lvl.settingsHelp')}</span>
+                </span>
+                <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
+              </Link>
+            </Tile>
+          )}
 
           {/* Advanced — rarely needed, one deliberate tap away. Developer left the sidebar when the
               shell landed; this is its entry point. */}

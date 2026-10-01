@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { AxiosError } from 'axios'
-import { AlertTriangle, CheckCircle2, ChevronDown, CloudOff, Target } from 'lucide-react'
+import { AlertTriangle, Check, CheckCircle2, ChevronDown, CloudOff, Target } from 'lucide-react'
 import { PageHeader } from '../components/ui/PageHeader'
 import { Tile, TileGrid } from '../components/ui/Tile'
 import { Button } from '../components/ui/Button'
@@ -13,10 +13,16 @@ import { LinkButton, TileHead } from '../components/home/HomeTiles'
 import { SAVINGS_ICON, SAVINGS_NAME_KEY } from '../components/savings/SavingsThisMonth'
 import { useApi } from '../hooks/useApi'
 import { useAuth } from '../context/AuthContext'
+import { useLevels } from '../context/LevelsContext'
+import { useSettings } from '../context/SettingsContext'
+import { LevelDownNotice } from '../components/levels/LevelDownNotice'
+import { LEVEL5_PAY, situationName } from '../components/levels/levelWords'
+import { LEVEL_SITUATIONS } from '../types/levels'
+import type { LevelSituation } from '../types/levels'
 import { useLang } from '../i18n/LanguageContext'
 import type { TKey } from '../i18n/LanguageContext'
 import { profileApi } from '../api/profile'
-import { formatDate, formatMonth, formatNumber, moneyFull, shiftMonth, todayLocal } from '../utils/format'
+import { formatDate, formatMonth, formatNumber, money, moneyFull, shiftMonth, todayLocal } from '../utils/format'
 import type { Bucket } from '../types'
 import type { ProfileAllocatedLine, ProfileReason, ProfileResponse } from '../types/profile'
 
@@ -74,6 +80,13 @@ export function Profile() {
   const result = q.data
   const p = result?.kind === 'ok' ? result.profile : null
   const hasSoFar = !!(p?.incomeThisMonth || p?.allocatedThisMonth)
+  // "Change" leads to Savings rules — only on a server that has them. The profile says so itself
+  // (`baseLevel`), and so does the shell's one question to /levels.
+  const { available } = useLevels()
+  const rulesAvailable = available === true || p?.baseLevel !== undefined
+  const openRules = rulesAvailable && p?.level != null
+    ? () => navigate(`/settings/rules?level=${p.level}`)
+    : undefined
 
   return (
     <div className="p-4 sm:p-6">
@@ -116,10 +129,11 @@ export function Profile() {
           ) : p ? (
             <>
               {q.error && <ErrorTile compact className={FULL} message={q.error} onRetry={q.refetch} />}
+              <LevelDownNotice />
               {/* The owner's order: the level beside its savings rule; under the level, what to set
                   aside beside this month so far; the workings last, across the whole width. */}
-              <LevelHero p={p} cached={{ isCached: q.isCached, cachedAt: q.cachedAt }} />
-              <RuleTile p={p} />
+              <LevelHero p={p} cached={{ isCached: q.isCached, cachedAt: q.cachedAt }} onChangeRule={openRules} />
+              <RuleTile p={p} onChange={openRules} />
               {/* An older server sends no "so far" figures — then "set aside" takes the row alone. */}
               <SetAsideTile p={p} full={!hasSoFar} onHome={() => navigate('/')} onSavings={() => navigate('/savings')} />
               {hasSoFar && <SoFarTile p={p} />}
@@ -134,17 +148,38 @@ export function Profile() {
 
 // ── The level ──────────────────────────────────────────────────────────────────────────────────
 
-function LevelHero({ p, cached }: { p: ProfileResponse; cached: { isCached: boolean; cachedAt: string | null } }) {
-  const { t } = useLang()
+function LevelHero({ p, cached, onChangeRule }: {
+  p: ProfileResponse
+  cached: { isCached: boolean; cachedAt: string | null }
+  /** Opens Savings rules on this level; absent on a server without them. */
+  onChangeRule?: () => void
+}) {
+  const { t, lang } = useLang()
   const next = p.nextLevelAt
+  const road = p.road ?? null
+  const threshold = road?.payThreshold ?? LEVEL5_PAY
+  const month = (ym: string) => formatDate(ym, lang, 'monthShort')
+
+  // Level 4 on a server with levels: the road to Level 5 instead of "the next level at …" — the
+  // next step is earned by pay, not by the income in Settings.
+  const towardFive = p.level === 4 && road != null && road.toward === 5
+  // Level 5: since when, and what keeps it.
+  const onFive = p.level === 5 && p.level5Since != null
+
   // The level by name, and one quiet line saying what it rests on. No progress bar: the next level
   // is a fact about the owner's income, not a target to chase, and why the rule is what it is
   // belongs with the rest of the working-out below.
-  const line = p.aboveCeiling
-    ? t('shell.profile.aboveCeiling')
-    : next == null
-      ? (p.level != null ? t('shell.profile.topLevel') : null)
-      : t('fix.profile.levelLine', { amount: moneyFull(p.leftAfterBills), n: (p.level ?? 0) + 1, next: moneyFull(next) })
+  const line = towardFive
+    ? t('lvl.p.road4', { amount: moneyFull(threshold) })
+    : onFive
+      ? `${t('lvl.p.since', { month: month(p.level5Since!) })}. ${t('lvl.p.stays', {
+        amount: moneyFull(threshold), n: p.baseLevel ?? road?.toward ?? 4,
+      })}`
+      : p.aboveCeiling
+        ? t('shell.profile.aboveCeiling')
+        : next == null
+          ? (p.level != null ? t('shell.profile.topLevel') : null)
+          : t('fix.profile.levelLine', { amount: moneyFull(p.leftAfterBills), n: (p.level ?? 0) + 1, next: moneyFull(next) })
 
   return (
     <Tile span={6} mdSpan={6} as="section">
@@ -156,12 +191,76 @@ function LevelHero({ p, cached }: { p: ProfileResponse; cached: { isCached: bool
         {p.level != null ? t('shell.profile.level', { n: p.level }) : t('shell.profile.noLevel')}
       </p>
       {line && <p className="mt-2 text-sm tabular-nums text-slate-600">{line}</p>}
-      {next == null && !p.aboveCeiling && (
+      {next == null && !p.aboveCeiling && !towardFive && !onFive && (
         <p className="mt-1 text-sm tabular-nums text-slate-600">
           {t('shell.profile.leftAfterBills', { amount: moneyFull(p.leftAfterBills) })}
         </p>
       )}
+
+      {towardFive && <RoadMarks road={road!} thisMonth={p.month} />}
+
+      {onFive && road && road.months.length > 0 && (
+        <p className="mt-1 text-sm tabular-nums text-amber-700">
+          {t('lvl.p.underSoFar', { n: road.months.length, months: road.months.map(m => month(m.month)).join(', ') })}
+        </p>
+      )}
+
+      {/* The first Level 5 month: its rule is new, so say where it can be changed. */}
+      {onFive && p.level5Since === p.month.slice(0, 7) && (
+        <p className="mt-2 flex flex-wrap items-center gap-x-1 text-sm text-slate-700">
+          {t('lvl.p.firstMonth', { month: month(p.level5Since!) })}
+          {onChangeRule && <LinkButton label={t('lvl.change')} onClick={onChangeRule} />}
+        </p>
+      )}
     </Tile>
+  )
+}
+
+/**
+ * The run toward Level 5: three marks, filled for each ended month with enough pay, then the month
+ * in progress ("so far" — it never counts until it ends), then empty ones. Three columns at every
+ * width; each label wraps under its mark.
+ */
+function RoadMarks({ road, thisMonth }: { road: NonNullable<ProfileResponse['road']>; thisMonth: string }) {
+  const { t, lang } = useLang()
+  const needed = road.monthsNeeded || 3
+  const counted = road.months.slice(-needed)
+  const cells: Array<{ key: string; kind: 'done' | 'now' | 'empty'; month?: string; pay?: number }> = [
+    ...counted.map(m => ({ key: m.month, kind: 'done' as const, month: m.month, pay: m.pay })),
+  ]
+  if (cells.length < needed) cells.push({ key: 'now', kind: 'now', month: thisMonth.slice(0, 7), pay: road.thisMonthSoFar })
+  while (cells.length < needed) cells.push({ key: `empty-${cells.length}`, kind: 'empty' })
+
+  return (
+    <div className="mt-3">
+      <p className="sr-only">{t('lvl.p.soFar', { n: counted.length })}</p>
+      <ol aria-hidden="true" className="grid grid-cols-3 gap-2">
+        {cells.map(c => (
+          <li key={c.key} className="min-w-0">
+            <span className={`flex h-6 w-6 items-center justify-center rounded-full ${
+              c.kind === 'done' ? 'bg-indigo-600 text-white'
+                : c.kind === 'now' ? 'border-2 border-indigo-300 bg-white'
+                  : 'border-2 border-slate-200 bg-white'
+            }`}>
+              {c.kind === 'done' && <Check className="h-3.5 w-3.5" />}
+            </span>
+            {c.month && (
+              <span className="mt-1 block text-xs tabular-nums text-slate-600 [overflow-wrap:anywhere]">
+                {formatDate(c.month, lang, 'monthShort')}
+                <span className="block text-slate-500">
+                  {c.kind === 'now' ? t('lvl.p.monthSoFar', { amount: money(c.pay ?? 0) }) : money(c.pay ?? 0)}
+                </span>
+              </span>
+            )}
+          </li>
+        ))}
+      </ol>
+      {counted.length === 0 && (
+        <p className="mt-2 text-xs text-slate-500">
+          {t('lvl.p.restart', { month: formatDate(thisMonth.slice(0, 7), lang, 'monthShort') })}
+        </p>
+      )}
+    </div>
   )
 }
 
@@ -306,12 +405,27 @@ function SoFarTile({ p }: { p: ProfileResponse }) {
 
 // ── The rule ───────────────────────────────────────────────────────────────────────────────────
 
-function RuleTile({ p }: { p: ProfileResponse }) {
+/** The seven situations are the reasons a server with levels sends; anything else is not named. */
+const isSituation = (r: ProfileReason | undefined): r is LevelSituation =>
+  !!r && (LEVEL_SITUATIONS as readonly string[]).includes(r)
+
+function RuleTile({ p, onChange }: { p: ProfileResponse; onChange?: () => void }) {
   const { t } = useLang()
-  // Why these percentages (and next month's) is said in "How it is worked out".
+  const reason = p.rule?.reason
+  // Why these percentages (and next month's) is said in "How it is worked out"; here only which
+  // situation they are for, in words — and, on a server with levels, where to change them.
   return (
     <Tile span={6} mdSpan={6} as="section">
-      <TileHead title={t('shell.profile.ruleTitle')} />
+      <TileHead
+        title={t('shell.profile.ruleTitle')}
+        action={onChange ? <LinkButton label={t('lvl.change')} onClick={onChange} /> : undefined}
+      />
+      {/* Only on a server with levels: an older one keeps the tile exactly as it was. */}
+      {onChange && p.level != null && isSituation(reason) && (
+        <p className="mt-1 text-sm text-slate-600 tabular-nums [overflow-wrap:anywhere]">
+          {t('lvl.p.ruleLine', { n: p.level, situation: situationName(t, reason, p.rule?.cutoff) })}
+        </p>
+      )}
       <ul className="mt-2 divide-y divide-hairline">
         {known(p.buckets).map(b => (
           <li key={b.bucket} className="flex min-h-[48px] items-center gap-3 py-2">
@@ -337,7 +451,13 @@ function RuleTile({ p }: { p: ProfileResponse }) {
  */
 function RuleReasons({ p }: { p: ProfileResponse }) {
   const { t, lang } = useLang()
+  const { settings } = useSettings()
   const cutoff = p.rule?.cutoff ?? null
+  // A rules version that started after tracking did: say from when these percentages hold.
+  const trackingStart = settings?.allocationTrackingStartMonth?.slice(0, 7) ?? null
+  const ruleFrom = p.ruleFrom && trackingStart && p.ruleFrom > trackingStart
+    ? t('lvl.p.ruleFrom', { month: formatDate(p.ruleFrom, lang, 'monthShort') })
+    : null
   const reasonText = (reason: ProfileReason | undefined): string | null => {
     const key = reason ? REASON_KEY[reason] : undefined
     if (!key) return null
@@ -355,11 +475,12 @@ function RuleReasons({ p }: { p: ProfileResponse }) {
       : limit != null ? t('shell.profile.smallLoans', { limit: moneyFull(limit) }) : t('shell.profile.smallLoansNoLimit')
   const small = smallLoans(p.rule?.smallMonthlyLoans, p.rule?.monthlyLoanLimit)
   const nextSmall = next ? smallLoans(next.smallMonthlyLoans, next.monthlyLoanLimit ?? p.rule?.monthlyLoanLimit) : null
-  if (!why && !small && !next) return null
+  if (!why && !small && !next && !ruleFrom) return null
 
   return (
     <div className="mt-2 border-b border-hairline pb-4">
       {why && <p className="text-sm text-slate-600">{why}</p>}
+      {ruleFrom && <p className={`${why ? 'mt-1 ' : ''}text-sm text-slate-600`}>{ruleFrom}</p>}
       {small && <p className={`${why ? 'mt-1 ' : ''}text-xs leading-snug tabular-nums text-slate-500`}>{small}</p>}
       {next && (
         <div className={`${why || small ? 'mt-3 ' : ''}rounded-control bg-slate-50 px-3 py-2.5 text-xs leading-relaxed tabular-nums text-slate-600`}>

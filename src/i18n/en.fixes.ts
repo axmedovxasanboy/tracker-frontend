@@ -89,4 +89,14 @@ export const en_fixes = {
   'fix.chip.loanPayment': 'Loan payment',
   'fix.history.notItemised': 'not itemised',
   'fix.history.more': 'more than expected',
+
+  // ── Monthly income by month ───────────────────────────────────────────────────────────────────
+  'fix.income.from': 'From which month?',
+  'fix.income.fromNote': 'Months before it keep their targets.',
+  'fix.income.entry': '{amount} from {month}',
+  'fix.income.remove': 'Remove {amount} from {month}',
+  'fix.income.removeConfirm': 'From {month}, the months go back to the amount before this one.',
+  'fix.income.removeTitle': 'Remove this change?',
+  'fix.income.removed': 'Removed. From {month}: {amount}.',
+  'fix.income.savedFrom': 'Saved: {amount} from {month}.',
 } as const

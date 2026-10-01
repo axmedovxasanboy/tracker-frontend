@@ -498,11 +498,29 @@ export interface SettingsResponse {
   telegramWebhookUrl: string | null
   telegramWebViewUrl: string | null
   updatedAt: string
+  /**
+   * The monthly income month by month, oldest first: each amount holds from its month until the
+   * next entry. Absent on a server from before income history (STABLE-INCOME-HISTORY.md §1).
+   */
+  stableIncomeHistory?: StableIncomeEntry[]
+  /** YYYY-MM — the earliest month a change can be made to apply from. Absent on an older server. */
+  stableIncomeFirstMonth?: string
+}
+
+/** One change of the monthly income: `amount` from `month` (YYYY-MM) on. */
+export interface StableIncomeEntry {
+  month: string
+  amount: number
 }
 
 export interface SettingsRequest {
   monthlyStableIncome?: number
   monthlyStableIncomeCurrency?: Currency
+  /**
+   * YYYY-MM — the month a changed income applies from; months before it keep their targets.
+   * Left out, the server applies it from the current month. Only sent to a server that has history.
+   */
+  stableIncomeFrom?: string
   allocationTrackingStartMonth?: string
   telegramWebhookUrl?: string
   telegramWebViewUrl?: string

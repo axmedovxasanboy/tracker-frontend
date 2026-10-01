@@ -83,4 +83,14 @@ export const uz_fixes: Record<keyof typeof en_fixes, string> = {
   'fix.chip.loanPayment': 'Qarz toʻlovi',
   'fix.history.notItemised': 'tafsilotsiz',
   'fix.history.more': 'kutilgandan koʻp',
+
+  // ── Monthly income by month ───────────────────────────────────────────────────────────────────
+  'fix.income.from': 'Qaysi oydan boshlab?',
+  'fix.income.fromNote': 'Undan oldingi oylarning maqsadlari oʻzgarmaydi.',
+  'fix.income.entry': '{amount} — {month} dan',
+  'fix.income.remove': '{month} dagi {amount} ni olib tashlash',
+  'fix.income.removeConfirm': '{month} dan boshlab oylar bundan oldingi summaga qaytadi.',
+  'fix.income.removeTitle': 'Bu oʻzgarish olib tashlansinmi?',
+  'fix.income.removed': 'Olib tashlandi. {month} dan: {amount}.',
+  'fix.income.savedFrom': 'Saqlandi: {amount} — {month} dan.',
 }

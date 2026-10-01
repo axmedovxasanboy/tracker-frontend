@@ -12,6 +12,7 @@ import { PayBucketModal } from '../components/overview/PayBucketModal'
 import { CheckInModal } from '../components/months/CheckInModal'
 import { useAddForm } from '../context/AddFormContext'
 import { SpendHero } from '../components/home/SpendHero'
+import { LevelDownNotice } from '../components/levels/LevelDownNotice'
 import {
   ComingUpTile, LinkButton, NextStepsTile, TileHead, YouHaveTile, canPayUpcoming, isBucket, visibleSteps,
 } from '../components/home/HomeTiles'
@@ -214,6 +215,8 @@ export function Advisor({ currency }: Props) {
             ]}
           />
         </div>
+
+        <LevelDownNotice />
 
         {showGetStarted && (
           <GetStartedHero
