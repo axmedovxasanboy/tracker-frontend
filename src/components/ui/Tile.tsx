@@ -3,8 +3,9 @@ import type { KeyboardEvent, ReactNode } from 'react'
 /**
  * A tile's width, out of twelve columns. The set is deliberately short: a page built from
  * arbitrary widths stops reading as a grid, and every composition in the app fits one of these.
+ * 7 exists for Analytics' list-beside-a-side-tile rows (7 + 5).
  */
-export type TileSpan = 3 | 4 | 5 | 6 | 8 | 12
+export type TileSpan = 3 | 4 | 5 | 6 | 7 | 8 | 12
 
 /**
  * Tailwind only ships class names it can find as literal text, so the spans are written out
@@ -16,6 +17,7 @@ const SPAN: Record<TileSpan, string> = {
   4:  'md:col-span-2 xl:col-span-4',
   5:  'md:col-span-3 xl:col-span-5',
   6:  'md:col-span-3 xl:col-span-6',
+  7:  'md:col-span-4 xl:col-span-7',
   8:  'md:col-span-4 xl:col-span-8',
   12: 'md:col-span-6 xl:col-span-12',
 }

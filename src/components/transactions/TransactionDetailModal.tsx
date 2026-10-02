@@ -27,6 +27,10 @@ export function TransactionDetailModal({ transaction: tx, open, onClose, onEdit,
   if (!tx) return null
 
   const income = tx.type === 'INCOME'
+  // Pay for another month than the one it arrived in (September's salary on 2 October) — History
+  // lists it with that month, so the record says which one beside its date.
+  const payMonth = income && tx.salaryMonth ? tx.salaryMonth.slice(0, 7) : null
+  const forOtherMonth = payMonth != null && payMonth !== tx.transactionDate.slice(0, 7)
 
   const categoryLabel = tx.category ? categoryName(tx.category) : ''
   const subTypeLabel = tx.subType ? (SUB_TYPE_LABELS[tx.subType] ?? tx.subType) : ''
@@ -87,6 +91,9 @@ export function TransactionDetailModal({ transaction: tx, open, onClose, onEdit,
 
         <div className="space-y-1">
           <Row label={t('tx.date')}>{formatDate(tx.transactionDate, lang)}</Row>
+          {forOtherMonth && (
+            <Row label={t('cmp.txModal.label.salaryMonth')}>{formatDate(payMonth!, lang, 'month')}</Row>
+          )}
 
           {tx.category && (
             <Row label={t('tx.category')}>

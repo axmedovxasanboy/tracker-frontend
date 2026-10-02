@@ -49,13 +49,28 @@ export function monthBounds(month: string): { start: string; end: string } {
 }
 
 /**
- * Every transaction dated in `month`, all pages of it.
+ * The month a row counts in: the month a pay is for, when it says so — September's salary paid on
+ * 2 October counts in September — else the month of its date. Only income carries a `salaryMonth`
+ * (the server drops it on anything else). The server's own rule (`Transaction.accountingMonth`),
+ * the one Profile, Home and the savings targets already count by.
+ */
+export function accountingMonthOf(tx: Transaction): string {
+  return tx.type === 'INCOME' && tx.salaryMonth ? tx.salaryMonth.slice(0, 7) : tx.transactionDate.slice(0, 7)
+}
+
+/**
+ * Every transaction of `month`, all pages of it.
+ *
+ * By default the month is its calendar days — the rows dated in it, the way money moved (Loans
+ * reads the month's payments so). With `accountingMonth` it is the rows that COUNT in it (see
+ * `accountingMonthOf`): September's salary paid on 2 October comes with September and not with
+ * October. A server from before that flag ignores it and answers by date, as it always did.
  *
  * One user means a few hundred rows a month at most, so the whole month comes down and every
  * figure on the screen is added up from exactly the rows the list shows. The server caps a page
  * at 100, so a busy month is two or three requests, fetched together.
  */
-export async function fetchMonthTransactions(month: string): Promise<{
+export async function fetchMonthTransactions(month: string, { accountingMonth = false } = {}): Promise<{
   data: MonthTransactions
   isCached?: boolean
   cachedAt?: string
@@ -63,6 +78,7 @@ export async function fetchMonthTransactions(month: string): Promise<{
   const { start, end } = monthBounds(month)
   const query = (page: number) => transactionsApi.getAll({
     page, size: PAGE_SIZE, sortBy: 'transactionDate', sortDir: 'desc', startDate: start, endDate: end,
+    accountingMonth,
   })
   const first = await query(0)
   const pages = Math.min(first.data.totalPages, MAX_PAGES)
@@ -79,6 +95,9 @@ export async function fetchMonthTransactions(month: string): Promise<{
       rows.push(tx)
     }
   }
+  // The list draws one header per day, newest first. A pay dated outside the month sits among the
+  // rest by its own date whatever page it came on (a stable sort keeps each day's own order).
+  rows.sort((a, b) => b.transactionDate.localeCompare(a.transactionDate))
   // `api/client.ts` bolts the offline-cache flags onto the response at runtime, untyped.
   const cached = [first, ...rest]
     .map(r => r as unknown as { isCached?: boolean; cachedAt?: string })
@@ -286,8 +305,14 @@ export function entriesOf(rows: Transaction[]): HistoryEntry[] {
 const DEFAULT_FILTERS: Filters = {
   type: '', currency: '', categoryId: '', cardId: '', investmentId: '', search: '',
   startDate: '', endDate: '', page: 0, size: PAGE_SIZE,
-  sortBy: 'transactionDate', sortDir: 'desc',
+  sortBy: 'transactionDate', sortDir: 'desc', flows: [], walletCheck: false,
 }
+
+/** Every word a row's `flow` can be — what `?flow=` accepts; anything else in it is ignored. */
+const FLOWS: ReadonlySet<TransactionFlow> = new Set<TransactionFlow>([
+  'EARNED', 'BORROWED', 'RETURNED', 'FROM_SAVINGS', 'CORRECTION', 'LENT',
+  'SAVED', 'GIVEN', 'LOAN_PAYMENT', 'BILL', 'EVERYDAY', 'TRANSFER',
+])
 
 /** How many categories "Where it went" names before the rest become "Other". */
 const TOP_CATEGORIES = 6
@@ -310,11 +335,15 @@ export function History({ currency }: Props) {
   const [searchParams] = useSearchParams()
 
   const thisMonth = monthLocal()
+  // The furthest month that can hold anything: next month's pay received ahead (a salary or an
+  // advance marked "For November" on 2 October) counts in, and is listed under, next month — the
+  // most a pay can be ahead of its date. Without it that row would be out of reach until November.
+  const lastMonth = shiftMonth(thisMonth, 1)
   const [month, setMonth] = useState(() => {
     // `from` is how Analytics links to one day (or a few): its month is the month to open.
     const asked = searchParams.get('month') ?? searchParams.get('startDate')?.slice(0, 7)
       ?? searchParams.get('from')?.slice(0, 7) ?? ''
-    return YM.test(asked) && asked <= thisMonth ? asked : thisMonth
+    return YM.test(asked) && asked <= lastMonth ? asked : thisMonth
   })
 
   // Links from elsewhere (and the old /transactions?type=… bookmarks) arrive as query params.
@@ -330,6 +359,10 @@ export function History({ currency }: Props) {
       return ISO_DAY.test(v) && v.slice(0, 7) === month ? v : ''
     }
     const type = searchParams.get('type')
+    // Analytics opens exactly a figure's rows: `flow=` (a comma list of the server's words) and
+    // `walletCheck=1` (the rows behind "Not itemised"), each ANDed with the rest.
+    const flows = (searchParams.get('flow') ?? '').split(',')
+      .filter((f): f is TransactionFlow => FLOWS.has(f as TransactionFlow))
     return {
       ...DEFAULT_FILTERS,
       startDate: day('from'),
@@ -338,6 +371,8 @@ export function History({ currency }: Props) {
       categoryId: num('categoryId'),
       cardId: num('cardId'),
       investmentId: num('investmentId'),
+      flows,
+      walletCheck: searchParams.get('walletCheck') === '1',
     }
   })
   const [searchDraft, setSearchDraft] = useState(() => searchParams.get('search') ?? '')
@@ -368,13 +403,30 @@ export function History({ currency }: Props) {
     setSearchDraft('')
   }, [])
 
-  const monthTx = useApi(() => fetchMonthTransactions(month), [month])
+  // The month: the rows that count in it — September's salary paid on 2 October is September's.
+  // Every figure on the page is added up from these rows, and the month's list shows them.
+  const monthTx = useApi(() => fetchMonthTransactions(month, { accountingMonth: true }), [month])
+  // Days picked inside the month (a day tapped on Analytics, or From/To) are days on the calendar:
+  // the list then shows what is dated in them, whatever month a pay is for — which takes the month
+  // by date. Only while such days are picked; the figures stay the month's.
+  const dayRange = !!(filters.startDate || filters.endDate)
+  const datedTx = useApi<MonthTransactions | null>(
+    () => dayRange ? fetchMonthTransactions(month) : Promise.resolve({ data: null }),
+    [month, dayRange],
+  )
   const categories = useApi(() => categoriesApi.getAll(), [])
 
   // Only the month on screen counts. While another month is loading, the hook still holds the
   // previous one — drawing its figures under the new month's name would be a wrong answer.
   const current = monthTx.data?.month === month ? monthTx.data : null
+  // Taken as the server sent them: a server that knows `accountingMonth` sends the rows that count
+  // in the month; an older one ignores the flag and sends the month by date, so a pay marked for
+  // another month stays, then, where it always was — with its "For …" chip.
   const rows = useMemo(() => current?.rows ?? [], [current])
+  // What the list is drawn from. Until the days' own rows arrive (or if they fail), the month's rows
+  // narrowed to the days stand in — they differ only by a pay received on those days for another month.
+  const dated = dayRange && datedTx.data?.month === month ? datedTx.data.rows : null
+  const listSource = dated ?? rows
 
   const goMonth = (next: string) => {
     setMonth(next)
@@ -391,7 +443,7 @@ export function History({ currency }: Props) {
     try {
       await transactionsApi.delete(id)
       setDetailTx(null)
-      await monthTx.refetch()
+      await Promise.all([monthTx.refetch(), datedTx.refetch()])
       showSuccess(t('page.transactions.deletedToast'))
     } finally {
       setDeleting(null)
@@ -455,13 +507,18 @@ export function History({ currency }: Props) {
 
   // ── The list ─────────────────────────────────────────────────────────────────
   const query = search.trim().toLocaleLowerCase()
-  const visible = useMemo(() => rows.filter(tx => {
+  // The month view keeps every row of `rows` — the month's, a pay dated in another month included.
+  // Only picked days ask about the date.
+  const visible = useMemo(() => listSource.filter(tx => {
     if (filters.type && tx.type !== filters.type) return false
     // A parent category means its sub-categories too.
     if (filters.categoryId && !(tx.category
       && (tx.category.id === filters.categoryId || tx.category.parentId === filters.categoryId))) return false
     if (filters.cardId && tx.card?.id !== filters.cardId) return false
     if (filters.investmentId && tx.investmentId !== filters.investmentId) return false
+    // By the server's own word for the row; a row without one (an older server) matches none.
+    if (filters.flows?.length && !(tx.flow && filters.flows.includes(tx.flow))) return false
+    if (filters.walletCheck && !(tx.subType === 'EVERYDAY_SPENDING' || tx.flow === 'CORRECTION')) return false
     if (filters.startDate && tx.transactionDate < filters.startDate) return false
     if (filters.endDate && tx.transactionDate > filters.endDate) return false
     if (query) {
@@ -471,10 +528,11 @@ export function History({ currency }: Props) {
       if (!haystack.includes(query)) return false
     }
     return true
-  }), [rows, filters, query])
+  }), [listSource, filters, query])
 
   const filtersActive = !!(
     filters.type || filters.categoryId || filters.cardId || filters.investmentId
+    || filters.flows?.length || filters.walletCheck
     || filters.startDate || filters.endDate || query
   )
 
@@ -486,6 +544,9 @@ export function History({ currency }: Props) {
   })()
   const dayLabel = (date: string) => {
     const full = formatDate(date, lang)
+    // A day outside the month on screen only holds pay received then for this month (September's
+    // salary on 2 October): "Received 2 Oct 2026", never "Today · …" — today is not September's.
+    if (date.slice(0, 7) !== month) return t('shell.history.received', { date: full })
     if (date === today) return `${t('page.transactions.today')} · ${full}`
     if (date === yesterday) return `${t('page.transactions.yesterday')} · ${full}`
     return full
@@ -493,7 +554,7 @@ export function History({ currency }: Props) {
 
   // Search and the filters are asked about the rows themselves; a merged line shows when any of
   // its rows match, and then shows whole — a move is never drawn as half of itself.
-  const entries = useMemo(() => entriesOf(rows), [rows])
+  const entries = useMemo(() => entriesOf(listSource), [listSource])
   const shown = useMemo(() => {
     const ids = new Set(visible.map(tx => tx.id))
     return entries.filter(e => rowsOf(e).some(tx => ids.has(tx.id)))
@@ -568,6 +629,8 @@ export function History({ currency }: Props) {
   const waiting = !current && (monthTx.loading || monthTx.refreshing)
   const failed = !current && !waiting && !!monthTx.error
   const dim = monthTx.refreshing && !!current ? 'opacity-60 transition-opacity' : ''
+  // The list also waits on the picked days' own rows, when there are such days.
+  const listDim = dim || (dayRange && (datedTx.loading || datedTx.refreshing) ? 'opacity-60 transition-opacity' : '')
 
   const emptyList = filtersActive ? (
     <div className="flex flex-col items-center gap-3">
@@ -591,8 +654,8 @@ export function History({ currency }: Props) {
         monthStepper={{
           label: monthLabel,
           onPrev: () => goMonth(shiftMonth(month, -1)),
-          // Nothing is recorded ahead of today's month.
-          onNext: month < thisMonth ? () => goMonth(shiftMonth(month, 1)) : undefined,
+          // Nothing counts further ahead than next month (see `lastMonth`).
+          onNext: month < lastMonth ? () => goMonth(shiftMonth(month, 1)) : undefined,
         }}
         primary={{
           label: t('action.add'),
@@ -619,6 +682,9 @@ export function History({ currency }: Props) {
             <>
               {monthTx.error && (
                 <ErrorTile compact className={FULL} message={monthTx.error} onRetry={monthTx.refetch} />
+              )}
+              {dayRange && datedTx.error && (
+                <ErrorTile compact className={FULL} message={datedTx.error} onRetry={datedTx.refetch} />
               )}
 
               {/* The hero: the month in figures, added up from the very rows listed below. */}
@@ -648,13 +714,16 @@ export function History({ currency }: Props) {
                     <CacheBadge isCached cachedAt={monthTx.cachedAt} />
                   </div>
                 )}
-                {/* The same month, from further away: where it all went, and how it compares. */}
-                <div className="mt-2">
-                  <LinkButton
-                    label={t('analytics.fromHistory', { month: formatDate(month, lang, 'monthName') })}
-                    onClick={() => navigate(`/analytics?month=${month}`)}
-                  />
-                </div>
+                {/* The same month, from further away: where it all went, and how it compares. Not
+                    for next month (reachable for pay marked ahead): Analytics stops at this month. */}
+                {month <= thisMonth && (
+                  <div className="mt-2">
+                    <LinkButton
+                      label={t('analytics.fromHistory', { month: formatDate(month, lang, 'monthName') })}
+                      onClick={() => navigate(`/analytics?month=${month}`)}
+                    />
+                  </div>
+                )}
               </Tile>
 
               <Tile span={6} mdSpan={6} as="section" className={dim}>
@@ -712,7 +781,7 @@ export function History({ currency }: Props) {
                 </Tile>
               )}
 
-              <ListTile span={12} empty={emptyList} className={dim}>
+              <ListTile span={12} empty={emptyList} className={listDim}>
                 {listRows}
               </ListTile>
             </>
@@ -811,9 +880,11 @@ function Row({ tx, deleting, nested = false, onOpen, onEdit, onDelete }: {
   const loan = loanWord(tx)
   const neutral = move || check || loan != null
   const wallet = tx.card?.name ?? t('tx.cash')
-  // Pay that arrived in one month for another — September's salary on 2 October — says so.
-  const payMonth = income && tx.salaryMonth ? tx.salaryMonth.slice(0, 7) : null
-  const forOtherMonth = payMonth != null && payMonth !== tx.transactionDate.slice(0, 7)
+  // Pay that arrived in one month for another — September's salary on 2 October — is listed with
+  // the month it is for, under the day it arrived, and says "For September" beside its category.
+  // The day it arrived is its day header ("Received 2 Oct 2026" on September), never said twice.
+  const payMonth = accountingMonthOf(tx)
+  const forOtherMonth = !move && !check && payMonth !== tx.transactionDate.slice(0, 7)
   const subtitle = move
     ? t(income ? 'fix.history.to' : 'fix.history.from', { wallet })
     : check
@@ -854,7 +925,7 @@ function Row({ tx, deleting, nested = false, onOpen, onEdit, onDelete }: {
           )}
           {forOtherMonth && (
             <span className="inline-flex items-center rounded-chip bg-indigo-50 px-1.5 py-0.5 text-[11px] font-medium text-indigo-700">
-              {t('shell.history.forMonth', { month: formatDate(payMonth!, lang, 'monthName') })}
+              {t('shell.history.forMonth', { month: formatDate(payMonth, lang, 'monthName') })}
             </span>
           )}
           {isSplit && (

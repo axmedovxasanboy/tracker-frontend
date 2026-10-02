@@ -131,7 +131,7 @@ export function useAppBarMounted(): boolean {
   )
 }
 
-export function PageHeader({ title, subtitle, chip, monthStepper, primary, overflow, info }: {
+export function PageHeader({ title, subtitle, chip, monthStepper, primary, overflow, info, barExtra }: {
   title: string
   subtitle?: string
   chip?: { text: string; tone?: 'neutral' | 'attention' }
@@ -144,6 +144,11 @@ export function PageHeader({ title, subtitle, chip, monthStepper, primary, overf
   primary?: { label: string; onClick: () => void; icon?: ReactNode; hideOnPhone?: boolean }
   overflow?: OverflowAction[]
   info?: { label: string; onClick: () => void }
+  /**
+   * Opt-in: drawn in the PHONE app bar, before the overflow menu — a control that must never
+   * scroll away (Analytics' month picker). The page places its own desktop copy.
+   */
+  barExtra?: ReactNode
 }) {
   const { t } = useLang()
   const { onOpenMenu, appBar = true } = useMobileNav()
@@ -206,6 +211,7 @@ export function PageHeader({ title, subtitle, chip, monthStepper, primary, overf
             <Button variant="primary" size="sm" label={primary.label} icon={primary.icon}
               onClick={primary.onClick} className="shrink-0 max-w-[45%]" />
           )}
+          {barExtra && <div className="shrink-0">{barExtra}</div>}
           <OverflowMenu actions={actions} className="shrink-0" />
         </header>,
         appBarHost(),

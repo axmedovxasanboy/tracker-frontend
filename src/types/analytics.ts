@@ -48,7 +48,13 @@ export interface AnalyticsFlow {
   returned: number
   /** Money taken out of an investment, a goal or the emergency fund. */
   fromSavings: number
-  /** leftOver + borrowed − lent + returned + fromSavings: what the wallets actually did. */
+  /**
+   * Pay that crossed the period's edge (2026-10-02): + what reached the wallets in the period but is
+   * another month's salary, − what counts in the period but reached the wallets outside it. Absent
+   * from a server older than that.
+   */
+  payForOtherMonths?: number
+  /** leftOver + borrowed − lent + returned + fromSavings + payForOtherMonths: what the wallets actually did. */
   walletChange: number
   /** Counted rows (moves between the owner's own wallets excluded). */
   count: number

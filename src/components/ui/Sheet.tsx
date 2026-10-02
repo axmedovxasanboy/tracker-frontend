@@ -21,6 +21,16 @@ export interface SheetProps {
   dirty?: boolean
   /** Where focus lands on open. Without it the sheet picks the first field — never the close button. */
   initialFocusRef?: RefObject<HTMLElement>
+  /**
+   * The title heading, made focusable from script (tabIndex -1) — pass the same ref as
+   * `initialFocusRef` when the sheet has no field to start in, so a screen reader starts at its name.
+   */
+  titleRef?: RefObject<HTMLHeadingElement>
+  /**
+   * A whole page shown in a sheet (Analytics' 12-months "Open"): below `sm` it fills the screen
+   * edge to edge instead of rising as a bottom sheet; from `sm` it is the usual centred box.
+   */
+  fullScreenOnPhone?: boolean
 }
 
 const FOCUSABLE =
@@ -34,7 +44,8 @@ const FOCUSABLE =
 const openSheets: string[] = []
 
 export function Sheet({
-  open, onClose, title, children, footer, maxWidth = 'max-w-xl', dirty, initialFocusRef,
+  open, onClose, title, children, footer, maxWidth = 'max-w-xl', dirty, initialFocusRef, titleRef,
+  fullScreenOnPhone = false,
 }: SheetProps) {
   const { t } = useLang()
   const id = useId()
@@ -122,8 +133,16 @@ export function Sheet({
       const first = focusables[0]
       const last = focusables[focusables.length - 1]
       const active = document.activeElement as HTMLElement | null
-      if (e.shiftKey && (active === first || !root.contains(active))) { e.preventDefault(); last.focus() }
-      else if (!e.shiftKey && (active === last || !root.contains(active))) { e.preventDefault(); first.focus() }
+      const inside = !!active && root.contains(active)
+      // Focus can also rest on something inside that is not a tab stop — the title heading
+      // (tabIndex -1) or the dialog box itself. Before the first stop, Shift+Tab would leave the
+      // sheet for whatever sits behind it in the DOM; after the last one, Tab would.
+      const beforeFirst = inside && active !== first
+        && !!(first.compareDocumentPosition(active!) & Node.DOCUMENT_POSITION_PRECEDING)
+      const afterLast = inside && active !== last
+        && !!(last.compareDocumentPosition(active!) & Node.DOCUMENT_POSITION_FOLLOWING)
+      if (e.shiftKey && (active === first || !inside || beforeFirst)) { e.preventDefault(); last.focus() }
+      else if (!e.shiftKey && (active === last || !inside || afterLast)) { e.preventDefault(); first.focus() }
     }
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
@@ -146,7 +165,7 @@ export function Sheet({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4"
+      className={`fixed inset-0 z-50 flex justify-center sm:items-center sm:p-4 ${fullScreenOnPhone ? 'items-stretch' : 'items-end'}`}
       role="dialog"
       aria-modal="true"
       aria-label={title}
@@ -157,15 +176,25 @@ export function Sheet({
       <div
         ref={dialogRef}
         tabIndex={-1}
-        className={`relative flex w-full flex-col overflow-hidden bg-white shadow-2xl outline-none rounded-t-tile sm:rounded-tile max-h-[92vh] sm:max-h-[90vh] ${maxWidth}`}
+        className={`relative flex w-full flex-col overflow-hidden bg-white shadow-2xl outline-none sm:rounded-tile sm:max-h-[90vh] ${
+          fullScreenOnPhone ? 'h-[100dvh] rounded-none sm:h-auto' : 'rounded-t-tile max-h-[92vh]'
+        } ${maxWidth}`}
       >
         <div className="shrink-0 border-b border-hairline">
           {/* The affordance that says "drag me" on a phone; on desktop this is a centred box. */}
-          <div className="sm:hidden mx-auto mt-2 h-1 w-10 rounded-full bg-slate-200" aria-hidden="true" />
+          {!fullScreenOnPhone && (
+            <div className="sm:hidden mx-auto mt-2 h-1 w-10 rounded-full bg-slate-200" aria-hidden="true" />
+          )}
           <div className="flex items-center justify-between gap-3 px-5 py-2 sm:px-7 sm:py-4">
             {/* min-w-0 or the flex item refuses to shrink and a long title shoves the close
                 button off the edge instead of ellipsing. */}
-            <h2 className="text-title text-slate-900 truncate min-w-0">{title}</h2>
+            <h2
+              ref={titleRef}
+              tabIndex={titleRef ? -1 : undefined}
+              className="text-title text-slate-900 truncate min-w-0 rounded-chip focus-ring"
+            >
+              {title}
+            </h2>
             <button
               ref={closeRef}
               type="button"

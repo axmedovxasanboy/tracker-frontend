@@ -133,6 +133,23 @@ export interface TransactionFilters {
   sortDir: 'asc' | 'desc'
   cashOnly?: boolean
   excludeTransfers?: boolean
+  /**
+   * With startDate/endDate spanning exactly one calendar month: that month's rows by the month
+   * they COUNT in, not the day they are dated — pay for the month dated in another one (its
+   * `salaryMonth`) comes along, and a row of the month marked for another one stays away. A
+   * server from before the flag ignores it and answers by date.
+   */
+  accountingMonth?: boolean
+  /**
+   * History only, never sent: keep the rows whose server `flow` is one of these (`?flow=BILL`,
+   * `?flow=BORROWED,LENT` — Analytics' links). A row without a `flow` matches none.
+   */
+  flows?: TransactionFlow[]
+  /**
+   * History only, never sent: keep the wallet-check rows — `subType` EVERYDAY_SPENDING or `flow`
+   * CORRECTION — exactly the rows behind Analytics' "Not itemised" (`?walletCheck=1`).
+   */
+  walletCheck?: boolean
 }
 
 export interface TransactionRequest {

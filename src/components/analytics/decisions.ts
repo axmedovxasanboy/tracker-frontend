@@ -1,25 +1,22 @@
-import type { AnalyticsFlow } from '../../types/analytics'
-
 /**
- * The owner's open questions from ANALYTICS-SPEC.md §13, each answered in ONE place.
- * A different answer is a one-line change here (the page's name is the one line
- * `shell.nav.analytics` in `i18n/en.analytics.ts` and `uz.analytics.ts`).
+ * The owner's switches for Analytics (ANALYTICS-V2-SPEC.md §5.3 and §7), each answered in ONE
+ * place. A different answer is a one-line change here.
+ *
+ * The page names are not here: they are i18n keys (`analytics.nav.*` in `i18n/en.analytics.ts`
+ * and `uz.analytics.ts`), so renaming a tab — "Set aside" to "Savings" (Q3) — is two strings and
+ * touches no other screen's words.
  */
 
 /**
- * Whether a donation counts inside "Saved". The owner's answer (2026-09-30): no — a donation is
- * "Given". So "Saved" excludes donations everywhere on the page, "Given" is its own segment in
- * "Where it went", and the tile that lists both is titled "Set aside". History follows the same
- * rule (pages/History.tsx), so the word shows the same figure on both pages.
+ * Q1 — whether Expected In counts the average bonus. The owner's rule ("the average of all
+ * previous months") says yes, so it does, with "(incl. … bonus)" on In and Left over whenever the
+ * bonus is a large part of it. False takes `expected.flow.earnedBonus` off Expected In and
+ * Expected Left over on Totals and In, and drops the note; the Bonus source row keeps its own.
  */
-export const DONATION_COUNTS_AS_SAVED: boolean = false
+export const EXPECTED_IN_COUNTS_BONUS: boolean = true
 
-/** The blunt line under the hero: "Without the bonus this month would be … short." */
-export const SHOW_WITHOUT_BONUS_LINE: boolean = true
+/** From this share of Expected In, the In and Left over rows say "(incl. … bonus)" (§1.2). */
+export const BONUS_NOTE_SHARE = 0.25
 
-/** "Saved" and "Given" as the page shows them, under the decision above. */
-export function savedAndGiven(f: Pick<AnalyticsFlow, 'saved' | 'savedDonation'>): { saved: number; given: number } {
-  return DONATION_COUNTS_AS_SAVED
-    ? { saved: f.saved, given: 0 }
-    : { saved: f.saved - f.savedDonation, given: f.savedDonation }
-}
+/** How many Out rows are listed before the rest fold into "Smaller (n)" (§3.3). */
+export const OUT_ROWS_BEFORE_SMALLER = 8

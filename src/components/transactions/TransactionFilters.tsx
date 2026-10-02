@@ -5,7 +5,9 @@ import { Field } from '../ui/Field'
 import { Spinner } from '../ui/Spinner'
 import { useLang } from '../../i18n/LanguageContext'
 import { formatDate } from '../../utils/format'
+import type { TKey } from '../../i18n/LanguageContext'
 import type { Category, TransactionFilters as Filters, TransactionType } from '../../types'
+import type { TransactionFlow } from '../../types/fixes'
 
 interface Props {
   filters: Filters
@@ -24,6 +26,25 @@ interface Props {
 /** One shape for every control in the panel, so the four of them line up on any row. */
 const CONTROL =
   'h-11 w-full rounded-control border border-slate-200 bg-white px-3 text-sm text-slate-900 focus-ring'
+
+/**
+ * A `flow` filter's chip, in the word list's names — the same words Analytics uses for the
+ * figure the link came from (Bills, Loan payments, Borrowed, Lent, Paid back to you, From savings).
+ */
+const FLOW_WORD: Record<TransactionFlow, TKey> = {
+  EARNED: 'shell.history.in',
+  EVERYDAY: 'analytics.group.everyday',
+  BILL: 'analytics.group.bills',
+  LOAN_PAYMENT: 'analytics.group.loans',
+  SAVED: 'shell.history.saved',
+  GIVEN: 'fix.given',
+  BORROWED: 'an.borrowed',
+  LENT: 'an.lent',
+  RETURNED: 'an.returned',
+  FROM_SAVINGS: 'an.fromSavings',
+  CORRECTION: 'fix.history.check',
+  TRANSFER: 'fix.history.moved',
+}
 
 /** One active filter, as a chip that clears exactly itself. */
 interface Chip {
@@ -90,6 +111,20 @@ export function TransactionFilters({
       key: 'investment',
       label: t('cmp.txFilters.chipInvestment'),
       clear: () => onChange({ investmentId: '', page: 0 }),
+    })
+  }
+  if (filters.flows && filters.flows.length > 0) {
+    chips.push({
+      key: 'flow',
+      label: filters.flows.map(f => t(FLOW_WORD[f])).join(', '),
+      clear: () => onChange({ flows: [], page: 0 }),
+    })
+  }
+  if (filters.walletCheck) {
+    chips.push({
+      key: 'walletCheck',
+      label: t('fix.history.check'),
+      clear: () => onChange({ walletCheck: false, page: 0 }),
     })
   }
   if (filters.startDate) {

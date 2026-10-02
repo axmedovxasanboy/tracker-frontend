@@ -29,10 +29,7 @@ export const SERIES_BG: Record<Series, string> = {
   muted: 'bg-chart-muted',
 }
 
-/**
- * The same colour as `currentColor`, for a recharts layer: its marks are given
- * `fill="currentColor"` / `stroke="currentColor"` and the layer this class.
- */
+/** The same colour as `currentColor`, for a mark that inherits its colour (an SVG stroke). */
 export const SERIES_TEXT: Record<Series, string> = {
   pay: 'text-chart-pay',
   bonus: 'text-chart-bonus',
@@ -57,30 +54,9 @@ export const HATCH =
   'border border-slate-300 bg-white bg-[repeating-linear-gradient(135deg,theme(colors.slate.300)_0_2px,transparent_2px_6px)]'
 
 /**
- * The chrome of a recharts chart, set from outside through the class names recharts gives its
- * parts — so grid, axes and ticks wear the app's slate tokens instead of hex literals in props
- * (a CSS rule outranks the presentation attribute recharts writes).
- *
- * The last line is the focus indicator. With `accessibilityLayer` recharts makes its own <svg>
- * the tab stop, so the project's `focus-ring` class cannot be put on it; this draws the same
- * indigo-600 band on it instead (the global reset removes the browser's own outline). A chart
- * always sits on a white tile, where that one band measures 6.29:1.
+ * A compact amount without its unit — "22,3 M", "400 k", "26 M" (a whole magnitude has no ",0").
+ * Every figure on a closed Analytics row is printed by this; the unit is said once per page.
  */
-export const CHART_CHROME = [
-  '[&_.recharts-cartesian-grid_line]:stroke-slate-200',
-  '[&_.recharts-cartesian-axis-line]:stroke-slate-200',
-  '[&_.recharts-cartesian-axis-tick-value]:fill-slate-500',
-  '[&_.recharts-tooltip-cursor]:stroke-slate-300',
-  '[&_.recharts-surface]:rounded-chip',
-  '[&_.recharts-surface:focus-visible]:outline [&_.recharts-surface:focus-visible]:outline-2',
-  '[&_.recharts-surface:focus-visible]:outline-offset-2 [&_.recharts-surface:focus-visible]:outline-indigo-600',
-].join(' ')
-
-/** The box a chart's tooltip is drawn in. */
-export const TOOLTIP_BOX =
-  'rounded-control border border-hairline bg-white px-3 py-2 text-xs text-slate-600 shadow-tile-hover'
-
-/** A compact amount without its unit — "22,3 M" — for axis ticks and dense table cells. */
 export function compact(amount: number): string {
   return money(amount).replace(/\s*UZS$/, '')
 }

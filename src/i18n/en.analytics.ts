@@ -1,121 +1,146 @@
 /**
- * Strings for the Analytics page (ANALYTICS-SPEC.md). Merged into the main dictionary by
+ * Strings for Analytics (ANALYTICS-V2-SPEC.md §5.4). Merged into the main dictionary by
  * LanguageContext.
  *
- * Analytics says what happened, in History's words: In, Out and Saved come from `shell.history.*`
- * and are not restated here. Nothing in this file gives advice, names a budget, or talks about
- * levels, buckets or allocation.
+ * Analytics says what happened, in one name per figure: In and Out come from `shell.history.*`,
+ * Set aside from `fix.setAside`, and are not restated here. Nothing in this file gives advice,
+ * names a budget, or talks about levels, buckets or allocation. Every figure on these pages is
+ * printed without its unit; "UZS" is said once, in the header line (`an.unit`).
  */
 export const en_analytics = {
   // ── Navigation and the period ───────────────────────────────────────────────────────────────
   'shell.nav.analytics': 'Analytics',
-  'analytics.tab.month': 'Month',
-  'analytics.tab.year': '12 months',
+  // The six tabs. Their own keys on purpose: the owner may rename a tab ("Income", "Expense",
+  // "Savings") without touching the figure of the same name anywhere else.
+  'analytics.nav.totals': 'Totals',
+  'analytics.nav.in': 'Income',
+  'analytics.nav.out': 'Expense',
+  'analytics.nav.setAside': 'Savings',
+  'analytics.nav.goals': 'Goals',
+  'analytics.nav.year': '12 months',
+  'an.nav.label': 'Analytics pages',
   'analytics.tab.yearLockReason': 'Needs two months of entries',
   'analytics.tab.yearLocked': 'Opens when {month} has its first entry.',
   'analytics.tab.yearLockedNoData': 'Opens once two months have entries.',
   'analytics.backToMonth': 'Back to {month}',
-  'analytics.period.last12': 'Last 12 months',
   'analytics.outdated': 'Update the server to see Analytics.',
+  // History's link into this page.
   'analytics.fromHistory': 'See {month} in Analytics',
-  'analytics.seeHistory': 'See {month} in History',
-  'analytics.shareOfIn': '{percent}% of what came in',
-  'analytics.perMonth': 'About {amount} a month',
 
-  // ── The four places money goes, and what is left ────────────────────────────────────────────
+  // ── The parts of Out, and what is left (History and Loans use these too) ────────────────────
   'analytics.group.everyday': 'Everyday spending',
   'analytics.group.bills': 'Bills',
   'analytics.group.loans': 'Loan payments',
   'analytics.group.leftOver': 'Left over',
-
-  // ── A. The period in one line ───────────────────────────────────────────────────────────────
-  'analytics.a.leftOver': '{period} · left over',
-  'analytics.a.short': '{period} · short',
-  'analytics.a.empty': 'Nothing recorded.',
-  'analytics.a.justStarted': 'Just started.',
-  'analytics.a.seeMonth': 'See {month}',
-  'analytics.a.pay': 'Pay',
-  'analytics.a.bonus': 'Bonus',
-  'analytics.a.otherIncome': 'Other income',
-  'analytics.a.moreThanIn': '{amount} more than came in',
-  'analytics.a.withoutBonus': 'Without the bonus: {amount} short.',
-  'analytics.a.withoutBonusRange': 'Without the bonuses: {amount} short.',
-  'analytics.a.outMore': 'Out: {amount} more than {month}.',
-  'analytics.a.outLess': 'Out: {amount} less than {month}.',
-  'analytics.a.outSame': 'Out: about the same as {month}.',
-  'analytics.a.alsoMoved': 'Not income or spending:',
-  'analytics.a.borrowed': 'Borrowed {amount}',
-  'analytics.a.lent': 'Lent {amount}',
-  'analytics.a.returned': 'Paid back to you {amount}',
-  'analytics.a.fromSavings': 'Taken from savings {amount}',
-  'analytics.a.notYetOne': '{count} later-dated entry not counted yet.',
-  'analytics.a.notYet': '{count} later-dated entries not counted yet.',
-  'analytics.a.how.borrowed': 'Borrowed',
-  'analytics.a.how.lent': 'Lent',
-  'analytics.a.how.returned': 'Paid back to you',
-  'analytics.a.how.fromSavings': 'Taken from savings',
-  'analytics.a.walletsChanged': 'Your wallets changed by',
-  'analytics.a.perMonth': 'A month: in {in}, out {out}.',
-
-  // ── B. Everyday spending ────────────────────────────────────────────────────────────────────
   'analytics.b.uncategorised': 'No category',
   'analytics.b.notItemised': 'Not itemised',
   'analytics.b.notItemisedHint': 'from wallet checks',
-  'analytics.b.more': '{amount} more than {month}',
-  'analytics.b.less': '{amount} less than {month}',
-  'analytics.b.seeInHistory': 'See these in History',
-  'analytics.b.empty': 'Nothing spent.',
-
-  // ── C. Through the month ────────────────────────────────────────────────────────────────────
-  'analytics.c.title': 'Through the month',
-  'analytics.c.perDay': '{amount} a day',
-  'analytics.c.plainOne': '{amount} of everyday spending in {count} day.',
-  'analytics.c.plain': '{amount} of everyday spending in {count} days.',
-  'analytics.c.lessThan': 'By {date}: {amount} less than {month}.',
-  'analytics.c.moreThan': 'By {date}: {amount} more than {month}.',
-  'analytics.c.sameAs': 'By {date}: about the same as {month}.',
-  'analytics.c.spentThatDay': 'spent that day',
-  'analytics.c.soFar': 'So far',
-  'analytics.c.includesCheck': 'incl. {amount} from a wallet check',
-  'analytics.c.biggestDays': 'Biggest days',
-  'analytics.c.showNumbers': 'Show the numbers',
-  'analytics.c.colDays': 'Days',
-  'analytics.c.colSpent': 'Spent',
-
-  // ── C′. Month by month ──────────────────────────────────────────────────────────────────────
-  'analytics.m.title': 'Month by month',
-  'analytics.m.someOver': 'Out beat in: {n} of {m} months.',
-  'analytics.m.noneOver': 'Every month, less out than in.',
-  'analytics.m.soFar': 'so far',
-  'analytics.m.colMonth': 'Month',
-  'analytics.m.unit': 'Amounts in UZS',
-  'analytics.m.open': 'Open {month}',
-
-  // ── D. Bills and loans ──────────────────────────────────────────────────────────────────────
-  'analytics.d.title': 'Bills and loans',
-  'analytics.d.meter': '{paid} of {income} monthly pay',
-  'analytics.d.overPay': 'Over your monthly pay.',
   'analytics.d.kind.bill': 'bill',
-  'analytics.d.kind.bank': 'bank loan',
-  'analytics.d.kind.monthly': 'monthly loan',
-  'analytics.d.kind.asap': 'repay fast',
-  'analytics.d.open': 'Open Loans & bills',
-  'analytics.d.empty': 'No bills or loan payments.',
-
-  // ── E. Saved ────────────────────────────────────────────────────────────────────────────────
-  'analytics.e.empty': 'Nothing saved.',
-
-  // ── F. Biggest purchases ────────────────────────────────────────────────────────────────────
-  'analytics.f.title': 'Biggest purchases',
-  'analytics.f.empty': 'No purchases.',
-
-  // ── G. Own and owe ──────────────────────────────────────────────────────────────────────────
-  'analytics.g.title': 'Own and owe',
-  'analytics.g.net': 'Own minus loans',
-  'analytics.g.own': 'You own',
-  'analytics.g.leftToRepay': 'Left to repay',
-  'analytics.g.owedToYou': 'Owed to you: {amount}',
-  'analytics.g.paidOffBy': '{monthly} a month · until {month}',
-  'analytics.g.unknown': 'amount unknown',
   'analytics.g.notCounting': '{names} not counted (amount unknown)',
+
+  // ── The header line ─────────────────────────────────────────────────────────────────────────
+  'an.day': 'Day {day} of {days}',
+  'an.basis.one': 'Expected: average of {count} month ({months})',
+  'an.basis.many': 'Expected: average of {count} months ({months})',
+  'an.basis.none': 'Nothing earlier to compare with',
+  'an.basis.skipped': '(no entries: {months})',
+  'an.unit': 'UZS',
+  'an.notYetOne': '{count} later-dated entry not counted yet',
+  'an.notYet': '{count} later-dated entries not counted yet',
+
+  // ── So far against expected (§1.2) ──────────────────────────────────────────────────────────
+  'an.expected': '{amount} expected',
+  'an.toCome': '{amount} to come',
+  'an.over': '{amount} over',
+  'an.more': '{amount} more',
+  'an.less': '{amount} less',
+  'an.asExpected': 'as expected',
+  'an.inclBonus': 'incl. {amount} bonus',
+  'an.stableIncome': 'Monthly income: {amount}',
+  'an.inclBills': 'incl. {amount} bills',
+  'an.paidOff': 'paid off',
+  'an.loansPaidOff': '{amount} for paid-off loans',
+  'an.new': 'new',
+  'an.sr.more': 'more than expected',
+  'an.sr.less': 'less than expected',
+  'an.sr.about': 'about as expected',
+
+  // ── Not counted ─────────────────────────────────────────────────────────────────────────────
+  'an.notCounted': 'Not counted as In or Out',
+  'an.notCountedIn': 'Not counted as In',
+  'an.notCountedOut': 'Not counted as Out',
+  'an.borrowed': 'Borrowed',
+  'an.lent': 'Lent',
+  'an.returned': 'Paid back to you',
+  'an.fromSavings': 'From savings',
+  'an.nothingFromSavings': 'Nothing taken from savings.',
+
+  // ── In ──────────────────────────────────────────────────────────────────────────────────────
+  'an.receivedOn': '{amount} of it received {date}',
+  'an.countsIn': '{amount} received {date} counts in {month}',
+  'an.receivedOnMany': '{amount} of it received in other months',
+  'an.countsInMany': '{amount} received here counts in other months',
+  'an.sources': 'Sources',
+
+  // ── Out ─────────────────────────────────────────────────────────────────────────────────────
+  'an.byCategory': 'By category',
+  'an.perDay': '{amount} a day',
+  'an.byToday': 'Itemised by today: {amount} of {expected} expected',
+  'an.itemised': 'Itemised: {amount} of {expected} expected',
+  'an.itemisedOnly': 'Itemised: {amount}',
+  'an.smaller': 'Smaller ({count})',
+  'an.allInHistory': 'All in History',
+  'an.throughMonth': 'Through the month',
+  'an.table.days': 'Days',
+  'an.table.itemised': 'Itemised',
+  'an.table.month': 'Month',
+  // A bank installment that matches no bank loan (Loan payments, opened).
+  'an.bankLoan': 'Bank loan',
+
+  // ── Set aside ───────────────────────────────────────────────────────────────────────────────
+  'an.group.INVESTMENTS': 'Investments',
+  'an.group.EMERGENCY': 'Emergency fund',
+  'an.group.GOALS': 'Goals',
+  'an.group.DONATIONS': 'Donations',
+  'an.emergencyNoAccount': 'Emergency fund (no account)',
+  'an.stocksNoAccount': 'Stocks (no account)',
+  'an.sinceStart': 'Set aside since {month}',
+  'an.sinceStartOut': 'From savings since {month}: {amount}',
+  'an.worthNow': 'Worth now',
+  'an.worthNote': 'Includes money from before {month} and growth.',
+
+  // ── Goals ───────────────────────────────────────────────────────────────────────────────────
+  'an.goals.putIn': 'Put into goals',
+  'an.goals.ofAsked': 'of {amount} asked',
+  'an.goals.putOfAsked': '{putIn} of {asked} asked',
+  'an.goals.of': '{value} of {target}',
+  'an.goals.month': '{month}: {amount}',
+  'an.goals.asksNothing': 'asks nothing',
+  'an.goals.up': '+{amount} put in',
+  'an.goals.fromSavings': '{amount} from savings',
+  'an.goals.since': 'Nothing put in since {month}',
+  'an.goals.showAll': 'Show all ({count})',
+  'an.goals.nothingYet': 'Nothing put in yet',
+  'an.goals.by': 'By {month}',
+  'an.goals.empty': 'No goals yet.',
+  'an.goals.noneInMonth': 'No goals in {month}.',
+  'an.goals.newOnSavings': 'New goal on Savings',
+
+  // ── 12 months ───────────────────────────────────────────────────────────────────────────────
+  'an.year.range': '{count} months',
+  'an.year.rangeOne': '{count} month',
+  'an.year.basisOne': 'a month = average of {count} full month',
+  'an.year.basisMany': 'a month = average of {count} full months',
+  'an.year.aMonth': '{amount} a month',
+  'an.year.monthByMonth': 'Month by month',
+  'an.year.soFar': 'so far',
+  'an.year.noEntries': 'no entries',
+  'an.year.more': '+{count} more',
+  'an.year.inMonths': 'in {count} months',
+  'an.open': 'Open',
+  'an.sheetTitle': '{page} · 12 months',
+
+  // ── Empty pages ─────────────────────────────────────────────────────────────────────────────
+  'an.empty.none': 'Nothing recorded yet.',
+  'an.empty.month': '{month}: nothing recorded. Not counted in averages.',
 } as const

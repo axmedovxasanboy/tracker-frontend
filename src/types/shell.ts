@@ -8,8 +8,9 @@ import type {
 } from './index'
 
 /**
- * One calendar month of transactions, fetched whole (every page), so a screen's totals and the
- * list under them are built from the same rows and can never disagree.
+ * One month of transactions, fetched whole (every page), so a screen's totals and the list under
+ * them are built from the same rows and can never disagree. Either the rows dated in the month or
+ * the rows that count in it — whichever the screen asked for (see `fetchMonthTransactions`).
  */
 export interface MonthTransactions {
   /** YYYY-MM the rows belong to — lets a screen tell the month it asked for from a stale one. */

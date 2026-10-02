@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { BackendStatusProvider } from './context/BackendStatusContext'
 import { ToastProvider } from './context/ToastContext'
@@ -31,13 +31,13 @@ import { Signup } from './pages/Signup'
 import type { Currency } from './types'
 
 /**
- * Analytics is the one page that draws charts, so it is the one page loaded on demand: the chart
- * library rides in its chunk and the other pages never download it. A chunk that cannot be
- * fetched (a tab left open across a deploy) becomes a retry tile instead of a blank app.
+ * Analytics is the one place that draws charts, so it is loaded on demand: its six pages, their
+ * layout and every chart part ride in one chunk the other pages never download. A chunk that
+ * cannot be fetched (a tab left open across a deploy) becomes a retry tile instead of a blank app.
  */
-const Analytics = lazy(() =>
-  import('./pages/Analytics')
-    .then(m => ({ default: m.Analytics }))
+const AnalyticsLayout = lazy(() =>
+  import('./pages/analytics/AnalyticsLayout')
+    .then(m => ({ default: m.AnalyticsLayout }))
     .catch(() => ({ default: AnalyticsLoadFailed })))
 
 // Multi-currency support was removed — the app is UZS-only. Kept as a constant (rather than
@@ -89,6 +89,23 @@ function AppRoutes() {
   // would re-render every PageHeader in the tree.
   const openMenu = useCallback(() => setSidebarOpen(true), [])
   const closeMenu = useCallback(() => setSidebarOpen(false), [])
+
+  // The offline banner's height, as `--offline-h` on <main>: a sticky bar further down (the
+  // Analytics tab strip) sits under the banner instead of over it. 0 while online — the banner
+  // then renders nothing.
+  const mainRef = useRef<HTMLElement>(null)
+  const offlineRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const main = mainRef.current
+    const banner = offlineRef.current
+    if (!main || !banner) return
+    const write = () => main.style.setProperty('--offline-h', `${banner.offsetHeight}px`)
+    write()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(write)
+    observer.observe(banner)
+    return () => observer.disconnect()
+  }, [status])
 
   // On a phone the sidebar is a dialog over the page; without this the only way out is the
   // scrim, which a keyboard user cannot reach.
@@ -157,20 +174,22 @@ function AppRoutes() {
               scroller ends that much early — 56px plus the phone's own bottom inset — and the last
               row of a page can always be scrolled clear of it. */}
           <main
+            ref={mainRef}
             id="main"
             tabIndex={-1}
             className="app-scroll relative flex-1 overflow-y-auto pt-14 pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pt-0 md:pb-0"
           >
-            <div className="sticky top-14 md:top-0 z-10">
+            <div ref={offlineRef} className="sticky top-14 md:top-0 z-10">
               <OfflineBanner />
             </div>
             <Routes>
               {/* The six places (2026-09 rebuild), then Profile and Analytics. */}
               <Route path="/" element={<Advisor currency={currency} />} />
               <Route path="/history" element={<History currency={currency} />} />
+              {/* Six pages under one layout: /analytics, /in, /out, /set-aside, /goals, /12-months. */}
               <Route
-                path="/analytics"
-                element={<Suspense fallback={<AnalyticsPageFallback />}><Analytics /></Suspense>}
+                path="/analytics/*"
+                element={<Suspense fallback={<AnalyticsPageFallback />}><AnalyticsLayout /></Suspense>}
               />
               <Route path="/wallets" element={<Cards />} />
               <Route path="/savings" element={<Savings />} />

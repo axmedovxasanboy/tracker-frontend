@@ -25,6 +25,7 @@ export const transactionsApi = {
     if (filters.search) params.search = filters.search
     if (filters.cashOnly) params.cashOnly = true
     if (filters.excludeTransfers) params.excludeTransfers = true
+    if (filters.accountingMonth) params.accountingMonth = true
     return apiClient.get<PageResponse<Transaction>>('/transactions', { params })
   },
 

@@ -14,10 +14,14 @@ export const apiClient = axios.create({
 // Add `_silent: true` to any axios call (e.g. `.post(url, body, { _silent: true })`)
 // to suppress the global error toast for that single request — useful when the component
 // already renders the error inline. `_retry` is set internally after a 401 token refresh.
+// `_mayBeMissing: true` marks a route an older server may not have: that server answers it with
+// 401 even to a valid token, so a 401 on the retry right after a successful refresh is handed to
+// the caller (with `_retry` set) instead of ending the session.
 declare module 'axios' {
   export interface AxiosRequestConfig {
     _silent?: boolean
     _retry?: boolean
+    _mayBeMissing?: boolean
   }
 }
 
@@ -145,9 +149,13 @@ apiClient.interceptors.response.use(
     }
 
     if (status === 401 && !NO_REFRESH_PATHS.some((p) => url.includes(p))) {
-      // Refresh already failed (or no token) on a protected call → session is gone.
-      tokenStore.clear()
-      onAuthLost?.()
+      // Refresh already failed (or no token) on a protected call → session is gone. Not so for a
+      // route that may be missing, retried with the token the refresh just issued: the session
+      // is fine, the route is not there (see `_mayBeMissing`).
+      if (!(error.config?._retry && error.config._mayBeMissing)) {
+        tokenStore.clear()
+        onAuthLost?.()
+      }
     } else if (!error.config?._silent && status >= 500) {
       // Only auto-toast server-side failures (5xx). 4xx are business/validation
       // errors that components are expected to render inline next to the form.
