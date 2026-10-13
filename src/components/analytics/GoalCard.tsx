@@ -1,7 +1,8 @@
 import type { RefObject } from 'react'
 import { Link } from 'react-router-dom'
+import { Target } from 'lucide-react'
 import { Tile } from '../ui/Tile'
-import { Badge } from '../ui/IconChip'
+import { Badge, IconChip } from '../ui/IconChip'
 import { useLang } from '../../i18n/LanguageContext'
 import { formatMonth, formatNumber } from '../../utils/format'
 import type { BreakdownGoal, GoalMonth } from '../../types/analyticsBreakdown'
@@ -51,9 +52,11 @@ export function useGoalStatus() {
 }
 
 /**
- * One plan or wish (§3.5): where it is (a Meter of reached ÷ target), what the month asked and got,
- * the effort in words, and a small column per month of money put in against a dashed "asked" —
- * a gap is a month with nothing put in, visible without a word.
+ * One plan or wish (§3.5): where it is (a progress bar of reached ÷ target), what the month asked
+ * and got, the effort in words, and a small column per month of money put in against a dashed
+ * "asked" — a gap is a month with nothing put in, visible without a word. Restyled 2026-10-13 as a
+ * saving-plan card (the reference the owner picked): the icon, the reached figure large with its
+ * target beside it, a thicker bar with its percentage. Three to a row on a wide screen.
  */
 export function GoalCard({ goal, month, mode = 'month', headingRef }: {
   goal: BreakdownGoal
@@ -88,35 +91,42 @@ export function GoalCard({ goal, month, mode = 'month', headingRef }: {
   const peak = shown.reduce((max, m) => Math.max(max, m.putIn, m.asked ?? 0), 0)
 
   return (
-    <Tile span={6} mdSpan={6} as="article">
-      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
-        <h3
-          ref={headingRef}
-          tabIndex={headingRef ? -1 : undefined}
-          className={`min-w-0 text-sm font-semibold text-slate-900 [overflow-wrap:anywhere] ${headingRef ? 'focus-ring rounded-chip' : ''}`}
-        >
-          {href ? (
-            <Link to={href} className="focus-ring -mx-1 inline-flex min-h-[44px] items-center rounded-chip px-1 hover:underline">
-              {goal.name}
-            </Link>
-          ) : (
-            <span className="inline-flex min-h-[44px] items-center">{goal.name}</span>
-          )}
-        </h3>
-        <span className="pt-3"><Badge>{badge}</Badge></span>
+    <Tile span={4} mdSpan={3} as="article" className="self-stretch">
+      <div className="flex items-start gap-3">
+        <IconChip tone="indigo"><Target className="h-4 w-4" aria-hidden="true" /></IconChip>
+        <div className="min-w-0 flex-1">
+          <h3
+            ref={headingRef}
+            tabIndex={headingRef ? -1 : undefined}
+            className={`min-w-0 text-sm font-semibold text-slate-900 [overflow-wrap:anywhere] ${headingRef ? 'focus-ring rounded-chip' : ''}`}
+          >
+            {href ? (
+              <Link to={href} className="focus-ring -mx-1 -my-2.5 inline-flex min-h-[44px] items-center rounded-chip px-1 hover:underline">
+                {goal.name}
+              </Link>
+            ) : goal.name}
+          </h3>
+          <div className="mt-1"><Badge>{badge}</Badge></div>
+        </div>
       </div>
 
+      <p className="mt-4">
+        <span aria-hidden="true" className="flex flex-wrap items-baseline gap-x-1.5">
+          <span className="text-title text-slate-900">{amount(reached)}</span>
+          {goal.target != null && goal.target > 0 && (
+            <span className="text-sm tabular-nums text-slate-500">/ {amount(goal.target)}</span>
+          )}
+        </span>
+        <span className="sr-only">
+          {goal.target ? t('an.goals.of', { value: amount(reached), target: amount(goal.target) }) : amount(reached)}
+        </span>
+      </p>
       {pct && (
-        <div className="mt-1 flex items-center gap-3">
+        <div className="mt-2 flex items-center gap-3">
           <Meter value={reached} max={goal.target ?? 0} fillClass={SERIES_BG.goals} className="flex-1" />
-          <span className="shrink-0 text-sm font-semibold tabular-nums text-slate-900">{pct.text}</span>
+          <span className="shrink-0 rounded-chip bg-indigo-50 px-1.5 py-0.5 text-xs font-semibold tabular-nums text-indigo-700">{pct.text}</span>
         </div>
       )}
-      <p className="mt-2 text-sm tabular-nums text-slate-700">
-        {goal.target
-          ? t('an.goals.of', { value: amount(reached), target: amount(goal.target) })
-          : amount(reached)}
-      </p>
       <p className="mt-1 text-xs leading-snug text-slate-600 tabular-nums [overflow-wrap:anywhere]">
         {capFirst(t('an.goals.month', { month: monthWord(month, lang), amount: asked }))} · {status(goal, month, mode)}
       </p>

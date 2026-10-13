@@ -1,5 +1,5 @@
 import type {
-  AdvisorBreakdownFix, AdvisorDailyFix, AdvisorGoal, AdvisorMeans, AdvisorOwe, GoalKind, TransactionFlow,
+  AdvisorDailyFix, AdvisorGoal, AdvisorMeans, AdvisorOwe, GoalKind, TransactionFlow,
 } from './fixes'
 
 export type TransactionType = 'INCOME' | 'EXPENSE'
@@ -728,11 +728,12 @@ export interface AdvisorIncomePart {
 }
 
 /** The window from today to `tightestOn`, in the words the "How is this worked out?" line uses. */
-export interface AdvisorDailyBreakdown extends AdvisorBreakdownFix {
+export interface AdvisorDailyBreakdown {
   have: number
   comingIn: number
   /** Bills and loan payments due inside the window. */
   goingOut: number
+  /** What the rule sets aside, and savings recorded for a later day — never the plans' monthly payments. */
   savings: number
   /** have + comingIn − goingOut − savings */
   net: number

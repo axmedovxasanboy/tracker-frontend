@@ -1,19 +1,20 @@
 import type { ReactNode } from 'react'
 import { useOutletContext } from 'react-router-dom'
-import { Maximize2 } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, Maximize2, PiggyBank, RotateCcw } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { Tile, TileGrid } from '../../components/ui/Tile'
 import type { TileMdSpan, TileSpan } from '../../components/ui/Tile'
-import { TextRow } from '../../components/analytics/BulletRow'
 import { dayWord, historyHref, lineLabel, monthWord } from '../../components/analytics/figures'
 import type { LineMode } from '../../components/analytics/figures'
 import { SECTION_LABEL } from '../../components/analytics/sections'
 import type { Section } from '../../components/analytics/sections'
 import { compact } from '../../components/analytics/shared'
+import { ShareRow } from '../../components/analytics/ShareRow'
 import { useLang } from '../../i18n/LanguageContext'
 import type { TKey } from '../../i18n/LanguageContext'
 import { formatNumber } from '../../utils/format'
-import type { AnalyticsBreakdown, BreakdownLine, ReceivedForOtherMonth } from '../../types/analyticsBreakdown'
+import type { AnalyticsBreakdown, BreakdownMonth, BreakdownLine, ReceivedForOtherMonth } from '../../types/analyticsBreakdown'
 import type { TransactionFlow } from '../../types/fixes'
 
 /**
@@ -29,6 +30,12 @@ export interface AnalyticsCtx {
   search: string
   /** Faded while newer figures load (§3.0 "Refreshing after a save"). */
   dim: string
+  /**
+   * The month before the one on screen, for the headline figures' "vs {month}" badges (owner,
+   * 2026-10-13). Null on 12 months, before the history start, for a month without entries, while
+   * it loads, or when it could not be read — the badges then simply are not drawn.
+   */
+  prev: { month: string; flow: BreakdownMonth } | null
 }
 
 export function useAnalytics(): AnalyticsCtx {
@@ -140,6 +147,14 @@ export function useStableIncomeCaption() {
 
 // ── Not counted as In or Out (§1.4) ──────────────────────────────────────────────────────────
 
+/** Each kind's icon (2026-10-13 restyle): money in, money out, back to you, out of savings. */
+const MOVED_ICON: Partial<Record<TransactionFlow, LucideIcon>> = {
+  BORROWED: ArrowDownLeft,
+  LENT: ArrowUpRight,
+  RETURNED: RotateCcw,
+  FROM_SAVINGS: PiggyBank,
+}
+
 /**
  * Money that moved and is none of In, Out or Set aside: borrowed, lent, paid back, taken from
  * savings. Shown, never compared — no tick, no caption — each a link to its rows in History.
@@ -159,16 +174,22 @@ export function NotCountedBlock({ flows, titleKey, mode, span = 5 }: {
   if (lines.length === 0) return null
   return (
     <Block mode={mode} span={span} mdSpan={6} title={t(titleKey)}>
-      <div className="mt-2">
-        {lines.map(l => (
-          <TextRow
-            key={l.key}
-            label={lineLabel(l, t, categoryName, lang)}
-            amount={amountOf(l.amount, mode)}
-            to={mode === 'month' ? historyHref(month, l.history ?? { flow: l.flow ?? undefined }) : null}
-          />
-        ))}
-      </div>
+      <ul className="mt-2">
+        {lines.map(l => {
+          const flow = (l.flow ?? l.key.replace(/^moved:/, '')) as TransactionFlow
+          const Icon = MOVED_ICON[flow]
+          return (
+            <li key={l.key}>
+              <ShareRow
+                icon={Icon ? <Icon className="h-4 w-4" /> : null}
+                label={lineLabel(l, t, categoryName, lang)}
+                amount={amountOf(l.amount, mode)}
+                to={mode === 'month' ? historyHref(month, l.history ?? { flow: l.flow ?? undefined }) : null}
+              />
+            </li>
+          )
+        })}
+      </ul>
     </Block>
   )
 }

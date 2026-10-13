@@ -1,9 +1,16 @@
+import { ArrowDownLeft } from 'lucide-react'
 import { BulletRow, scaleOf, vsExpected } from '../../components/analytics/BulletRow'
+import { DeltaBadge } from '../../components/analytics/DeltaBadge'
+import { Donut } from '../../components/analytics/Donut'
+import { FigureTile } from '../../components/analytics/FigureTile'
 import {
   bonusInExpected, expectedIn, historyHref, isOpenMonth, lineDrawn, lineLabel, rankLines,
 } from '../../components/analytics/figures'
 import { SlotStrip, slotValues } from '../../components/analytics/MiniColumns'
-import { SERIES_BG } from '../../components/analytics/shared'
+import { assignSlots, segmentsOf } from '../../components/analytics/palette'
+import { ShareRow } from '../../components/analytics/ShareRow'
+import { compact, SERIES_BG, shareOf } from '../../components/analytics/shared'
+import { Tile } from '../../components/ui/Tile'
 import { useLang } from '../../i18n/LanguageContext'
 import type { BreakdownLine } from '../../types/analyticsBreakdown'
 import {
@@ -22,10 +29,14 @@ const MINI_ROWS = 4
  * children — so a new source (Family) appears on its own, marked "new" in its first month. Every
  * expected source is listed even at 0, with its tick: that is the answer to "what am I waiting
  * for". Ordered by expected, so rows keep their place from day to day.
+ *
+ * On a month (2026-10-13 restyle): In as a stat tile with its badge against last month, and the
+ * sources as a ring — each source its colour in the list's order — with the list beside it. The
+ * 12-months sheet keeps its rows and month strips.
  */
 export function InPage({ mode = 'month', size = 'full', onOpen }: PageProps) {
   const { t, lang, categoryName } = useLang()
-  const { d, month } = useAnalytics()
+  const { d, month, prev } = useAnalytics()
   const received = useReceivedCaptions()
   const stableIncome = useStableIncomeCaption()
 
@@ -73,15 +84,74 @@ export function InPage({ mode = 'month', size = 'full', onOpen }: PageProps) {
   }
 
   const bonus = range ? null : bonusInExpected(d)
-  const scale = scaleOf([
-    f.earned, expIn,
-    ...roots.flatMap(r => [r.amount, r.expected, ...r.children.flatMap(c => [c.amount, c.expected])]),
-  ])
-  const stripMax = range ? Math.max(0, ...d.income.flatMap(r => [...r.byMonth, ...r.children.flatMap(c => c.byMonth)])) : 0
 
-  const caption = (line: BreakdownLine) => range
-    ? (line.average != null ? t('an.year.aMonth', { amount: amountOf(line.average, 'month') }) : null)
-    : vsExpected(t, { soFar: line.amount, expected: line.expected, open, isNew: line.isNew })
+  if (!range) {
+    // The sources, each a leaf: a root's children, or the root itself when it has none.
+    const leaves = roots.flatMap(r => (childrenOf(r).length > 0 ? childrenOf(r) : [r]))
+    const slots = assignSlots(leaves)
+    const name = (l: BreakdownLine) => lineLabel(l, t, categoryName, lang)
+    const segments = segmentsOf(leaves, slots, name, t('shell.history.other'))
+    const tone = (l: BreakdownLine) => (l.amount < 0 && !open ? 'text-expense' : 'text-slate-900')
+    const sourceRow = (line: BreakdownLine, leaf: boolean) => (
+      <ShareRow
+        slot={leaf ? slots.get(line.key) : null}
+        label={name(line)}
+        amount={compact(line.amount)}
+        share={shareOf(line.amount, f.earned)}
+        captions={[
+          vsExpected(t, { soFar: line.amount, expected: line.expected, open, isNew: line.isNew }),
+          // Money counted here that arrived in another month — on the source it belongs to.
+          leaf ? received.receivedOn(line.otherMonth) : null,
+        ]}
+        tone={tone(line)}
+        to={line.history ? historyHref(month, line.history) : undefined}
+      />
+    )
+    return (
+      <PageGrid mode={mode}>
+        <FigureTile
+          span={4}
+          mdSpan={6}
+          label={t('shell.history.in')}
+          icon={<ArrowDownLeft className="h-4 w-4" aria-hidden="true" />}
+          iconTone="teal"
+          amount={compact(f.earned)}
+          value={f.earned}
+          badge={prev ? <DeltaBadge value={f.earned} previous={prev.flow.earned} prevMonth={prev.month} open={open} /> : null}
+          meter={{ expected: expIn, fill: SERIES_BG.bonus }}
+          captions={[
+            vsExpected(t, { soFar: f.earned, expected: expIn, open, bonus }),
+            stableIncome(d),
+            received.countsIn(d.receivedForOtherMonths),
+          ]}
+        />
+        <Tile span={8} mdSpan={6} as="section">
+          <h2 className="text-title text-slate-900">{t('an.sources')}</h2>
+          <div className="mt-4 flex flex-col items-center gap-5 sm:flex-row sm:items-start">
+            <Donut segments={segments} total={f.earned} totalLabel={t('shell.history.in')} ariaLabel={t('an.donut.bySource')} />
+            <ul className="w-full min-w-0 flex-1">
+              {roots.map(root => (
+                <li key={root.key}>
+                  {sourceRow(root, childrenOf(root).length === 0)}
+                  {childrenOf(root).length > 0 && (
+                    // Children are always shown: they are the owner's sources.
+                    <ul className="ml-1 border-l-2 border-slate-100 pl-3">
+                      {childrenOf(root).map(c => <li key={c.key}>{sourceRow(c, true)}</li>)}
+                    </ul>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </Tile>
+        <NotCountedBlock mode={mode} span={12} titleKey="an.notCountedIn" flows={['BORROWED', 'RETURNED', 'FROM_SAVINGS']} />
+      </PageGrid>
+    )
+  }
+
+  // A range (the 12-months sheet): exact totals, "a month" and each source's month strip.
+  const scale = scaleOf([f.earned, ...roots.flatMap(r => [r.amount, ...r.children.map(c => c.amount)])])
+  const stripMax = Math.max(0, ...d.income.flatMap(r => [...r.byMonth, ...r.children.flatMap(c => c.byMonth)]))
   const row = (line: BreakdownLine, child: boolean) => (
     <BulletRow
       key={line.key}
@@ -89,19 +159,11 @@ export function InPage({ mode = 'month', size = 'full', onOpen }: PageProps) {
       amount={amountOf(line.amount, mode)}
       value={line.amount}
       parts={[{ value: line.amount, className: SERIES_BG.bonus }]}
-      expected={!range && !line.isNew ? line.expected : null}
       scale={scale}
       thin={child}
-      captions={[
-        caption(line),
-        // Money counted here that arrived in another month — on the source it belongs to.
-        !range && (child || line.children.length === 0) ? received.receivedOn(line.otherMonth) : null,
-      ]}
-      negative={open ? 'slate' : 'rose'}
-      to={!range && line.history ? historyHref(month, line.history) : undefined}
-      strip={range
-        ? <SlotStrip values={slotValues(line.byMonth, d.months)} max={stripMax} fillClass={SERIES_BG.bonus} />
-        : undefined}
+      captions={[line.average != null ? t('an.year.aMonth', { amount: amountOf(line.average, 'month') }) : null]}
+      negative="rose"
+      strip={<SlotStrip values={slotValues(line.byMonth, d.months)} max={stripMax} fillClass={SERIES_BG.bonus} />}
     />
   )
 
@@ -114,18 +176,9 @@ export function InPage({ mode = 'month', size = 'full', onOpen }: PageProps) {
           amount={amountOf(f.earned, mode)}
           value={f.earned}
           parts={[{ value: f.earned, className: SERIES_BG.bonus }]}
-          expected={expIn}
           scale={scale}
-          captions={range
-            ? [d.average ? t('an.year.aMonth', { amount: amountOf(d.average.flow.earned, 'month') }) : null]
-            : [
-                vsExpected(t, { soFar: f.earned, expected: expIn, open, bonus }),
-                stableIncome(d),
-                received.countsIn(d.receivedForOtherMonths),
-              ]}
-          strip={range
-            ? <SlotStrip values={slotValues(d.months.map(m => m.earned), d.months)} max={Math.max(0, ...d.months.map(m => m.earned))} fillClass={SERIES_BG.bonus} />
-            : undefined}
+          captions={[d.average ? t('an.year.aMonth', { amount: amountOf(d.average.flow.earned, 'month') }) : null]}
+          strip={<SlotStrip values={slotValues(d.months.map(m => m.earned), d.months)} max={Math.max(0, ...d.months.map(m => m.earned))} fillClass={SERIES_BG.bonus} />}
         />
       </Block>
 

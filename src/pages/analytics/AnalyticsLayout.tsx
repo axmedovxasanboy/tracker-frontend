@@ -125,6 +125,24 @@ export function AnalyticsLayout() {
   useEffect(() => {
     if (q.data?.kind === 'ok') setKnown(q.data.res.history)
   }, [q.data])
+
+  // The month before, for the "vs {month}" badges (owner, 2026-10-13): a second, separate request
+  // of the same endpoint, so every figure on the page still comes from the month's own answer. A
+  // failure costs only the badges.
+  const prevMonth = shiftMonth(month, -1)
+  const wantPrev = !redirect && !year && start != null && prevMonth >= start
+  const pq = useApi<{ month: string; res: AnalyticsBreakdown } | null>(async () => {
+    if (!wantPrev) return { data: null }
+    try {
+      const res = await analyticsApi.breakdown(prevMonth, prevMonth, today)
+      return { ...res, data: { month: prevMonth, res: withBreakdownDefaults(res.data) } }
+    } catch {
+      return { data: null }
+    }
+  }, [prevMonth, wantPrev, today])
+  const prevAnswer = wantPrev && pq.data?.month === prevMonth ? pq.data.res : null
+  const prevFlow = prevAnswer?.months[prevAnswer.months.length - 1] ?? null
+  const prev = prevFlow?.tracked ? { month: prevMonth, flow: prevFlow } : null
   const history = d?.history ?? known
 
   // The URL says what is on screen: an invalid or clamped month is rewritten in place.
@@ -182,7 +200,7 @@ export function AnalyticsLayout() {
     )
 
   const ctx: AnalyticsCtx | null = d
-    ? { d, month: year ? thisMonth : month, thisMonth, search, dim: q.refreshing && current ? 'opacity-60 transition-opacity' : '' }
+    ? { d, month: year ? thisMonth : month, thisMonth, search, dim: q.refreshing && current ? 'opacity-60 transition-opacity' : '', prev }
     : null
 
   const body = () => {

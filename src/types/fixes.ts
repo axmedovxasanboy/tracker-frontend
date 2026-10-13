@@ -12,27 +12,17 @@ export type DailyVerdict = 'OK' | 'OVER_PACE' | 'SHORT'
 
 /**
  * Why the pace cannot be kept, for OVER_PACE only.
- * GOALS: without the plans' reservations the pace would hold · SAVINGS: without anything set
- * aside it would · PACE: not even then — the spending itself is more than there is.
+ * SAVINGS: with nothing set aside it would hold · PACE: not even then — the spending itself is
+ * more than there is. (The plans are not in the daily figure since 13 Oct 2026, so no GOALS.)
  */
-export type DailyCause = 'GOALS' | 'SAVINGS' | 'PACE'
+export type DailyCause = 'SAVINGS' | 'PACE'
 
 /** What §3.1 adds to `AdvisorDaily`. */
 export interface AdvisorDailyFix {
   verdict?: DailyVerdict
   cause?: DailyCause | null
-  /** `safePerDay` with every goal reservation removed. */
-  safePerDayNoGoals?: number
-  /** `safePerDay` with nothing set aside at all (the rule's buckets, their carry-over, goals). */
+  /** `safePerDay` with nothing set aside at all (the rule's buckets and their carry-over). */
   safePerDayNoSavings?: number
-}
-
-/** What §3.1 adds to `AdvisorDailyBreakdown`: the two halves of `savings`. */
-export interface AdvisorBreakdownFix {
-  /** The rule's buckets and what they carry. */
-  setAside?: number
-  /** Goals. `setAside + goals = savings`. */
-  goals?: number
 }
 
 // ── §3.2 — goals: a wish or a plan ────────────────────────────────────────────────────────────

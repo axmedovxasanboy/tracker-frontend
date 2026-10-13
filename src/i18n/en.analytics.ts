@@ -140,6 +140,24 @@ export const en_analytics = {
   'an.open': 'Open',
   'an.sheetTitle': '{page} · 12 months',
 
+  // ── The 2026-10-13 restyle: badges against last month, donuts, chart readouts ────────────────
+  'an.badge.vs': 'vs {month}',
+  'an.badge.of': '{pct}% of {month}',
+  'an.badge.sr.more': '{amount} more than in {month}',
+  'an.badge.sr.less': '{amount} less than in {month}',
+  'an.badge.sr.same': 'About the same as in {month}',
+  'an.badge.sr.of': 'So far {pct}% of {month}',
+  'an.donut.total': 'Total',
+  'an.donut.whereWent': 'Out and set aside',
+  'an.donut.byCategory': 'Out by category',
+  'an.donut.bySource': 'In by source',
+  'an.donut.bySavings': 'Set aside, by where it went',
+  'an.year.chartLabel': 'In, Out and Set aside by month. The arrow keys step through the months.',
+  'an.chart.through': 'Everyday spending through the month. The arrow keys step through the days.',
+  'an.chart.day': 'Day {day}',
+  'an.chart.soFar': 'So far',
+  'an.chart.normal': 'A normal month',
+
   // ── Empty pages ─────────────────────────────────────────────────────────────────────────────
   'an.empty.none': 'Nothing recorded yet.',
   'an.empty.month': '{month}: nothing recorded. Not counted in averages.',

@@ -4,13 +4,16 @@ import { ArrowRight } from 'lucide-react'
 import { useLang } from '../../i18n/LanguageContext'
 import { formatNumber } from '../../utils/format'
 import type { BreakdownLine, BreakdownMonth, LineHistory } from '../../types/analyticsBreakdown'
-import { BulletRow, HATCH_MUTED, TextRow, vsExpected } from './BulletRow'
+import { HATCH_MUTED, TextRow, vsExpected } from './BulletRow'
 import type { BarPart } from './BulletRow'
 import { OUT_ROWS_BEFORE_SMALLER } from './decisions'
 import { dayWord, historyHref, lineDrawn, lineLabel, rankLines } from './figures'
 import type { LineMode } from './figures'
 import { SlotStrip, slotValues } from './MiniColumns'
-import { compact, SERIES_BG } from './shared'
+import { OTHER_HEX } from './palette'
+import type { Slot } from './palette'
+import { ShareRow } from './ShareRow'
+import { compact, SERIES_BG, shareOf } from './shared'
 
 /** The fill of an Out line, by what kind of money it is (R14): everyday, bill, loan, or a check. */
 export function outParts(line: BreakdownLine): BarPart[] {
@@ -49,10 +52,12 @@ function childFilter(child: BreakdownLine, mode: LineMode): LineHistory | null {
  * loans or check days, its three largest everyday entries, and "All in History" (hidden when no
  * History filter selects exactly its rows). Rows after the first eight fold into "Smaller (n)".
  *
- * Month mode: compact figures and the bullet bar against expected, ordered by expected when the
- * month has a base. Range mode: exact totals, "a month" and a month-by-month strip, by size.
+ * Month mode: compact figures with their expected caption, ordered by expected when the month has
+ * a base. Range mode: exact totals, "a month" and a month-by-month strip, by size. Since the
+ * 2026-10-13 restyle every row wears its donut colour (`slots`, the page's ring beside the list)
+ * and its share of Out as a chip, in place of the bullet bar.
  */
-export function LineList({ lines, mode, base, open, month, months, scale, paidOff = 0 }: {
+export function LineList({ lines, mode, base, open, month, months, slots, total, paidOff = 0 }: {
   lines: BreakdownLine[]
   mode: LineMode
   /** The month has an expected block. */
@@ -63,8 +68,10 @@ export function LineList({ lines, mode, base, open, month, months, scale, paidOf
   month: string
   /** A range: the months the strips align with. */
   months: BreakdownMonth[]
-  /** The page's one scale. */
-  scale: number
+  /** Each line's colour on the page's ring; lines without one wear the grey. */
+  slots: Map<string, Slot>
+  /** Out: what the share chips are shares of. */
+  total: number
   /** `expected.paidOffLoans`, for the Loan payments row. */
   paidOff?: number
 }) {
@@ -158,20 +165,20 @@ export function LineList({ lines, mode, base, open, month, months, scale, paidOf
     )
   }
 
+  const tone = (amount: number) => (amount < 0 && !open ? 'text-expense' : 'text-slate-900')
   const row = (line: BreakdownLine) => {
     const isOpen = opened.has(line.key)
     return (
       <li key={line.key}>
-        <BulletRow
+        <ShareRow
+          // A range draws no ring, so its rows wear no ring colour — the strip is their picture.
+          slot={mode === 'range' ? null : slots.get(line.key) ?? { color: OTHER_HEX, other: true }}
           label={label(line)}
           // The exact figure appears once, on demand: in the opened row's own header.
           amount={mode === 'range' || isOpen ? formatNumber(line.amount) : compact(line.amount)}
-          value={line.amount}
-          parts={outParts(line)}
-          expected={mode === 'month' && !line.isNew && !line.closed ? line.expected : null}
-          scale={scale}
+          share={shareOf(line.amount, total)}
           captions={captions(line)}
-          negative={open ? 'slate' : 'rose'}
+          tone={tone(line.amount)}
           onToggle={() => toggle(line.key)}
           expanded={isOpen}
           strip={mode === 'range'
@@ -185,27 +192,19 @@ export function LineList({ lines, mode, base, open, month, months, scale, paidOf
 
   const smallerOpen = opened.has('smaller')
   const smallerAmount = rest.reduce((s, l) => s + l.amount, 0)
-  const smallerParts: BarPart[] = rest.flatMap(outParts)
-  // Where its tick goes: the sum of its rows' own ticks. Not printed as a figure — a total on
-  // screen comes from `expected.flow`, never from line expecteds added up (§1.2).
-  const smallerTick = mode === 'month' && base
-    ? rest.reduce((s, l) => s + (l.isNew || l.closed ? 0 : l.expected ?? 0), 0)
-    : null
 
   return (
     <ul className="mt-2 space-y-0.5">
       {head.map(row)}
       {fold && (
         <li>
-          <BulletRow
+          <ShareRow
+            slot={mode === 'range' ? null : { color: OTHER_HEX, other: true }}
             label={t('an.smaller', { count: rest.length })}
             amount={mode === 'range' || smallerOpen ? formatNumber(smallerAmount) : compact(smallerAmount)}
-            value={smallerAmount}
-            parts={smallerParts}
-            expected={smallerTick}
-            scale={scale}
+            share={shareOf(smallerAmount, total)}
             captions={[rest.map(l => lineLabel(l, t, categoryName, lang)).join(', ')]}
-            negative={open ? 'slate' : 'rose'}
+            tone={tone(smallerAmount)}
             onToggle={() => toggle('smaller')}
             expanded={smallerOpen}
             strip={mode === 'range'

@@ -2,17 +2,18 @@
  * Strings for the 2026-09 rebuild's Home, Savings and the add / pay forms. Merged into the main
  * dictionary by LanguageContext.
  *
- * One name per thing: "You have" (wallet total), "You can spend … a day", "Coming up" (bills and
+ * One name per thing: "You have" (wallet total), "Free to spend", "Coming up" (bills and
  * loan payments due), "Savings", "Loans & bills". Buttons say Add, Pay or Save. None of these
  * strings may talk about levels, buckets, allocation, marks or closing a month.
  */
 export const en_home = {
   // ── Home: the daily figure ──────────────────────────────────────────────────────────────────
-  'home.hero.label': 'You can spend',
-  'home.hero.perDay': 'a day',
-  'home.hero.until': 'until {date} · after bills, loans and what you set aside',
+  'home.hero.freeLabel': 'Free to spend until {date}',
+  'home.hero.freeToday': 'Free to spend today',
+  'home.hero.freePerDay': '≈ {amount} a day',
+  'home.hero.freeAfter': 'after bills, loans and what you set aside',
   'home.hero.shortLabel': 'You’ll be short',
-  'home.hero.shortOn': 'on {date} — even if you spend nothing.',
+  'home.hero.shortOn': 'on {date} — bills, loans and what you set aside need more than you’ll have.',
   'home.hero.seeDue': 'See what’s due',
   'home.hero.paceRunsOut': 'Lately you spend about {pace} a day. At that pace your money runs out around {date}.',
   'home.hero.paceOk': 'Lately you spend about {pace} a day — within your limit.',
@@ -28,6 +29,10 @@ export const en_home = {
   'home.how.dayOne': '{count} day',
   'home.how.dayMany': '{count} days',
   'home.how.salaryNote': 'Salary is counted at no more than your monthly income in Settings, to stay on the safe side.',
+
+  // Under the daily figure, when the plans ask more than a normal month has. Never in the figure.
+  'home.plans.title': 'Plans don’t fit your income',
+  'home.plans.change': 'Change',
 
   // ── Home: Coming up ─────────────────────────────────────────────────────────────────────────
   'home.upcoming.title': 'Coming up',

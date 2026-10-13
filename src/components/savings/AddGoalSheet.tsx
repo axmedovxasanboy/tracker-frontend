@@ -71,10 +71,11 @@ function formStartOf(goal: InvestmentResponse | null | undefined): string {
 /**
  * A savings goal: what for, how much — and whether it is a plan or a wish.
  *
- * A PLAN has a monthly payment: the app sets that aside each month and Home's daily figure counts
- * on it. A WISH is kept on the list and asks for nothing until it is made a plan. The choice is
- * only offered when the server knows about wishes (`wishSupported`); on an older one every goal is
- * a plan, as it always was, and the form is the one it always was.
+ * A PLAN has a monthly payment: the app asks for it each month and says whether the plans fit a
+ * normal month (Home's daily figure leaves them out since 13 Oct 2026). A WISH is kept on the list
+ * and asks for nothing until it is made a plan. The choice is only offered when the server knows
+ * about wishes (`wishSupported`); on an older one every goal is a plan, as it always was, and the
+ * form is the one it always was.
  *
  * Saved as a savings-goal holding. What the owner "already has" is an opening balance: it was put
  * by before, so no wallet is touched and nothing is recorded as spent today. Adding to the goal

@@ -1,10 +1,17 @@
-import { BulletRow, scaleOf, vsExpected } from '../../components/analytics/BulletRow'
+import { ArrowUpRight } from 'lucide-react'
+import { BulletRow, vsExpected } from '../../components/analytics/BulletRow'
 import { CumulativeChart } from '../../components/analytics/CumulativeChart'
-import { isOpenMonth, lineDrawn, lineLabel } from '../../components/analytics/figures'
+import { DeltaBadge } from '../../components/analytics/DeltaBadge'
+import { Donut } from '../../components/analytics/Donut'
+import { FigureTile } from '../../components/analytics/FigureTile'
+import { isOpenMonth, lineDrawn, lineLabel, rankLines } from '../../components/analytics/figures'
 import { LineList, outParts } from '../../components/analytics/LineList'
 import { SlotStrip, slotValues } from '../../components/analytics/MiniColumns'
+import { assignSlots, segmentsOf } from '../../components/analytics/palette'
 import { compact, SERIES_BG } from '../../components/analytics/shared'
+import { Tile } from '../../components/ui/Tile'
 import { useLang } from '../../i18n/LanguageContext'
+import type { BreakdownLine } from '../../types/analyticsBreakdown'
 import { amountOf, Block, MiniCard, MiniRow, NotCountedBlock, PageGrid, useAnalytics } from './common'
 import type { PageProps } from './common'
 
@@ -21,10 +28,14 @@ const CHART_MIN_DAYS = 3
  * + rent), and "Not itemised" and "Loan payments" are rows of their own. Tapping a row opens it in
  * place. "Through the month" draws itemised everyday spending against the straight line a normal
  * month would draw — the one figure that builds up day by day.
+ *
+ * On a month (2026-10-13 restyle): Out as a stat tile with its badge against last month, "Through
+ * the month" beside it, then the categories as a ring with the list beside it — each line in its
+ * ring colour, "Not itemised" hatched grey, everything past the fifth colour grey ("Other").
  */
 export function OutPage({ mode = 'month', size = 'full', onOpen }: PageProps) {
   const { t, lang, categoryName } = useLang()
-  const { d, month } = useAnalytics()
+  const { d, month, prev } = useAnalytics()
 
   const range = mode === 'range'
   const f = range ? d.total : d.months[d.months.length - 1] ?? d.total
@@ -64,8 +75,23 @@ export function OutPage({ mode = 'month', size = 'full', onOpen }: PageProps) {
     )
   }
 
-  const drawn = d.out.filter(l => lineDrawn(l, mode))
-  const scale = scaleOf([f.out, e?.flow.out, ...drawn.flatMap(l => [l.amount, l.expected])])
+  // The list's own order — by expected on a month with a base — is the ring's.
+  const ranked = rankLines(d.out.filter(l => lineDrawn(l, mode)), e != null, mode)
+  const unitemised = (l: BreakdownLine) => l.key === 'unitemised' || l.kind === 'NOT_ITEMISED' || l.kind === 'CHECK'
+  const slots = assignSlots(ranked, unitemised)
+  const list = (
+    <LineList
+      lines={d.out}
+      mode={mode}
+      base={e != null}
+      open={open}
+      month={month}
+      months={d.months}
+      slots={slots}
+      total={f.out}
+      paidOff={paidOff}
+    />
+  )
 
   // Itemised everyday: what builds up day by day. Wallet-check money lands in lumps on check
   // days and keeps its full-month expected on its own row (§1.2).
@@ -78,12 +104,56 @@ export function OutPage({ mode = 'month', size = 'full', onOpen }: PageProps) {
   const chartCaption = byToday ?? (expItemised != null
     ? t('an.itemised', { amount: compact(itemised), expected: compact(expItemised) })
     : t('an.itemisedOnly', { amount: compact(itemised) }))
-  // The list runs down beside the two side tiles only when both are there.
-  const lentShown = d.moved.some(l => (l.flow === 'LENT' || l.key === 'moved:LENT') && l.amount !== 0)
   const perDay = !range && m && m.days > 0 && f.everyday > 0
     ? `${t('analytics.group.everyday')}: ${t('an.perDay', { amount: compact(f.everyday / m.days) })}`
     : null
 
+  if (!range) {
+    const partsLine = [
+      { key: 'analytics.group.everyday' as const, amount: Math.max(0, f.everyday) },
+      { key: 'analytics.group.bills' as const, amount: f.bills },
+      { key: 'analytics.group.loans' as const, amount: f.loanPayments },
+    ].filter(x => x.amount !== 0).map(x => `${t(x.key)} ${compact(x.amount)}`).join(' · ')
+    const segments = segmentsOf(ranked, slots, l => lineLabel(l, t, categoryName, lang), t('shell.history.other'))
+    return (
+      <PageGrid mode={mode}>
+        <FigureTile
+          span={4}
+          mdSpan={6}
+          label={t('shell.history.out')}
+          icon={<ArrowUpRight className="h-4 w-4" aria-hidden="true" />}
+          iconTone="amber"
+          amount={compact(f.out)}
+          value={f.out}
+          badge={prev ? <DeltaBadge value={f.out} previous={prev.flow.out} prevMonth={prev.month} open={open} upIsGood={false} /> : null}
+          meter={{ expected: e?.flow.out ?? null, fill: SERIES_BG.everyday }}
+          captions={[
+            vsExpected(t, { soFar: f.out, expected: e?.flow.out ?? null, open, paidOff }),
+            partsLine,
+            perDay,
+            // With the chart on screen this sentence is its caption instead.
+            showChart ? null : byToday,
+          ]}
+        />
+        {showChart && m && (
+          <Tile span={8} mdSpan={6} as="section">
+            <h2 className="text-title text-slate-900">{t('an.throughMonth')}</h2>
+            <CumulativeChart daily={d.everydayDaily} daysInMonth={m.daysInMonth} expectedTotal={expItemised} caption={chartCaption} />
+          </Tile>
+        )}
+        <Tile span={showChart ? 12 : 8} mdSpan={6} as="section">
+          <h2 className="text-title text-slate-900">{t('an.byCategory')}</h2>
+          <div className="mt-4 flex flex-col items-center gap-5 lg:flex-row lg:items-start">
+            <Donut segments={segments} total={f.out} totalLabel={t('shell.history.out')} ariaLabel={t('an.donut.byCategory')} />
+            <div className="w-full min-w-0 flex-1">{list}</div>
+          </div>
+        </Tile>
+        <NotCountedBlock mode={mode} span={12} titleKey="an.notCountedOut" flows={['LENT']} />
+      </PageGrid>
+    )
+  }
+
+  // A range (the 12-months sheet): exact totals, "a month" and month strips.
   return (
     <PageGrid mode={mode}>
       <Block mode={mode}>
@@ -92,51 +162,13 @@ export function OutPage({ mode = 'month', size = 'full', onOpen }: PageProps) {
           label={t('shell.history.out')}
           amount={amountOf(f.out, mode)}
           value={f.out}
-          parts={[
-            { value: Math.max(0, f.everyday), className: SERIES_BG.everyday },
-            { value: f.bills, className: SERIES_BG.bills },
-            { value: f.loanPayments, className: SERIES_BG.loans },
-          ]}
-          expected={e?.flow.out ?? null}
-          scale={scale}
-          captions={range
-            ? [d.average ? t('an.year.aMonth', { amount: compact(d.average.flow.out) }) : null]
-            : [
-                vsExpected(t, { soFar: f.out, expected: e?.flow.out ?? null, open, paidOff }),
-                perDay,
-                // With the chart on screen this sentence is its caption instead.
-                showChart ? null : byToday,
-              ]}
-          strip={range
-            ? <SlotStrip values={slotValues(d.months.map(x => x.out), d.months)} max={Math.max(0, ...d.months.map(x => x.out))} fillClass={SERIES_BG.everyday} />
-            : undefined}
+          parts={[{ value: f.out, className: SERIES_BG.everyday }]}
+          scale={f.out}
+          captions={[d.average ? t('an.year.aMonth', { amount: compact(d.average.flow.out) }) : null]}
+          strip={<SlotStrip values={slotValues(d.months.map(x => x.out), d.months)} max={Math.max(0, ...d.months.map(x => x.out))} fillClass={SERIES_BG.everyday} />}
         />
       </Block>
-
-      <Block mode={mode} span={7} mdSpan={6} rows={showChart && lentShown ? 2 : undefined} title={t('an.byCategory')}>
-        <LineList
-          lines={d.out}
-          mode={mode}
-          base={e != null}
-          open={open}
-          month={month}
-          months={d.months}
-          scale={scale}
-          paidOff={paidOff}
-        />
-      </Block>
-
-      {showChart && m && (
-        <Block mode={mode} span={5} mdSpan={6} title={t('an.throughMonth')}>
-          <CumulativeChart
-            daily={d.everydayDaily}
-            daysInMonth={m.daysInMonth}
-            expectedTotal={expItemised}
-            caption={chartCaption}
-          />
-        </Block>
-      )}
-
+      <Block mode={mode} title={t('an.byCategory')}>{list}</Block>
       <NotCountedBlock mode={mode} titleKey="an.notCountedOut" flows={['LENT']} />
     </PageGrid>
   )

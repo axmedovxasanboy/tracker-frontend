@@ -137,6 +137,24 @@ export const uz_analytics: Record<keyof typeof en_analytics, string> = {
   'an.open': 'Ochish',
   'an.sheetTitle': '{page} · 12 oy',
 
+  // ── 2026-10-13: oʻtgan oyga nisbatan belgilar, halqa diagrammalar, grafik izohlari ───────────
+  'an.badge.vs': '{month}ga nisbatan',
+  'an.badge.of': '{month}ning {pct}%',
+  'an.badge.sr.more': '{month}dagidan {amount} koʻp',
+  'an.badge.sr.less': '{month}dagidan {amount} kam',
+  'an.badge.sr.same': '{month}dagi bilan deyarli bir xil',
+  'an.badge.sr.of': 'Hozircha {month}ning {pct}%',
+  'an.donut.total': 'Jami',
+  'an.donut.whereWent': 'Chiqim va ajratilgan',
+  'an.donut.byCategory': 'Turkum boʻyicha chiqim',
+  'an.donut.bySource': 'Manba boʻyicha kirim',
+  'an.donut.bySavings': 'Ajratilgan pul qayerga ketdi',
+  'an.year.chartLabel': 'Oylar boʻyicha kirim, chiqim va ajratilgan pul. Oylar boʻylab strelka tugmalari bilan yuriladi.',
+  'an.chart.through': 'Oy davomidagi kundalik xarajat. Kunlar boʻylab strelka tugmalari bilan yuriladi.',
+  'an.chart.day': '{day}-kun',
+  'an.chart.soFar': 'Hozirgacha',
+  'an.chart.normal': 'Odatdagi oy',
+
   // ── Boʻsh sahifalar ─────────────────────────────────────────────────────────────────────────
   'an.empty.none': 'Hali hech narsa yozilmagan.',
   'an.empty.month': '{month}: hech narsa yozilmagan. Oʻrtachaga kirmaydi.',

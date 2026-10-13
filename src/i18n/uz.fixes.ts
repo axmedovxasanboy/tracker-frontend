@@ -51,15 +51,6 @@ export const uz_fixes: Record<keyof typeof en_fixes, string> = {
   'fix.nav.more': 'Yana',
   'fix.nav.bar': 'Asosiy boʻlimlar',
 
-  // ── Home: the daily figure when the pace cannot be kept ───────────────────────────────────────
-  'fix.hero.overLabel': 'Shu surʼatda pul tugaydi',
-  'fix.hero.causeGoals': 'Rejalaringiz {until} gacha {goals} oladi. Ularsiz kuniga {safe} sarflashingiz mumkin edi.',
-  'fix.hero.causeSavings': 'Ajratiladigan pul {until} gacha {savings} oladi. Usiz: kuniga {safe}.',
-  'fix.hero.causePace': 'Kuniga taxminan {pace} sarflayapsiz. Hech narsa ajratmasangiz ham, kuniga faqat {safe} ga joy bor.',
-  'fix.hero.paceOnly': 'Kuniga taxminan {pace} sarflayapsiz.',
-  'fix.hero.toReach': '{until} gacha yetishi uchun: kuniga {safe}.',
-  'fix.hero.reviewPlans': 'Rejalarni koʻrib chiqish',
-
   // ── A normal month with nothing left, or already short, before the plans ──────────────────────
   'fix.goals.doesNotFitNone': 'Rejalar oyiga {goals} soʻraydi. Bonussiz oyda toʻlovlar, qarzlar va ajratiladigan puldan keyin hech narsa qolmaydi.',
   'fix.goals.doesNotFitShort': 'Rejalar oyiga {goals} soʻraydi. Bonussiz oyda toʻlovlar, qarzlar va ajratiladigan puldan keyin — rejalarsiz ham — {amount} yetmaydi.',

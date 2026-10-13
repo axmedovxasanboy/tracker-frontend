@@ -57,15 +57,6 @@ export const en_fixes = {
   'fix.nav.more': 'More',
   'fix.nav.bar': 'Main places',
 
-  // ── Home: the daily figure when the pace cannot be kept ───────────────────────────────────────
-  'fix.hero.overLabel': 'At your pace, money runs out',
-  'fix.hero.causeGoals': 'Your plans take {goals} before {until}. Without them you could spend {safe} a day.',
-  'fix.hero.causeSavings': 'What you set aside takes {savings} before {until}. Without it: {safe} a day.',
-  'fix.hero.causePace': 'You spend about {pace} a day. Even with nothing set aside there is room for {safe} a day.',
-  'fix.hero.paceOnly': 'You spend about {pace} a day.',
-  'fix.hero.toReach': 'To reach {until}: {safe} a day.',
-  'fix.hero.reviewPlans': 'Review plans',
-
   // ── A normal month with nothing left, or already short, before the plans ──────────────────────
   'fix.goals.doesNotFitNone': 'Plans ask {goals} a month. In a month without a bonus, nothing is left after bills, loans and what you set aside.',
   'fix.goals.doesNotFitShort': 'Plans ask {goals} a month. A month without a bonus is already short by {amount} after bills, loans and what you set aside — before any plan.',

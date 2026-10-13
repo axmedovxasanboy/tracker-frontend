@@ -3,11 +3,12 @@ import type { en_home } from './en.home'
 /** Uzbek for the Home / Savings / forms strings. Partial is fine — missing keys fall back to English. */
 export const uz_home: Partial<Record<keyof typeof en_home, string>> = {
   // ── Bosh sahifa: kunlik summa ───────────────────────────────────────────────────────────────
-  'home.hero.label': 'Sarflashingiz mumkin',
-  'home.hero.perDay': 'kuniga',
-  'home.hero.until': '{date} gacha · toʻlovlar, qarzlar va ajratiladigan puldan keyin',
+  'home.hero.freeLabel': '{date} gacha bemalol sarflash mumkin',
+  'home.hero.freeToday': 'Bugun bemalol sarflash mumkin',
+  'home.hero.freePerDay': '≈ kuniga {amount}',
+  'home.hero.freeAfter': 'toʻlovlar, qarzlar va ajratiladigan puldan keyin',
   'home.hero.shortLabel': 'Pul yetmay qoladi',
-  'home.hero.shortOn': '{date} kuni — hech narsa sarflamasangiz ham.',
+  'home.hero.shortOn': '{date} kuni — toʻlovlar, qarzlar va ajratiladigan pulga sizda boʻladiganidan koʻproq kerak.',
   'home.hero.seeDue': 'Nimalar toʻlanishini koʻrish',
   'home.hero.paceRunsOut': 'Soʻnggi paytda kuniga taxminan {pace} sarflayapsiz. Shu surʼatda pulingiz taxminan {date} kuni tugaydi.',
   'home.hero.paceOk': 'Soʻnggi paytda kuniga taxminan {pace} sarflayapsiz — chegaradan oshmayapsiz.',
@@ -22,6 +23,9 @@ export const uz_home: Partial<Record<keyof typeof en_home, string>> = {
   'home.how.dayOne': '{count} kun',
   'home.how.dayMany': '{count} kun',
   'home.how.salaryNote': 'Ehtiyot uchun maosh Sozlamalardagi oylik daromaddan koʻp hisoblanmaydi.',
+
+  'home.plans.title': 'Rejalar daromadingizga sigʻmaydi',
+  'home.plans.change': 'Oʻzgartirish',
 
   // ── Yaqin toʻlovlar ─────────────────────────────────────────────────────────────────────────
   'home.upcoming.title': 'Yaqin toʻlovlar',

@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowRight, Target } from 'lucide-react'
 import { BulletRow, scaleOf } from '../../components/analytics/BulletRow'
+import { DeltaBadge } from '../../components/analytics/DeltaBadge'
+import { FigureTile } from '../../components/analytics/FigureTile'
+import { isOpenMonth } from '../../components/analytics/figures'
 import { GoalCard, goalPercent } from '../../components/analytics/GoalCard'
 import { SlotStrip, slotValues } from '../../components/analytics/MiniColumns'
 import { Meter } from '../../components/analytics/Meter'
@@ -39,7 +42,7 @@ function byPlanOrder(a: BreakdownGoal, b: BreakdownGoal): number {
  */
 export function GoalsPage({ mode = 'month', size = 'full', onOpen }: PageProps) {
   const { t, lang } = useLang()
-  const { d, month, thisMonth } = useAnalytics()
+  const { d, month, thisMonth, prev } = useAnalytics()
   const [showAll, setShowAll] = useState(false)
   // "Show all" goes away once pressed; focus moves on to the first card it revealed instead of
   // falling back to the top of the document (§5.7).
@@ -144,23 +147,37 @@ export function GoalsPage({ mode = 'month', size = 'full', onOpen }: PageProps) 
   // The 12-months sheet lists every goal — its mini already folded them (§3.6).
   const cards = range || showAll || listed.length <= FOLD_AFTER ? listed : listed.slice(0, FOLD_AFTER)
 
+  // Last month's put-in for the badge: its Goals group, which the server counts by the same rule.
+  const prevPutIn = prev ? prev.flow.savedGoals : null
+
   return (
     <PageGrid mode={mode}>
-      <Block mode={mode}>
-        <BulletRow
-          lead
+      {!range ? (
+        <FigureTile
+          span={4}
           label={t('an.goals.putIn')}
-          amount={amountOf(putIn, mode)}
+          icon={<Target className="h-4 w-4" aria-hidden="true" />}
+          iconTone="indigo"
+          amount={compact(putIn)}
           value={putIn}
-          parts={[{ value: putIn, className: SERIES_BG.goals }]}
-          expected={!range && asked > 0 ? asked : null}
-          scale={scaleOf([putIn, asked])}
-          captions={[asked > 0 ? t('an.goals.ofAsked', { amount: amountOf(asked, mode) }) : null]}
-          strip={range
-            ? <SlotStrip values={slotValues(byMonth, d.months)} max={Math.max(0, ...byMonth)} fillClass={SERIES_BG.goals} />
-            : undefined}
+          badge={prev ? <DeltaBadge value={putIn} previous={prevPutIn} prevMonth={prev.month} open={isOpenMonth(d)} /> : null}
+          meter={{ expected: asked > 0 ? asked : null, fill: SERIES_BG.goals }}
+          captions={[asked > 0 ? t('an.goals.ofAsked', { amount: compact(asked) }) : null]}
         />
-      </Block>
+      ) : (
+        <Block mode={mode}>
+          <BulletRow
+            lead
+            label={t('an.goals.putIn')}
+            amount={amountOf(putIn, mode)}
+            value={putIn}
+            parts={[{ value: putIn, className: SERIES_BG.goals }]}
+            scale={scaleOf([putIn, asked])}
+            captions={[asked > 0 ? t('an.goals.ofAsked', { amount: amountOf(asked, mode) }) : null]}
+            strip={<SlotStrip values={slotValues(byMonth, d.months)} max={Math.max(0, ...byMonth)} fillClass={SERIES_BG.goals} />}
+          />
+        </Block>
+      )}
 
       {range ? (
         <div className="space-y-4">{cards.map(g => <GoalCard key={g.refId} goal={g} month={at} mode={mode} />)}</div>

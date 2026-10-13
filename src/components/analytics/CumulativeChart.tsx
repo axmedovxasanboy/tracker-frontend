@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react'
+import { useRef, useState } from 'react'
+import type { KeyboardEvent, PointerEvent, ReactNode } from 'react'
 import { useLang } from '../../i18n/LanguageContext'
 import { formatNumber } from '../../utils/format'
 import type { EverydayDay } from '../../types/analyticsBreakdown'
@@ -21,6 +22,10 @@ const LABEL_GAP = 10
  * Inline SVG for the lines only (`preserveAspectRatio="none"` with non-scaling strokes); every
  * word and number is HTML laid over it, so text never stretches. The `<figcaption>` holds the
  * by-today sentence and an sr-only table gives the weekly totals.
+ *
+ * Since the 2026-10-13 restyle the line has a 10% wash under it, and a crosshair finds the day
+ * under the pointer (or the arrow keys, once the plot has focus): that day's total so far against
+ * what a normal month would have reached by then.
  */
 export function CumulativeChart({ daily, daysInMonth, expectedTotal, caption }: {
   daily: EverydayDay[]
@@ -30,6 +35,8 @@ export function CumulativeChart({ daily, daysInMonth, expectedTotal, caption }: 
   caption: ReactNode
 }) {
   const { t } = useLang()
+  const plotRef = useRef<HTMLDivElement>(null)
+  const [hover, setHover] = useState<number | null>(null)
   const last = daily[daily.length - 1]
   const soFar = last?.cumulative ?? 0
   const top = Math.max(soFar, expectedTotal ?? 0)
@@ -50,6 +57,25 @@ export function CumulativeChart({ daily, daysInMonth, expectedTotal, caption }: 
   const soFarBelow = crowded && soFar <= (expectedTotal ?? 0)
   const expectedBelow = crowded && !soFarBelow
 
+  // The crosshair snaps to a drawn day: the one nearest the pointer.
+  const lastDay = last?.day ?? 0
+  const pick = (e: PointerEvent<HTMLDivElement>) => {
+    const box = plotRef.current?.getBoundingClientRect()
+    if (!box || box.width <= 0 || lastDay <= 0) return
+    const day = Math.round(((e.clientX - box.left) / box.width) * daysInMonth)
+    setHover(Math.min(lastDay, Math.max(1, day)))
+  }
+  const step = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (lastDay <= 0) return
+    const at = hover ?? lastDay
+    if (e.key === 'ArrowLeft') { e.preventDefault(); setHover(Math.max(1, at - 1)) }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); setHover(Math.min(lastDay, at + 1)) }
+    else if (e.key === 'Escape') setHover(null)
+  }
+  // The total by a day: the last drawn day at or before it (a day with nothing keeps the total).
+  const totalBy = (day: number) => daily.reduce((v, d) => (d.day <= day ? d.cumulative : v), 0)
+  const hovered = hover != null ? { day: hover, total: totalBy(hover) } : null
+
   // Weekly totals for the screen-reader table: days 1–7, 8–14, … to the last day drawn.
   const weeks: { from: number; to: number; amount: number }[] = []
   for (const d of daily) {
@@ -60,12 +86,32 @@ export function CumulativeChart({ daily, daysInMonth, expectedTotal, caption }: 
 
   return (
     <figure className="mt-3">
-      <div aria-hidden="true" className="relative ml-10 mr-1">
-        <div className="relative h-40">
+      <div
+        className="focus-ring relative ml-12 mr-1 rounded-control outline-none"
+        role="group"
+        tabIndex={lastDay > 0 ? 0 : undefined}
+        aria-label={t('an.chart.through')}
+        onKeyDown={step}
+        // The last day only for a keyboard arrival; a tap has already picked its day.
+        onFocus={e => {
+          const keyboard = e.currentTarget.matches(':focus-visible')
+          setHover(h => h ?? (keyboard ? lastDay || null : null))
+        }}
+        onBlur={() => setHover(null)}
+      >
+        <div
+          ref={plotRef}
+          aria-hidden="true"
+          className="relative h-40 touch-pan-y"
+          onPointerMove={pick}
+          onPointerDown={pick}
+          // A finger lifting fires pointerleave right after the tap; only a mouse leaving clears.
+          onPointerLeave={e => { if (e.pointerType === 'mouse') setHover(null) }}
+        >
           {/* Two y ticks: half way and the top. */}
           {[0.5, 1].map(f => (
             <div key={f} className="absolute inset-x-0 border-t border-slate-200" style={{ top: `${(1 - f) * 100}%` }}>
-              <span className="absolute -left-10 -top-2 w-9 text-right text-[11px] tabular-nums text-slate-500">
+              <span className="absolute -left-12 -top-2 w-11 whitespace-nowrap text-right text-[11px] tabular-nums text-slate-500">
                 {compact(yMax * f)}
               </span>
             </div>
@@ -79,6 +125,13 @@ export function CumulativeChart({ daily, daysInMonth, expectedTotal, caption }: 
               />
             )}
             {daily.length > 0 && (
+              <polygon
+                points={`${points} ${x(lastDay).toFixed(2)},${H}`}
+                className="fill-chart-everyday/10"
+                stroke="none"
+              />
+            )}
+            {daily.length > 0 && (
               <polyline
                 points={points}
                 fill="none"
@@ -89,6 +142,15 @@ export function CumulativeChart({ daily, daysInMonth, expectedTotal, caption }: 
               />
             )}
           </svg>
+          {hovered && (
+            <>
+              <div className="pointer-events-none absolute inset-y-0 w-px bg-slate-400" style={{ left: `${x(hovered.day)}%` }} />
+              <span
+                className="pointer-events-none absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-chart-everyday"
+                style={{ left: `${x(hovered.day)}%`, top: `${y(hovered.total)}%` }}
+              />
+            </>
+          )}
           {/* End-point labels carry the two values. */}
           {last && (
             <span
@@ -107,7 +169,31 @@ export function CumulativeChart({ daily, daysInMonth, expectedTotal, caption }: 
             </span>
           )}
         </div>
-        <div className="relative mt-1 h-4">
+        {hovered && (
+          <div
+            aria-live="polite"
+            className="pointer-events-none absolute top-0 z-10 w-44 rounded-control border border-hairline bg-white p-2.5 shadow-tile-hover"
+            // Beside the crosshair, but never past the plot's edge on a narrow screen.
+            style={x(hovered.day) < W / 2
+              ? { left: `min(calc(${x(hovered.day)}% + 8px), calc(100% - 11rem))` }
+              : { right: `min(calc(${W - x(hovered.day)}% + 8px), calc(100% - 11rem))` }}
+          >
+            <p className="text-xs font-semibold text-slate-900">{t('an.chart.day', { day: hovered.day })}</p>
+            <p className="mt-1 flex items-center gap-2 text-xs">
+              <span aria-hidden="true" className="h-0.5 w-3 shrink-0 rounded-full bg-chart-everyday" />
+              <span className="min-w-0 flex-1 text-slate-500">{t('an.chart.soFar')}</span>
+              <span className="font-semibold tabular-nums text-slate-900">{compact(hovered.total)}</span>
+            </p>
+            {hasExpected && (
+              <p className="mt-1 flex items-center gap-2 text-xs">
+                <span aria-hidden="true" className="h-0 w-3 shrink-0 border-t border-dashed border-slate-500" />
+                <span className="min-w-0 flex-1 text-slate-500">{t('an.chart.normal')}</span>
+                <span className="font-semibold tabular-nums text-slate-900">{compact(((expectedTotal ?? 0) * hovered.day) / daysInMonth)}</span>
+              </p>
+            )}
+          </div>
+        )}
+        <div aria-hidden="true" className="relative mt-1 h-4">
           {ticks.map(d => (
             <span
               key={d}

@@ -12,12 +12,13 @@ import { PayBucketModal } from '../components/overview/PayBucketModal'
 import { CheckInModal } from '../components/months/CheckInModal'
 import { useAddForm } from '../context/AddFormContext'
 import { SpendHero } from '../components/home/SpendHero'
+import { PlansFit } from '../components/home/PlansFit'
 import { LevelDownNotice } from '../components/levels/LevelDownNotice'
 import {
   ComingUpTile, LinkButton, NextStepsTile, TileHead, YouHaveTile, canPayUpcoming, isBucket, visibleSteps,
 } from '../components/home/HomeTiles'
 import { SavingsThisMonth } from '../components/savings/SavingsThisMonth'
-import { AddGoalSheet } from '../components/savings/AddGoalSheet'
+import { AddGoalSheet, requestFrom } from '../components/savings/AddGoalSheet'
 import { ErrorTile } from '../components/ui/ErrorTile'
 import { PageHeader } from '../components/ui/PageHeader'
 import { Skeleton } from '../components/ui/Skeleton'
@@ -44,9 +45,9 @@ const FULL = 'md:col-span-6 xl:col-span-12'
 /**
  * Home: how much can I safely spend until salary — and what is coming, what to save, what I have.
  *
- * Top to bottom: the daily figure (red when the money runs short), the bills and loan payments due
- * soon, this month's savings, the wallets, and at most three next steps that nothing above already
- * covers. Every "Pay" opens the dialog the rest of the app uses for that job. It all comes from
+ * Top to bottom: what is free to spend (red when the money runs short) with, under it, whether the
+ * plans fit; the bills and loan payments due soon, this month's savings, the wallets, and at most
+ * three next steps that nothing above already covers. Every "Pay" opens the dialog the rest of the app uses for that job. It all comes from
  * `GET /advisor` — the same answer the Telegram bot sends — so web and bot never disagree.
  */
 export function Advisor({ currency }: Props) {
@@ -72,7 +73,9 @@ export function Advisor({ currency }: Props) {
   const [bucket, setBucket] = useState<{ bucket: Bucket; amount: number } | null>(null)
   const [goal, setGoal] = useState<{ investment: InvestmentResponse; amount?: number } | null>(null)
   const [checkInOpen, setCheckInOpen] = useState(false)
-  const [goalFormOpen, setGoalFormOpen] = useState(false)
+  /** The goal form: a new goal (`goal: null`), or a plan to change from "Plans don't fit". */
+  const [goalForm, setGoalForm] = useState<{ goal: InvestmentResponse | null } | null>(null)
+  const [busyPlan, setBusyPlan] = useState<number | null>(null)
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const comingUpRef = useRef<HTMLHeadingElement>(null)
 
@@ -135,6 +138,33 @@ export function Advisor({ currency }: Props) {
     }
   }
 
+  /** A plan under "Plans don't fit": made a wish in one tap, as on Savings — nothing else changes. */
+  const makeWish = async (id: number) => {
+    setBusyPlan(id)
+    try {
+      const g = (await financeApi.getInvestments()).data.find(i => i.id === id)
+      if (!g) { refetch(); return }
+      await financeApi.updateInvestment(g.id, requestFrom(g, { wish: true }))
+      refetch()
+      showSuccess(t('fix.goal.nowWish', { name: g.name }))
+    } catch (err: unknown) {
+      showError(extractErrorMessage(err))
+    } finally {
+      setBusyPlan(null)
+    }
+  }
+
+  /** …or changed: its own form, for a smaller payment or a later date. */
+  const changePlan = async (id: number) => {
+    try {
+      const g = (await financeApi.getInvestments()).data.find(i => i.id === id)
+      if (g) setGoalForm({ goal: g })
+      else refetch()
+    } catch (err: unknown) {
+      showError(extractErrorMessage(err))
+    }
+  }
+
   /** One step's button: open the dialog that already does this job elsewhere in the app. */
   const act = async (s: AdvisorSuggestion) => {
     try {
@@ -150,7 +180,7 @@ export function Advisor({ currency }: Props) {
         case 'PAY_DEBT': setDebtPickerOpen(true); return
         case 'CHECK_IN': setCheckInOpen(true); return
         // The short goal form, right here — no trip to another page.
-        case 'ADD_GOAL': setGoalFormOpen(true); return
+        case 'ADD_GOAL': setGoalForm({ goal: null }); return
         case 'SET_ASIDE': {
           if (s.bucket === 'SAVINGS' && s.refId != null) {
             const g = (await financeApi.getInvestments()).data.find(i => i.id === s.refId)
@@ -246,7 +276,17 @@ export function Advisor({ currency }: Props) {
               currency={currency}
               cached={{ isCached: adv.isCached, cachedAt: adv.cachedAt }}
               onSeeDue={seeDue}
-              onReviewPlans={() => navigate('/savings')}
+              footer={(
+                <PlansFit
+                  means={d.means}
+                  goals={d.goals}
+                  month={month}
+                  currency={currency}
+                  busyId={busyPlan}
+                  onMakeWish={makeWish}
+                  onChange={changePlan}
+                />
+              )}
               fallback={youHave}
             />
 
@@ -326,7 +366,7 @@ export function Advisor({ currency }: Props) {
       />
       <CheckInModal open={checkInOpen} onClose={() => setCheckInOpen(false)} onSaved={refetch} currency={currency} />
       <AddGoalSheet
-        open={goalFormOpen} onClose={() => setGoalFormOpen(false)} onSaved={refetch}
+        open={!!goalForm} goal={goalForm?.goal ?? null} onClose={() => setGoalForm(null)} onSaved={refetch}
         wishSupported={d?.goals !== undefined} means={d?.means ?? null}
       />
     </div>

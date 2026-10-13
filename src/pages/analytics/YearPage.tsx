@@ -1,8 +1,10 @@
 import { useRef } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
-import { Lock } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, Lock, PiggyBank, Wallet } from 'lucide-react'
+import type { ReactNode } from 'react'
+import { CashflowChart } from '../../components/analytics/CashflowChart'
 import { capFirst, monthWord } from '../../components/analytics/figures'
-import { MonthColumns } from '../../components/analytics/MiniColumns'
+import { FigureTile } from '../../components/analytics/FigureTile'
 import { SECTION_LABEL, SECTION_PATH } from '../../components/analytics/sections'
 import type { Section } from '../../components/analytics/sections'
 import { compact } from '../../components/analytics/shared'
@@ -12,6 +14,7 @@ import { Sheet } from '../../components/ui/Sheet'
 import { Tile, TileGrid } from '../../components/ui/Tile'
 import { useLang } from '../../i18n/LanguageContext'
 import type { TKey } from '../../i18n/LanguageContext'
+import type { IconTone } from '../../components/ui/StatTile'
 import { shiftMonth } from '../../utils/format'
 import { useAnalytics } from './common'
 import { GoalsPage } from './GoalsPage'
@@ -26,8 +29,9 @@ const SHEETS: ReadonlyArray<Section> = ['in', 'out', 'set-aside', 'goals']
  * Page 6, 12 months (§3.6): over the last year, how much came in, went out and was set aside,
  * what a normal month is, and how each part looks month by month.
  *
- * "A month" is the average of COMPLETE tracked months only, and says how many. Below the month
- * columns, the four month pages in small — one slot per month on a shared scale — each with an
+ * "A month" is the average of COMPLETE tracked months only, and says how many. Since the 2026-10-13
+ * restyle the four figures are stat tiles and month by month is a cash-flow chart (In above zero,
+ * Out and Set aside below). Below it, the four month pages in small — one slot per month on a shared scale — each with an
  * Open button that shows the same page in range mode in a sheet (full screen on a phone). The
  * sheet lives in the URL (`?open=out`): Back closes it, and a bookmark opens it.
  */
@@ -68,35 +72,34 @@ function Year() {
   }
 
   const avg = d.average?.flow ?? null
-  const figures: Array<{ key: TKey; total: number; average: number | null }> = [
-    { key: 'shell.history.in', total: d.total.earned, average: avg?.earned ?? null },
-    { key: 'shell.history.out', total: d.total.out, average: avg?.out ?? null },
-    { key: 'fix.setAside', total: d.total.saved, average: avg?.saved ?? null },
-    { key: 'analytics.group.leftOver', total: d.total.leftOver, average: avg?.leftOver ?? null },
+  const icon = 'h-4 w-4'
+  const figures: Array<{ key: TKey; total: number; average: number | null; icon: ReactNode; tone: IconTone }> = [
+    { key: 'shell.history.in', total: d.total.earned, average: avg?.earned ?? null, icon: <ArrowDownLeft className={icon} aria-hidden="true" />, tone: 'teal' },
+    { key: 'shell.history.out', total: d.total.out, average: avg?.out ?? null, icon: <ArrowUpRight className={icon} aria-hidden="true" />, tone: 'amber' },
+    { key: 'fix.setAside', total: d.total.saved, average: avg?.saved ?? null, icon: <PiggyBank className={icon} aria-hidden="true" />, tone: 'pink' },
+    { key: 'analytics.group.leftOver', total: d.total.leftOver, average: avg?.leftOver ?? null, icon: <Wallet className={icon} aria-hidden="true" />, tone: 'neutral' },
   ]
 
   return (
     <>
       <TileGrid className={dim}>
-        <Tile span={12} as="section">
-          <h2 className="sr-only">{t('analytics.nav.year')}</h2>
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-4 xl:grid-cols-4">
-            {figures.map(f => (
-              <div key={f.key} className="min-w-0">
-                <dt className="text-sm font-medium text-slate-600">{t(f.key)}</dt>
-                <dd className="mt-0.5 whitespace-nowrap text-stat tabular-nums text-slate-900">{compact(f.total)}</dd>
-                {f.average != null && (
-                  <dd className="mt-0.5 text-xs text-slate-600 tabular-nums">{t('an.year.aMonth', { amount: compact(f.average) })}</dd>
-                )}
-              </div>
-            ))}
-          </dl>
-        </Tile>
+        {figures.map(f => (
+          <FigureTile
+            key={f.key}
+            stretch
+            label={t(f.key)}
+            icon={f.icon}
+            iconTone={f.tone}
+            amount={compact(f.total)}
+            value={f.total}
+            captions={[f.average != null ? t('an.year.aMonth', { amount: compact(f.average) }) : null]}
+          />
+        ))}
 
         <Tile span={12} as="section">
           <h2 className="text-title text-slate-900">{t('an.year.monthByMonth')}</h2>
-          <div className="mt-3">
-            <MonthColumns months={d.months} />
+          <div className="mt-4">
+            <CashflowChart months={d.months} />
           </div>
         </Tile>
 

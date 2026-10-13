@@ -1,18 +1,30 @@
+import { PiggyBank } from 'lucide-react'
 import { BulletRow, scaleOf, TextRow, vsExpected } from '../../components/analytics/BulletRow'
+import { DeltaBadge } from '../../components/analytics/DeltaBadge'
+import { Donut } from '../../components/analytics/Donut'
+import { FigureTile } from '../../components/analytics/FigureTile'
 import { capFirst, historyHref, isOpenMonth, lineDrawn, lineLabel, monthFrom, rankLines } from '../../components/analytics/figures'
 import { SlotStrip, slotValues } from '../../components/analytics/MiniColumns'
-import { compact, SERIES_BG } from '../../components/analytics/shared'
+import { HEX } from '../../components/analytics/palette'
+import { ShareRow } from '../../components/analytics/ShareRow'
+import { compact, SERIES_BG, shareOf } from '../../components/analytics/shared'
+import { Tile } from '../../components/ui/Tile'
 import { useLang } from '../../i18n/LanguageContext'
 import type { BreakdownLine } from '../../types/analyticsBreakdown'
 import { amountOf, Block, MiniCard, MiniRow, PageGrid, useAnalytics } from './common'
 import type { PageProps } from './common'
 
-/** The four destinations, always in this order (§3.4), each with its own colour (R14). */
+/**
+ * The four destinations, always in this order (§3.4), each with its own colour (R14). Since the
+ * 2026-10-13 restyle they are one ring, and Donations sits between Emergency and Goals: in the old
+ * order its cyan touched Investments' teal where the ring closes — two colours the validator could
+ * not tell apart, even with full colour vision.
+ */
 const GROUPS = [
-  { key: 'group:INVESTMENTS', fill: SERIES_BG.investments },
-  { key: 'group:EMERGENCY', fill: SERIES_BG.emergency },
-  { key: 'group:GOALS', fill: SERIES_BG.goals },
-  { key: 'group:DONATIONS', fill: SERIES_BG.given },
+  { key: 'group:INVESTMENTS', fill: SERIES_BG.investments, hex: HEX.investments },
+  { key: 'group:EMERGENCY', fill: SERIES_BG.emergency, hex: HEX.emergency },
+  { key: 'group:DONATIONS', fill: SERIES_BG.given, hex: HEX.given },
+  { key: 'group:GOALS', fill: SERIES_BG.goals, hex: HEX.goals },
 ] as const
 
 /**
@@ -26,7 +38,7 @@ const GROUPS = [
  */
 export function SetAsidePage({ mode = 'month', size = 'full', onOpen }: PageProps) {
   const { t, lang, categoryName } = useLang()
-  const { d, month } = useAnalytics()
+  const { d, month, prev } = useAnalytics()
 
   const range = mode === 'range'
   const f = range ? d.total : d.months[d.months.length - 1] ?? d.total
@@ -68,6 +80,92 @@ export function SetAsidePage({ mode = 'month', size = 'full', onOpen }: PageProp
 
   const childLabel = (c: BreakdownLine) => lineLabel(c, t, categoryName, lang)
 
+  // Where in a group it went: a text row each — the group's colour is the picture.
+  const childRows = (g: typeof drawn[number]) => (
+    <div className="ml-1 border-l-2 border-slate-100 pl-3">
+      {rankLines(g.line.children.filter(c => lineDrawn(c, mode)), base, mode).map(c => (
+        <TextRow
+          key={c.key}
+          label={childLabel(c)}
+          amount={amountOf(c.amount, mode)}
+          caption={!range && c.isNew ? t('an.new') : null}
+          to={!range && c.history ? historyHref(month, c.history) : null}
+        />
+      ))}
+    </div>
+  )
+  const fromSavingsRows = fromSavings && fromSavings.amount !== 0 ? (
+    <div className="mt-3 border-t border-hairline pt-3">
+      <TextRow
+        label={<span className="font-medium">{t('an.fromSavings')}</span>}
+        amount={amountOf(fromSavings.amount, mode)}
+        to={!range ? historyHref(month, fromSavings.history ?? { flow: 'FROM_SAVINGS' }) : null}
+      />
+      <div className="ml-1 border-l-2 border-slate-100 pl-3">
+        {fromSavings.children.filter(c => c.amount !== 0).map(c => (
+          <TextRow
+            key={c.key}
+            // Per holding; money taken out with no holding behind it is just "Savings".
+            label={c.key.startsWith('holding:') && c.name ? childLabel(c) : t('shell.nav.savings')}
+            amount={amountOf(c.amount, mode)}
+            to={!range && c.history ? historyHref(month, c.history) : null}
+          />
+        ))}
+      </div>
+    </div>
+  ) : (
+    <p className="mt-3 text-sm text-slate-600">{t('an.nothingFromSavings')}</p>
+  )
+
+  if (!range) {
+    return (
+      <PageGrid mode={mode}>
+        <FigureTile
+          span={4}
+          mdSpan={6}
+          label={t('fix.setAside')}
+          icon={<PiggyBank className="h-4 w-4" aria-hidden="true" />}
+          iconTone="pink"
+          amount={compact(f.saved)}
+          value={f.saved}
+          badge={prev ? <DeltaBadge value={f.saved} previous={prev.flow.saved} prevMonth={prev.month} open={open} /> : null}
+          meter={{ expected: e?.saved ?? null, fill: SERIES_BG.saved }}
+          captions={[vsExpected(t, { soFar: f.saved, expected: e?.saved ?? null, open })]}
+        />
+        <Tile span={8} mdSpan={6} as="section">
+          <h2 className="text-title text-slate-900">{t('shell.history.whereItWent')}</h2>
+          <div className="mt-4 flex flex-col items-center gap-5 sm:flex-row sm:items-start">
+            <Donut
+              segments={drawn.map(g => ({ key: g.key, label: lineLabel(g.line, t, categoryName, lang), value: g.line.amount, color: g.hex }))}
+              total={f.saved}
+              totalLabel={t('fix.setAside')}
+              ariaLabel={t('an.donut.bySavings')}
+            />
+            <div className="w-full min-w-0 flex-1">
+              <ul>
+                {drawn.map(g => (
+                  <li key={g.key}>
+                    <ShareRow
+                      slot={{ color: g.hex }}
+                      label={lineLabel(g.line, t, categoryName, lang)}
+                      amount={compact(g.line.amount)}
+                      share={shareOf(g.line.amount, f.saved)}
+                      captions={[vsExpected(t, { soFar: g.line.amount, expected: g.line.expected, open, isNew: g.line.isNew })]}
+                    />
+                    {childRows(g)}
+                  </li>
+                ))}
+              </ul>
+              {fromSavingsRows}
+            </div>
+          </div>
+        </Tile>
+        <SinceStartBlock mode={mode} monthSaved={f.saved} />
+      </PageGrid>
+    )
+  }
+
+  // A range (the 12-months sheet): exact totals, "a month" and each destination's month strip.
   return (
     <PageGrid mode={mode}>
       <Block mode={mode}>
@@ -77,18 +175,13 @@ export function SetAsidePage({ mode = 'month', size = 'full', onOpen }: PageProp
           amount={amountOf(f.saved, mode)}
           value={f.saved}
           parts={groups.map(g => ({ value: g.line.amount, className: g.fill }))}
-          expected={e?.saved ?? null}
           scale={scale}
-          captions={range
-            ? [d.average ? t('an.year.aMonth', { amount: compact(d.average.flow.saved) }) : null]
-            : [vsExpected(t, { soFar: f.saved, expected: e?.saved ?? null, open })]}
-          strip={range
-            ? <SlotStrip values={slotValues(d.months.map(x => x.saved), d.months)} max={Math.max(0, ...d.months.map(x => x.saved))} fillClass={SERIES_BG.investments} />
-            : undefined}
+          captions={[d.average ? t('an.year.aMonth', { amount: compact(d.average.flow.saved) }) : null]}
+          strip={<SlotStrip values={slotValues(d.months.map(x => x.saved), d.months)} max={Math.max(0, ...d.months.map(x => x.saved))} fillClass={SERIES_BG.investments} />}
         />
       </Block>
 
-      <Block mode={mode} span={7} mdSpan={6} title={t('shell.history.whereItWent')}>
+      <Block mode={mode} title={t('shell.history.whereItWent')}>
         <ul className="mt-2 space-y-0.5">
           {drawn.map(g => (
             <li key={g.key}>
@@ -97,52 +190,15 @@ export function SetAsidePage({ mode = 'month', size = 'full', onOpen }: PageProp
                 amount={amountOf(g.line.amount, mode)}
                 value={g.line.amount}
                 parts={[{ value: g.line.amount, className: g.fill }]}
-                expected={!range && !g.line.isNew ? g.line.expected : null}
                 scale={scale}
-                captions={[range
-                  ? (g.line.average != null ? t('an.year.aMonth', { amount: compact(g.line.average) }) : null)
-                  : vsExpected(t, { soFar: g.line.amount, expected: g.line.expected, open, isNew: g.line.isNew })]}
-                strip={range
-                  ? <SlotStrip values={slotValues(g.line.byMonth, d.months)} max={stripMax} fillClass={g.fill} />
-                  : undefined}
+                captions={[g.line.average != null ? t('an.year.aMonth', { amount: compact(g.line.average) }) : null]}
+                strip={<SlotStrip values={slotValues(g.line.byMonth, d.months)} max={stripMax} fillClass={g.fill} />}
               />
-              {/* Where in the group it went: a text row each — the group's bar is the picture. */}
-              <div className="ml-1 border-l-2 border-slate-100 pl-3">
-                {rankLines(g.line.children.filter(c => lineDrawn(c, mode)), base, mode).map(c => (
-                  <TextRow
-                    key={c.key}
-                    label={childLabel(c)}
-                    amount={amountOf(c.amount, mode)}
-                    caption={!range && c.isNew ? t('an.new') : null}
-                    to={!range && c.history ? historyHref(month, c.history) : null}
-                  />
-                ))}
-              </div>
+              {childRows(g)}
             </li>
           ))}
         </ul>
-        {fromSavings && fromSavings.amount !== 0 ? (
-          <div className="mt-3 border-t border-hairline pt-3">
-            <TextRow
-              label={<span className="font-medium">{t('an.fromSavings')}</span>}
-              amount={amountOf(fromSavings.amount, mode)}
-              to={!range ? historyHref(month, fromSavings.history ?? { flow: 'FROM_SAVINGS' }) : null}
-            />
-            <div className="ml-1 border-l-2 border-slate-100 pl-3">
-              {fromSavings.children.filter(c => c.amount !== 0).map(c => (
-                <TextRow
-                  key={c.key}
-                  // Per holding; money taken out with no holding behind it is just "Savings".
-                  label={c.key.startsWith('holding:') && c.name ? childLabel(c) : t('shell.nav.savings')}
-                  amount={amountOf(c.amount, mode)}
-                  to={!range && c.history ? historyHref(month, c.history) : null}
-                />
-              ))}
-            </div>
-          </div>
-        ) : (
-          <p className="mt-3 text-sm text-slate-600">{t('an.nothingFromSavings')}</p>
-        )}
+        {fromSavingsRows}
       </Block>
 
       <SinceStartBlock mode={mode} monthSaved={f.saved} />
@@ -175,42 +231,47 @@ function SinceStartBlock({ mode, monthSaved }: { mode: 'month' | 'range'; monthS
   // The first month, viewed while it runs: the total would be this month's figure again.
   const sameAsMonth = since != null && mode === 'month' && since.setAside === monthSaved && since.fromSavings === 0
 
+  // A month page sets the two side by side across the row (2026-10-13 restyle); a sheet stacks them.
   return (
-    <Block mode={mode} span={5} mdSpan={6}>
-      {since && from && (
-        <>
-          <div className="flex items-baseline justify-between gap-3">
-            <Heading className="min-w-0 text-title text-slate-900 [overflow-wrap:anywhere]">{capFirst(t('an.sinceStart', { month: from }))}</Heading>
-            {!sameAsMonth && (
-              <span className="shrink-0 whitespace-nowrap text-stat tabular-nums text-slate-900">{amountOf(since.setAside, mode)}</span>
+    <Block mode={mode} span={12} mdSpan={6}>
+      <div className={mode === 'month' && since && holdings.length > 0 ? 'grid gap-5 sm:grid-cols-2' : ''}>
+        {since && from && (
+          <div>
+            <div className="flex items-baseline justify-between gap-3">
+              <Heading className="min-w-0 text-title text-slate-900 [overflow-wrap:anywhere]">{capFirst(t('an.sinceStart', { month: from }))}</Heading>
+              {!sameAsMonth && (
+                <span className="shrink-0 whitespace-nowrap text-stat tabular-nums text-slate-900">{amountOf(since.setAside, mode)}</span>
+              )}
+            </div>
+            {parts.length > 0 && (
+              <p className="mt-1 text-sm leading-snug text-slate-600 tabular-nums [overflow-wrap:anywhere]">
+                {parts.map(l => `${t(GROUP_NAME[l.key] ?? 'fix.setAside')} ${amountOf(l.sinceStart ?? 0, mode)}`).join(' · ')}
+              </p>
+            )}
+            {since.fromSavings !== 0 && (
+              <p className="mt-1 text-sm text-slate-600 tabular-nums">
+                {capFirst(t('an.sinceStartOut', { month: from, amount: amountOf(since.fromSavings, mode) }))}
+              </p>
             )}
           </div>
-          {parts.length > 0 && (
+        )}
+        {holdings.length > 0 && (
+          <div className={!since ? '' : mode === 'month'
+            ? 'border-t border-hairline pt-4 sm:border-l sm:border-t-0 sm:pl-5 sm:pt-0'
+            : 'mt-4 border-t border-hairline pt-4'}>
+            <div className="flex items-baseline justify-between gap-3">
+              <h3 className="text-sm font-semibold text-slate-900">{t('an.worthNow')}</h3>
+              <span className="shrink-0 whitespace-nowrap text-title tabular-nums text-slate-900">{amountOf(worth, mode)}</span>
+            </div>
             <p className="mt-1 text-sm leading-snug text-slate-600 tabular-nums [overflow-wrap:anywhere]">
-              {parts.map(l => `${t(GROUP_NAME[l.key] ?? 'fix.setAside')} ${amountOf(l.sinceStart ?? 0, mode)}`).join(' · ')}
+              {holdings
+                .map(h => `${h.refId == null ? t('an.emergencyNoAccount') : h.name} ${amountOf(h.value, mode)}`)
+                .join(' · ')}
             </p>
-          )}
-          {since.fromSavings !== 0 && (
-            <p className="mt-1 text-sm text-slate-600 tabular-nums">
-              {capFirst(t('an.sinceStartOut', { month: from, amount: amountOf(since.fromSavings, mode) }))}
-            </p>
-          )}
-        </>
-      )}
-      {holdings.length > 0 && (
-        <div className={since ? 'mt-4 border-t border-hairline pt-4' : ''}>
-          <div className="flex items-baseline justify-between gap-3">
-            <h3 className="text-sm font-semibold text-slate-900">{t('an.worthNow')}</h3>
-            <span className="shrink-0 whitespace-nowrap text-title tabular-nums text-slate-900">{amountOf(worth, mode)}</span>
+            {from && <p className="mt-1 text-xs text-slate-500">{capFirst(t('an.worthNote', { month: from }))}</p>}
           </div>
-          <p className="mt-1 text-sm leading-snug text-slate-600 tabular-nums [overflow-wrap:anywhere]">
-            {holdings
-              .map(h => `${h.refId == null ? t('an.emergencyNoAccount') : h.name} ${amountOf(h.value, mode)}`)
-              .join(' · ')}
-          </p>
-          {from && <p className="mt-1 text-xs text-slate-500">{capFirst(t('an.worthNote', { month: from }))}</p>}
-        </div>
-      )}
+        )}
+      </div>
     </Block>
   )
 }
