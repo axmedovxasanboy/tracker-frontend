@@ -1,8 +1,10 @@
-import { PiggyBank } from 'lucide-react'
+import { Landmark, PiggyBank } from 'lucide-react'
 import { BulletRow, scaleOf, TextRow, vsExpected } from '../../components/analytics/BulletRow'
 import { DeltaBadge } from '../../components/analytics/DeltaBadge'
 import { Donut } from '../../components/analytics/Donut'
 import { FigureTile } from '../../components/analytics/FigureTile'
+import { FigureInfo, InfoList } from '../../components/analytics/Info'
+import type { InfoListItem } from '../../components/analytics/Info'
 import { capFirst, historyHref, isOpenMonth, lineDrawn, lineLabel, monthFrom, rankLines } from '../../components/analytics/figures'
 import { SlotStrip, slotValues } from '../../components/analytics/MiniColumns'
 import { HEX } from '../../components/analytics/palette'
@@ -11,7 +13,9 @@ import { compact, SERIES_BG, shareOf } from '../../components/analytics/shared'
 import { Tile } from '../../components/ui/Tile'
 import { useLang } from '../../i18n/LanguageContext'
 import type { BreakdownLine } from '../../types/analyticsBreakdown'
-import { amountOf, Block, MiniCard, MiniRow, PageGrid, useAnalytics } from './common'
+import {
+  amountOf, Block, FigureTileInfo, MiniCard, MiniRow, PageGrid, TileHead, TileInfo, useAnalytics, useLastMonthLine,
+} from './common'
 import type { PageProps } from './common'
 
 /**
@@ -39,6 +43,7 @@ const GROUPS = [
 export function SetAsidePage({ mode = 'month', size = 'full', onOpen }: PageProps) {
   const { t, lang, categoryName } = useLang()
   const { d, month, prev } = useAnalytics()
+  const lastMonth = useLastMonthLine()
 
   const range = mode === 'range'
   const f = range ? d.total : d.months[d.months.length - 1] ?? d.total
@@ -88,7 +93,8 @@ export function SetAsidePage({ mode = 'month', size = 'full', onOpen }: PageProp
           key={c.key}
           label={childLabel(c)}
           amount={amountOf(c.amount, mode)}
-          caption={!range && c.isNew ? t('an.new') : null}
+          // "new" is the "!"'s to say on a month page.
+          caption={null}
           to={!range && c.history ? historyHref(month, c.history) : null}
         />
       ))}
@@ -113,11 +119,27 @@ export function SetAsidePage({ mode = 'month', size = 'full', onOpen }: PageProp
         ))}
       </div>
     </div>
-  ) : (
+  ) : range ? (
     <p className="mt-3 text-sm text-slate-600">{t('an.nothingFromSavings')}</p>
-  )
+  ) : null
 
   if (!range) {
+    // What the rows no longer say: each destination's expected and to come, and what went where.
+    const infoItems: InfoListItem[] = drawn.flatMap(g => [
+      {
+        key: g.key,
+        name: lineLabel(g.line, t, categoryName, lang),
+        amount: compact(g.line.amount),
+        notes: [vsExpected(t, { soFar: g.line.amount, expected: g.line.expected, open, isNew: g.line.isNew })],
+      },
+      ...rankLines(g.line.children.filter(c => lineDrawn(c, mode)), base, mode).map(c => ({
+        key: `${g.key}/${c.key}`,
+        name: childLabel(c),
+        amount: compact(c.amount),
+        notes: [vsExpected(t, { soFar: c.amount, expected: c.expected, open, isNew: c.isNew })],
+        child: true,
+      })),
+    ])
     return (
       <PageGrid mode={mode}>
         <FigureTile
@@ -130,10 +152,23 @@ export function SetAsidePage({ mode = 'month', size = 'full', onOpen }: PageProp
           value={f.saved}
           badge={prev ? <DeltaBadge value={f.saved} previous={prev.flow.saved} prevMonth={prev.month} open={open} /> : null}
           meter={{ expected: e?.saved ?? null, fill: SERIES_BG.saved }}
-          captions={[vsExpected(t, { soFar: f.saved, expected: e?.saved ?? null, open })]}
+          info={<FigureTileInfo title={t('fix.setAside')} amount={f.saved} lines={[
+            vsExpected(t, { soFar: f.saved, expected: e?.saved ?? null, open }),
+            lastMonth(prev?.flow.saved),
+          ]} />}
         />
         <Tile span={8} mdSpan={6} as="section">
-          <h2 className="text-title text-slate-900">{t('shell.history.whereItWent')}</h2>
+          <TileHead
+            title={t('shell.history.whereItWent')}
+            info={(
+              <TileInfo title={t('shell.history.whereItWent')}>
+                <InfoList
+                  items={infoItems}
+                  intro={fromSavings && fromSavings.amount !== 0 ? null : t('an.nothingFromSavings')}
+                />
+              </TileInfo>
+            )}
+          />
           <div className="mt-4 flex flex-col items-center gap-5 sm:flex-row sm:items-start">
             <Donut
               segments={drawn.map(g => ({ key: g.key, label: lineLabel(g.line, t, categoryName, lang), value: g.line.amount, color: g.hex }))}
@@ -150,7 +185,6 @@ export function SetAsidePage({ mode = 'month', size = 'full', onOpen }: PageProp
                       label={lineLabel(g.line, t, categoryName, lang)}
                       amount={compact(g.line.amount)}
                       share={shareOf(g.line.amount, f.saved)}
-                      captions={[vsExpected(t, { soFar: g.line.amount, expected: g.line.expected, open, isNew: g.line.isNew })]}
                     />
                     {childRows(g)}
                   </li>
@@ -231,10 +265,50 @@ function SinceStartBlock({ mode, monthSaved }: { mode: 'month' | 'range'; monthS
   // The first month, viewed while it runs: the total would be this month's figure again.
   const sameAsMonth = since != null && mode === 'month' && since.setAside === monthSaved && since.fromSavings === 0
 
-  // A month page sets the two side by side across the row (2026-10-13 restyle); a sheet stacks them.
+  // A month page: two stat tiles, their breakdowns and the note behind each "!" (2026-10-13).
+  if (mode === 'month') {
+    return (
+      <>
+        {since && from && !sameAsMonth && (
+          <FigureTile
+            span={6}
+            stretch
+            label={capFirst(t('an.sinceStart', { month: from }))}
+            icon={<PiggyBank className="h-4 w-4" aria-hidden="true" />}
+            iconTone="pink"
+            amount={compact(since.setAside)}
+            value={since.setAside}
+            info={<FigureTileInfo title={capFirst(t('an.sinceStart', { month: from }))} amount={since.setAside} lines={[
+              ...parts.map(l => `${t(GROUP_NAME[l.key] ?? 'fix.setAside')}: ${compact(l.sinceStart ?? 0)}`),
+              since.fromSavings !== 0 ? capFirst(t('an.sinceStartOut', { month: from, amount: compact(since.fromSavings) })) : null,
+            ]} />}
+          />
+        )}
+        {holdings.length > 0 && (
+          <FigureTile
+            span={6}
+            stretch
+            label={t('an.worthNow')}
+            icon={<Landmark className="h-4 w-4" aria-hidden="true" />}
+            iconTone="teal"
+            amount={compact(worth)}
+            value={worth}
+            info={<TileInfo title={t('an.worthNow')}>
+              <FigureInfo amount={worth} lines={[
+                ...holdings.map(h => `${h.refId == null ? t('an.emergencyNoAccount') : h.name}: ${compact(h.value)}`),
+                from ? capFirst(t('an.worthNote', { month: from })) : null,
+              ]} />
+            </TileInfo>}
+          />
+        )}
+      </>
+    )
+  }
+
+  // A sheet stacks the two, with their breakdowns.
   return (
     <Block mode={mode} span={12} mdSpan={6}>
-      <div className={mode === 'month' && since && holdings.length > 0 ? 'grid gap-5 sm:grid-cols-2' : ''}>
+      <div>
         {since && from && (
           <div>
             <div className="flex items-baseline justify-between gap-3">
@@ -256,9 +330,7 @@ function SinceStartBlock({ mode, monthSaved }: { mode: 'month' | 'range'; monthS
           </div>
         )}
         {holdings.length > 0 && (
-          <div className={!since ? '' : mode === 'month'
-            ? 'border-t border-hairline pt-4 sm:border-l sm:border-t-0 sm:pl-5 sm:pt-0'
-            : 'mt-4 border-t border-hairline pt-4'}>
+          <div className={since ? 'mt-4 border-t border-hairline pt-4' : ''}>
             <div className="flex items-baseline justify-between gap-3">
               <h3 className="text-sm font-semibold text-slate-900">{t('an.worthNow')}</h3>
               <span className="shrink-0 whitespace-nowrap text-title tabular-nums text-slate-900">{amountOf(worth, mode)}</span>

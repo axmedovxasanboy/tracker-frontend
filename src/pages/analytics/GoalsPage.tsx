@@ -15,7 +15,7 @@ import { Tile } from '../../components/ui/Tile'
 import { useLang } from '../../i18n/LanguageContext'
 import { formatMonth } from '../../utils/format'
 import type { BreakdownGoal } from '../../types/analyticsBreakdown'
-import { amountOf, Block, MiniCard, PageGrid, useAnalytics } from './common'
+import { amountOf, Block, FigureTileInfo, MiniCard, PageGrid, TileInfo, useAnalytics, useLastMonthLine } from './common'
 import type { PageProps } from './common'
 
 /** Cards before the rest fold behind "Show all (n)" — and goals a 12-months mini names (§3.5). */
@@ -43,6 +43,7 @@ function byPlanOrder(a: BreakdownGoal, b: BreakdownGoal): number {
 export function GoalsPage({ mode = 'month', size = 'full', onOpen }: PageProps) {
   const { t, lang } = useLang()
   const { d, month, thisMonth, prev } = useAnalytics()
+  const lastMonth = useLastMonthLine()
   const [showAll, setShowAll] = useState(false)
   // "Show all" goes away once pressed; focus moves on to the first card it revealed instead of
   // falling back to the top of the document (§5.7).
@@ -162,7 +163,10 @@ export function GoalsPage({ mode = 'month', size = 'full', onOpen }: PageProps) 
           value={putIn}
           badge={prev ? <DeltaBadge value={putIn} previous={prevPutIn} prevMonth={prev.month} open={isOpenMonth(d)} /> : null}
           meter={{ expected: asked > 0 ? asked : null, fill: SERIES_BG.goals }}
-          captions={[asked > 0 ? t('an.goals.ofAsked', { amount: compact(asked) }) : null]}
+          info={<FigureTileInfo title={t('an.goals.putIn')} amount={putIn} lines={[
+            asked > 0 ? t('an.goals.ofAsked', { amount: compact(asked) }) : null,
+            lastMonth(prevPutIn),
+          ]} />}
         />
       ) : (
         <Block mode={mode}>
@@ -189,6 +193,7 @@ export function GoalsPage({ mode = 'month', size = 'full', onOpen }: PageProps) 
             month={at}
             mode={mode}
             headingRef={showAll && i === FOLD_AFTER ? revealedRef : undefined}
+            info={content => <TileInfo title={g.name}>{content}</TileInfo>}
           />
         ))
       )}

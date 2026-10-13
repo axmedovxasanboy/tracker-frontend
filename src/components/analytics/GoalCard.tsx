@@ -1,4 +1,4 @@
-import type { RefObject } from 'react'
+import type { ReactNode, RefObject } from 'react'
 import { Link } from 'react-router-dom'
 import { Target } from 'lucide-react'
 import { Tile } from '../ui/Tile'
@@ -7,6 +7,7 @@ import { useLang } from '../../i18n/LanguageContext'
 import { formatMonth, formatNumber } from '../../utils/format'
 import type { BreakdownGoal, GoalMonth } from '../../types/analyticsBreakdown'
 import { capFirst, historyHref, monthAxis, monthFrom, monthWord } from './figures'
+import { FigureInfo } from './Info'
 import type { LineMode } from './figures'
 import { Meter } from './Meter'
 import { compact, SERIES_BG } from './shared'
@@ -58,7 +59,7 @@ export function useGoalStatus() {
  * saving-plan card (the reference the owner picked): the icon, the reached figure large with its
  * target beside it, a thicker bar with its percentage. Three to a row on a wide screen.
  */
-export function GoalCard({ goal, month, mode = 'month', headingRef }: {
+export function GoalCard({ goal, month, mode = 'month', headingRef, info }: {
   goal: BreakdownGoal
   /** The month the card speaks of (the last month of a range). */
   month: string
@@ -68,6 +69,12 @@ export function GoalCard({ goal, month, mode = 'month', headingRef }: {
    * it reveals, since the button itself goes away.
    */
   headingRef?: RefObject<HTMLHeadingElement>
+  /**
+   * A month page's "!" (2026-10-13): given the card's details, returns the button that shows them.
+   * With it the card keeps to its name, figure and bar; without it (the 12-months sheet) the month
+   * line stays on the card.
+   */
+  info?: (content: ReactNode) => ReactNode
 }) {
   const { t, lang } = useLang()
   const status = useGoalStatus()
@@ -90,6 +97,22 @@ export function GoalCard({ goal, month, mode = 'month', headingRef }: {
   const shown = goal.months.filter(m => m.month <= month).slice(-COLUMNS)
   const peak = shown.reduce((max, m) => Math.max(max, m.putIn, m.asked ?? 0), 0)
 
+  const monthLine = `${capFirst(t('an.goals.month', { month: monthWord(month, lang), amount: asked }))} · ${status(goal, month, mode)}`
+  const details = info?.(
+    <FigureInfo amount={reached} lines={[
+      badge,
+      goal.target ? t('an.goals.of', { value: amount(reached), target: amount(goal.target) }) : null,
+      monthLine,
+      // Month by month: what went in against what was asked.
+      ...shown.filter(m => m.month !== month).reverse().map(m => capFirst(t('an.goals.month', {
+        month: monthWord(m.month, lang),
+        amount: m.asked != null
+          ? t('an.goals.putOfAsked', { putIn: amount(m.putIn), asked: amount(m.asked) })
+          : amount(m.putIn),
+      }))),
+    ]} />,
+  )
+
   return (
     <Tile span={4} mdSpan={3} as="article" className="self-stretch">
       <div className="flex items-start gap-3">
@@ -108,6 +131,7 @@ export function GoalCard({ goal, month, mode = 'month', headingRef }: {
           </h3>
           <div className="mt-1"><Badge>{badge}</Badge></div>
         </div>
+        {details}
       </div>
 
       <p className="mt-4">
@@ -127,9 +151,9 @@ export function GoalCard({ goal, month, mode = 'month', headingRef }: {
           <span className="shrink-0 rounded-chip bg-indigo-50 px-1.5 py-0.5 text-xs font-semibold tabular-nums text-indigo-700">{pct.text}</span>
         </div>
       )}
-      <p className="mt-1 text-xs leading-snug text-slate-600 tabular-nums [overflow-wrap:anywhere]">
-        {capFirst(t('an.goals.month', { month: monthWord(month, lang), amount: asked }))} · {status(goal, month, mode)}
-      </p>
+      {!details && (
+        <p className="mt-1 text-xs leading-snug text-slate-600 tabular-nums [overflow-wrap:anywhere]">{monthLine}</p>
+      )}
 
       {shown.length > 0 && peak > 0 && (
         <div className="mt-3">

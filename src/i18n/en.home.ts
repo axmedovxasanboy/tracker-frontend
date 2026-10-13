@@ -2,35 +2,17 @@
  * Strings for the 2026-09 rebuild's Home, Savings and the add / pay forms. Merged into the main
  * dictionary by LanguageContext.
  *
- * One name per thing: "You have" (wallet total), "Free to spend", "Coming up" (bills and
+ * One name per thing: "You have" (wallet total), "Earned / Spent in {month}", "Coming up" (bills and
  * loan payments due), "Savings", "Loans & bills". Buttons say Add, Pay or Save. None of these
  * strings may talk about levels, buckets, allocation, marks or closing a month.
  */
 export const en_home = {
-  // ── Home: the daily figure ──────────────────────────────────────────────────────────────────
-  'home.hero.freeLabel': 'Free to spend until {date}',
-  'home.hero.freeToday': 'Free to spend today',
-  'home.hero.freePerDay': '≈ {amount} a day',
-  'home.hero.freeAfter': 'after bills, loans and what you set aside',
-  'home.hero.shortLabel': 'You’ll be short',
-  'home.hero.shortOn': 'on {date} — bills, loans and what you set aside need more than you’ll have.',
-  'home.hero.seeDue': 'See what’s due',
-  'home.hero.paceRunsOut': 'Lately you spend about {pace} a day. At that pace your money runs out around {date}.',
-  'home.hero.paceOk': 'Lately you spend about {pace} a day — within your limit.',
-  'home.hero.noIncome': 'Set your monthly income, and I’ll show how much you can spend each day.',
+  // ── Home: this month in and out ─────────────────────────────────────────────────────────────
+  'home.month.earned': 'Earned in {month}',
+  'home.month.spent': 'Spent in {month}',
+  'home.hero.noIncome': 'Set your monthly income first — Tracker needs it before anything can be recorded.',
 
-  // "How is this worked out?" — the window from today to the tightest day.
-  'home.how.toggle': 'How is this worked out?',
-  'home.how.have': 'You have',
-  'home.how.comingIn': 'Coming in by {date}',
-  'home.how.goingOut': 'Bills and loans',
-  'home.how.savings': 'Set aside',
-  'home.how.result': '= {net} for {days} ≈ {perDay} a day',
-  'home.how.dayOne': '{count} day',
-  'home.how.dayMany': '{count} days',
-  'home.how.salaryNote': 'Salary is counted at no more than your monthly income in Settings, to stay on the safe side.',
-
-  // Under the daily figure, when the plans ask more than a normal month has. Never in the figure.
+  // A tile of its own, when the plans ask more than a normal month has.
   'home.plans.title': 'Plans don’t fit your income',
   'home.plans.change': 'Change',
 

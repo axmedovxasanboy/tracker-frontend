@@ -10,19 +10,24 @@ import { ShareRow } from '../../components/analytics/ShareRow'
 import { compact, HATCH, SERIES_BG, shareOf } from '../../components/analytics/shared'
 import { Tile } from '../../components/ui/Tile'
 import { useLang } from '../../i18n/LanguageContext'
-import { NotCountedBlock, PageGrid, useAnalytics, useReceivedCaptions, useStableIncomeCaption } from './common'
+import {
+  FigureTileInfo, NotCountedBlock, PageGrid, TileHead, useAnalytics, useLastMonthLine, useReceivedCaptions,
+  useStableIncomeCaption,
+} from './common'
 
 /**
  * Page 1, Totals (§3.1; restyled 2026-10-13 after the reference dashboards the owner picked): this
  * month, how much came in, went out and was set aside, what is left — and is that normal?
  *
- * Four stat tiles, each with its badge against last month, a meter of so far against expected and
- * the expected caption under it; In, Out and Set aside lead to their pages. Then where the money
- * went — Out's three parts and Set aside as one ring — and what moved without being In or Out.
+ * Four stat tiles, each with its badge against last month and a meter of so far against expected;
+ * what is said about a figure (expected, to come …) is behind its "!". In, Out and Set aside lead
+ * to their pages. Then where the money went — Out's three parts and Set aside as one ring — and
+ * what moved without being In or Out.
  */
 export function TotalsPage() {
   const { t } = useLang()
   const { d, search, prev } = useAnalytics()
+  const lastMonth = useLastMonthLine()
   const received = useReceivedCaptions()
   const stableIncome = useStableIncomeCaption()
 
@@ -58,12 +63,13 @@ export function TotalsPage() {
         value={f.earned}
         badge={badge(f.earned, p?.earned)}
         meter={{ expected: expIn, fill: SERIES_BG.bonus }}
-        captions={[
+        info={<FigureTileInfo title={t('shell.history.in')} amount={f.earned} lines={[
           vsExpected(t, { soFar: f.earned, expected: expIn, open, bonus }),
+          lastMonth(p?.earned),
           stableIncome(d),
           received.receivedOnAll(d.income),
           received.countsIn(d.receivedForOtherMonths),
-        ]}
+        ]} />}
         to={`${SECTION_PATH.in}${search}`}
       />
       <FigureTile
@@ -75,7 +81,10 @@ export function TotalsPage() {
         value={f.out}
         badge={badge(f.out, p?.out, false)}
         meter={{ expected: e?.out ?? null, fill: SERIES_BG.everyday }}
-        captions={[vsExpected(t, { soFar: f.out, expected: e?.out ?? null, open, paidOff })]}
+        info={<FigureTileInfo title={t('shell.history.out')} amount={f.out} lines={[
+          vsExpected(t, { soFar: f.out, expected: e?.out ?? null, open, paidOff }),
+          lastMonth(p?.out),
+        ]} />}
         to={`${SECTION_PATH.out}${search}`}
       />
       <FigureTile
@@ -87,7 +96,10 @@ export function TotalsPage() {
         value={f.saved}
         badge={badge(f.saved, p?.saved)}
         meter={{ expected: e?.saved ?? null, fill: SERIES_BG.saved }}
-        captions={[vsExpected(t, { soFar: f.saved, expected: e?.saved ?? null, open })]}
+        info={<FigureTileInfo title={t('fix.setAside')} amount={f.saved} lines={[
+          vsExpected(t, { soFar: f.saved, expected: e?.saved ?? null, open }),
+          lastMonth(p?.saved),
+        ]} />}
         to={`${SECTION_PATH['set-aside']}${search}`}
       />
       <FigureTile
@@ -98,14 +110,17 @@ export function TotalsPage() {
         value={f.leftOver}
         badge={badge(f.leftOver, p?.leftOver)}
         meter={{ expected: expLeft, fill: HATCH }}
-        captions={[vsExpected(t, { soFar: f.leftOver, expected: expLeft, open, kind: 'leftOver', bonus })]}
+        info={<FigureTileInfo title={t('analytics.group.leftOver')} amount={f.leftOver} lines={[
+          vsExpected(t, { soFar: f.leftOver, expected: expLeft, open, kind: 'leftOver', bonus }),
+          lastMonth(p?.leftOver),
+        ]} />}
         // Pay usually lands after the spending, so a month still running is not called short.
         negative={open ? 'slate' : 'rose'}
       />
 
       {whole > 0 && (
         <Tile span={7} mdSpan={6} as="section">
-          <h2 className="text-title text-slate-900">{t('shell.history.whereItWent')}</h2>
+          <TileHead title={t('shell.history.whereItWent')} />
           <div className="mt-4 flex flex-col items-center gap-5 sm:flex-row sm:items-center">
             <Donut
               segments={parts.map(x => ({ key: x.key, label: x.label, value: x.amount, color: x.color }))}

@@ -32,7 +32,8 @@ export function CumulativeChart({ daily, daysInMonth, expectedTotal, caption }: 
   daysInMonth: number
   /** The month's expected itemised spending; null without a base — then no dashed line. */
   expectedTotal: number | null
-  caption: ReactNode
+  /** The by-today sentence under the plot; a month page keeps it behind the tile's "!" instead. */
+  caption?: ReactNode
 }) {
   const { t } = useLang()
   const plotRef = useRef<HTMLDivElement>(null)
@@ -205,7 +206,7 @@ export function CumulativeChart({ daily, daysInMonth, expectedTotal, caption }: 
           ))}
         </div>
       </div>
-      <figcaption className="mt-2 text-xs leading-snug text-slate-600 tabular-nums">{caption}</figcaption>
+      {caption && <figcaption className="mt-2 text-xs leading-snug text-slate-600 tabular-nums">{caption}</figcaption>}
       <table className="sr-only">
         <thead>
           <tr>

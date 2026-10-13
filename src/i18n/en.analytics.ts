@@ -157,6 +157,10 @@ export const en_analytics = {
   'an.chart.day': 'Day {day}',
   'an.chart.soFar': 'So far',
   'an.chart.normal': 'A normal month',
+  // The "!" in a tile's corner, and what its dialog adds to the sentences the tile used to carry.
+  'an.info.open': 'More about {title}',
+  'an.info.prev': '{month}: {amount}',
+  'an.info.itemised': 'The everyday spending you recorded, added up day by day. Money a wallet check found is not in it — it lands on the check day. The dashed line is a normal month.',
 
   // ── Empty pages ─────────────────────────────────────────────────────────────────────────────
   'an.empty.none': 'Nothing recorded yet.',

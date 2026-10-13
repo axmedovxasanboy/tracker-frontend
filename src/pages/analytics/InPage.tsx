@@ -3,6 +3,8 @@ import { BulletRow, scaleOf, vsExpected } from '../../components/analytics/Bulle
 import { DeltaBadge } from '../../components/analytics/DeltaBadge'
 import { Donut } from '../../components/analytics/Donut'
 import { FigureTile } from '../../components/analytics/FigureTile'
+import { InfoList } from '../../components/analytics/Info'
+import type { InfoListItem } from '../../components/analytics/Info'
 import {
   bonusInExpected, expectedIn, historyHref, isOpenMonth, lineDrawn, lineLabel, rankLines,
 } from '../../components/analytics/figures'
@@ -14,8 +16,8 @@ import { Tile } from '../../components/ui/Tile'
 import { useLang } from '../../i18n/LanguageContext'
 import type { BreakdownLine } from '../../types/analyticsBreakdown'
 import {
-  amountOf, Block, MiniCard, MiniRow, NotCountedBlock, PageGrid, useAnalytics, useReceivedCaptions,
-  useStableIncomeCaption,
+  amountOf, Block, FigureTileInfo, MiniCard, MiniRow, NotCountedBlock, PageGrid, TileHead, TileInfo, useAnalytics,
+  useLastMonthLine, useReceivedCaptions, useStableIncomeCaption,
 } from './common'
 import type { PageProps } from './common'
 
@@ -31,14 +33,16 @@ const MINI_ROWS = 4
  * for". Ordered by expected, so rows keep their place from day to day.
  *
  * On a month (2026-10-13 restyle): In as a stat tile with its badge against last month, and the
- * sources as a ring — each source its colour in the list's order — with the list beside it. The
- * 12-months sheet keeps its rows and month strips.
+ * sources as a ring — each source its colour in the list's order — with the list beside it, names
+ * and amounts only; what is expected of each source and what is still to come is behind the "!".
+ * The 12-months sheet keeps its rows, captions and month strips.
  */
 export function InPage({ mode = 'month', size = 'full', onOpen }: PageProps) {
   const { t, lang, categoryName } = useLang()
   const { d, month, prev } = useAnalytics()
   const received = useReceivedCaptions()
   const stableIncome = useStableIncomeCaption()
+  const lastMonth = useLastMonthLine()
 
   const range = mode === 'range'
   const f = range ? d.total : d.months[d.months.length - 1] ?? d.total
@@ -98,15 +102,23 @@ export function InPage({ mode = 'month', size = 'full', onOpen }: PageProps) {
         label={name(line)}
         amount={compact(line.amount)}
         share={shareOf(line.amount, f.earned)}
-        captions={[
-          vsExpected(t, { soFar: line.amount, expected: line.expected, open, isNew: line.isNew }),
-          // Money counted here that arrived in another month — on the source it belongs to.
-          leaf ? received.receivedOn(line.otherMonth) : null,
-        ]}
         tone={tone(line)}
         to={line.history ? historyHref(month, line.history) : undefined}
       />
     )
+    // What the rows no longer say, line by line, in the list's own order.
+    const notes = (line: BreakdownLine, leaf: boolean) => [
+      vsExpected(t, { soFar: line.amount, expected: line.expected, open, isNew: line.isNew }),
+      // Money counted here that arrived in another month — on the source it belongs to.
+      leaf ? received.receivedOn(line.otherMonth) : null,
+    ]
+    const infoItems: InfoListItem[] = roots.flatMap(root => {
+      const kids = childrenOf(root)
+      return [
+        { key: root.key, name: name(root), amount: compact(root.amount), notes: notes(root, kids.length === 0) },
+        ...kids.map(c => ({ key: c.key, name: name(c), amount: compact(c.amount), notes: notes(c, true), child: true })),
+      ]
+    })
     return (
       <PageGrid mode={mode}>
         <FigureTile
@@ -119,14 +131,18 @@ export function InPage({ mode = 'month', size = 'full', onOpen }: PageProps) {
           value={f.earned}
           badge={prev ? <DeltaBadge value={f.earned} previous={prev.flow.earned} prevMonth={prev.month} open={open} /> : null}
           meter={{ expected: expIn, fill: SERIES_BG.bonus }}
-          captions={[
+          info={<FigureTileInfo title={t('shell.history.in')} amount={f.earned} lines={[
             vsExpected(t, { soFar: f.earned, expected: expIn, open, bonus }),
+            lastMonth(prev?.flow.earned),
             stableIncome(d),
             received.countsIn(d.receivedForOtherMonths),
-          ]}
+          ]} />}
         />
         <Tile span={8} mdSpan={6} as="section">
-          <h2 className="text-title text-slate-900">{t('an.sources')}</h2>
+          <TileHead
+            title={t('an.sources')}
+            info={<TileInfo title={t('an.sources')}><InfoList items={infoItems} /></TileInfo>}
+          />
           <div className="mt-4 flex flex-col items-center gap-5 sm:flex-row sm:items-start">
             <Donut segments={segments} total={f.earned} totalLabel={t('shell.history.in')} ariaLabel={t('an.donut.bySource')} />
             <ul className="w-full min-w-0 flex-1">

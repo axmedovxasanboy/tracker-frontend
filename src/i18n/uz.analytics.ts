@@ -154,6 +154,9 @@ export const uz_analytics: Record<keyof typeof en_analytics, string> = {
   'an.chart.day': '{day}-kun',
   'an.chart.soFar': 'Hozirgacha',
   'an.chart.normal': 'Odatdagi oy',
+  'an.info.open': '{title} haqida batafsil',
+  'an.info.prev': '{month}: {amount}',
+  'an.info.itemised': 'Siz yozgan kundalik xarajatlar, kunma-kun qoʻshib borilgan. Hamyon tekshiruvi topgan pul bunga kirmaydi — u tekshiruv kunida hisoblanadi. Uzuq chiziq — odatdagi oy.',
 
   // ── Boʻsh sahifalar ─────────────────────────────────────────────────────────────────────────
   'an.empty.none': 'Hali hech narsa yozilmagan.',

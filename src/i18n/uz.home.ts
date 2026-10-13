@@ -2,27 +2,10 @@ import type { en_home } from './en.home'
 
 /** Uzbek for the Home / Savings / forms strings. Partial is fine — missing keys fall back to English. */
 export const uz_home: Partial<Record<keyof typeof en_home, string>> = {
-  // ── Bosh sahifa: kunlik summa ───────────────────────────────────────────────────────────────
-  'home.hero.freeLabel': '{date} gacha bemalol sarflash mumkin',
-  'home.hero.freeToday': 'Bugun bemalol sarflash mumkin',
-  'home.hero.freePerDay': '≈ kuniga {amount}',
-  'home.hero.freeAfter': 'toʻlovlar, qarzlar va ajratiladigan puldan keyin',
-  'home.hero.shortLabel': 'Pul yetmay qoladi',
-  'home.hero.shortOn': '{date} kuni — toʻlovlar, qarzlar va ajratiladigan pulga sizda boʻladiganidan koʻproq kerak.',
-  'home.hero.seeDue': 'Nimalar toʻlanishini koʻrish',
-  'home.hero.paceRunsOut': 'Soʻnggi paytda kuniga taxminan {pace} sarflayapsiz. Shu surʼatda pulingiz taxminan {date} kuni tugaydi.',
-  'home.hero.paceOk': 'Soʻnggi paytda kuniga taxminan {pace} sarflayapsiz — chegaradan oshmayapsiz.',
-  'home.hero.noIncome': 'Oylik daromadingizni kiriting — har kuni qancha sarflash mumkinligini koʻrsataman.',
-
-  'home.how.toggle': 'Bu qanday hisoblanadi?',
-  'home.how.have': 'Sizda bor',
-  'home.how.comingIn': '{date} gacha keladi',
-  'home.how.goingOut': 'Toʻlovlar va qarzlar',
-  'home.how.savings': 'Ajratiladi',
-  'home.how.result': '= {net} — {days} uchun ≈ kuniga {perDay}',
-  'home.how.dayOne': '{count} kun',
-  'home.how.dayMany': '{count} kun',
-  'home.how.salaryNote': 'Ehtiyot uchun maosh Sozlamalardagi oylik daromaddan koʻp hisoblanmaydi.',
+  // ── Bosh sahifa: shu oy kirim va chiqim ─────────────────────────────────────────────────────
+  'home.month.earned': '{month}da topildi',
+  'home.month.spent': '{month}da sarflandi',
+  'home.hero.noIncome': 'Avval oylik daromadingizni kiriting — usiz hech narsa yozib boʻlmaydi.',
 
   'home.plans.title': 'Rejalar daromadingizga sigʻmaydi',
   'home.plans.change': 'Oʻzgartirish',

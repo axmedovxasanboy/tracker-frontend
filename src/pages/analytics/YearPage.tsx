@@ -16,7 +16,7 @@ import { useLang } from '../../i18n/LanguageContext'
 import type { TKey } from '../../i18n/LanguageContext'
 import type { IconTone } from '../../components/ui/StatTile'
 import { shiftMonth } from '../../utils/format'
-import { useAnalytics } from './common'
+import { FigureTileInfo, useAnalytics } from './common'
 import { GoalsPage } from './GoalsPage'
 import { InPage } from './InPage'
 import { OutPage } from './OutPage'
@@ -92,7 +92,9 @@ function Year() {
             iconTone={f.tone}
             amount={compact(f.total)}
             value={f.total}
-            captions={[f.average != null ? t('an.year.aMonth', { amount: compact(f.average) }) : null]}
+            info={<FigureTileInfo title={t(f.key)} amount={f.total} lines={[
+              f.average != null ? t('an.year.aMonth', { amount: compact(f.average) }) : null,
+            ]} />}
           />
         ))}
 

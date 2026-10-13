@@ -1,5 +1,6 @@
 import { Target } from 'lucide-react'
 import { Button } from '../ui/Button'
+import { Tile } from '../ui/Tile'
 import { meansLine } from '../savings/means'
 import { useLang } from '../../i18n/LanguageContext'
 import { formatDate, money, moneyFull } from '../../utils/format'
@@ -7,11 +8,11 @@ import type { Currency } from '../../types'
 import type { AdvisorGoal, AdvisorMeans } from '../../types/fixes'
 
 /**
- * Under Home's figure, only when the plans ask more than a month without a bonus has: what they
+ * A tile of its own on Home, only when the plans ask more than a month without a bonus has: what they
  * ask, each plan with its monthly payment, and the two ways out without leaving Home — make one a
- * wish, or change it (a smaller payment, a later date). The plans are never in the figure itself;
- * this is where they speak. The verdict and its sentence are the server's (`means`), word for word
- * what Savings says.
+ * wish, or change it (a smaller payment, a later date). The verdict and its sentence are the
+ * server's (`means`), word for word what Savings says. (Until the second 2026-10-13 change it sat
+ * under the "Free to spend" figure, which has since left Home.)
  */
 export function PlansFit({ means, goals, month, currency, busyId, onMakeWish, onChange }: {
   means: AdvisorMeans | null | undefined
@@ -34,11 +35,11 @@ export function PlansFit({ means, goals, month, currency, busyId, onMakeWish, on
     Object.entries(line.amounts).map(([k, v]) => [k, money(v, currency)])))
 
   return (
-    <div className="mt-4 border-t border-hairline pt-4">
-      <h3 className="flex items-center gap-2 text-label uppercase text-amber-700">
+    <Tile span={12} as="section">
+      <h2 className="flex items-center gap-2 text-label uppercase text-amber-700">
         <Target className="h-4 w-4 shrink-0" aria-hidden="true" />
         {t('home.plans.title')}
-      </h3>
+      </h2>
       <p className="mt-2 text-sm tabular-nums text-slate-700">{sentence}</p>
       <ul className="mt-2 divide-y divide-hairline">
         {plans.map(g => {
@@ -66,6 +67,6 @@ export function PlansFit({ means, goals, month, currency, busyId, onMakeWish, on
           )
         })}
       </ul>
-    </div>
+    </Tile>
   )
 }

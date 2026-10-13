@@ -5,14 +5,18 @@ import { DeltaBadge } from '../../components/analytics/DeltaBadge'
 import { Donut } from '../../components/analytics/Donut'
 import { FigureTile } from '../../components/analytics/FigureTile'
 import { isOpenMonth, lineDrawn, lineLabel, rankLines } from '../../components/analytics/figures'
-import { LineList, outParts } from '../../components/analytics/LineList'
+import { FigureInfo } from '../../components/analytics/Info'
+import { LineList, OutLinesInfo, outParts } from '../../components/analytics/LineList'
 import { SlotStrip, slotValues } from '../../components/analytics/MiniColumns'
 import { assignSlots, segmentsOf } from '../../components/analytics/palette'
 import { compact, SERIES_BG } from '../../components/analytics/shared'
 import { Tile } from '../../components/ui/Tile'
 import { useLang } from '../../i18n/LanguageContext'
 import type { BreakdownLine } from '../../types/analyticsBreakdown'
-import { amountOf, Block, MiniCard, MiniRow, NotCountedBlock, PageGrid, useAnalytics } from './common'
+import {
+  amountOf, Block, FigureTileInfo, MiniCard, MiniRow, NotCountedBlock, PageGrid, TileHead, TileInfo, useAnalytics,
+  useLastMonthLine,
+} from './common'
 import type { PageProps } from './common'
 
 /** How many Out lines the 12-months mini names before the rest become "Other". */
@@ -36,6 +40,7 @@ const CHART_MIN_DAYS = 3
 export function OutPage({ mode = 'month', size = 'full', onOpen }: PageProps) {
   const { t, lang, categoryName } = useLang()
   const { d, month, prev } = useAnalytics()
+  const lastMonth = useLastMonthLine()
 
   const range = mode === 'range'
   const f = range ? d.total : d.months[d.months.length - 1] ?? d.total
@@ -127,22 +132,37 @@ export function OutPage({ mode = 'month', size = 'full', onOpen }: PageProps) {
           value={f.out}
           badge={prev ? <DeltaBadge value={f.out} previous={prev.flow.out} prevMonth={prev.month} open={open} upIsGood={false} /> : null}
           meter={{ expected: e?.flow.out ?? null, fill: SERIES_BG.everyday }}
-          captions={[
+          info={<FigureTileInfo title={t('shell.history.out')} amount={f.out} lines={[
             vsExpected(t, { soFar: f.out, expected: e?.flow.out ?? null, open, paidOff }),
+            lastMonth(prev?.flow.out),
             partsLine,
             perDay,
-            // With the chart on screen this sentence is its caption instead.
+            // With the chart on screen this sentence is its "!" instead.
             showChart ? null : byToday,
-          ]}
+          ]} />}
         />
         {showChart && m && (
           <Tile span={8} mdSpan={6} as="section">
-            <h2 className="text-title text-slate-900">{t('an.throughMonth')}</h2>
-            <CumulativeChart daily={d.everydayDaily} daysInMonth={m.daysInMonth} expectedTotal={expItemised} caption={chartCaption} />
+            <TileHead
+              title={t('an.throughMonth')}
+              info={(
+                <TileInfo title={t('an.throughMonth')}>
+                  <FigureInfo amount={d.everydayDaily[d.everydayDaily.length - 1]?.cumulative ?? 0} lines={[chartCaption, t('an.info.itemised')]} />
+                </TileInfo>
+              )}
+            />
+            <CumulativeChart daily={d.everydayDaily} daysInMonth={m.daysInMonth} expectedTotal={expItemised} />
           </Tile>
         )}
         <Tile span={showChart ? 12 : 8} mdSpan={6} as="section">
-          <h2 className="text-title text-slate-900">{t('an.byCategory')}</h2>
+          <TileHead
+            title={t('an.byCategory')}
+            info={(
+              <TileInfo title={t('an.byCategory')}>
+                <OutLinesInfo lines={d.out} base={e != null} open={open} paidOff={paidOff} />
+              </TileInfo>
+            )}
+          />
           <div className="mt-4 flex flex-col items-center gap-5 lg:flex-row lg:items-start">
             <Donut segments={segments} total={f.out} totalLabel={t('shell.history.out')} ariaLabel={t('an.donut.byCategory')} />
             <div className="w-full min-w-0 flex-1">{list}</div>

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Plus, RefreshCw } from 'lucide-react'
 import { GetStartedHero, INCOME_FIELD_ID } from '../components/dashboard/GetStartedHero'
@@ -11,7 +11,7 @@ import { PayPersonalLoanModal } from '../components/overview/PayPersonalLoanModa
 import { PayBucketModal } from '../components/overview/PayBucketModal'
 import { CheckInModal } from '../components/months/CheckInModal'
 import { useAddForm } from '../context/AddFormContext'
-import { SpendHero } from '../components/home/SpendHero'
+import { MonthTiles } from '../components/home/MonthTiles'
 import { PlansFit } from '../components/home/PlansFit'
 import { LevelDownNotice } from '../components/levels/LevelDownNotice'
 import {
@@ -45,9 +45,10 @@ const FULL = 'md:col-span-6 xl:col-span-12'
 /**
  * Home: how much can I safely spend until salary — and what is coming, what to save, what I have.
  *
- * Top to bottom: what is free to spend (red when the money runs short) with, under it, whether the
- * plans fit; the bills and loan payments due soon, this month's savings, the wallets, and at most
- * three next steps that nothing above already covers. Every "Pay" opens the dialog the rest of the app uses for that job. It all comes from
+ * Top to bottom: what came in and went out this month (two cards, owner 2026-10-13 — they replace
+ * the "Free to spend" figure, which the bot still sends), whether the plans fit when they do not, the
+ * bills and loan payments due soon, this month's savings, the wallets, and at most three next steps
+ * that nothing above already covers. Every "Pay" opens the dialog the rest of the app uses for that job. It all comes from
  * `GET /advisor` — the same answer the Telegram bot sends — so web and bot never disagree.
  */
 export function Advisor({ currency }: Props) {
@@ -77,7 +78,6 @@ export function Advisor({ currency }: Props) {
   const [goalForm, setGoalForm] = useState<{ goal: InvestmentResponse | null } | null>(null)
   const [busyPlan, setBusyPlan] = useState<number | null>(null)
   const [busyKey, setBusyKey] = useState<string | null>(null)
-  const comingUpRef = useRef<HTMLHeadingElement>(null)
 
   const d = adv.data
   const refetch = () => { adv.refetch(); summary.refetch() }
@@ -90,14 +90,6 @@ export function Advisor({ currency }: Props) {
     if (!el) { navigate('/settings'); return }
     el.scrollIntoView({ block: 'center' })
     ;(el as HTMLInputElement).focus({ preventScroll: true })
-  }
-
-  const seeDue = () => {
-    const el = comingUpRef.current
-    if (!el) return
-    // Centred, not top-aligned: on a phone the top of the scroller sits under the fixed app bar.
-    el.scrollIntoView({ block: 'center' })
-    el.focus({ preventScroll: true })
   }
 
   /** "Pay" on a Coming up row: the dialog for that exact bill or loan, already on its amount. */
@@ -221,11 +213,10 @@ export function Advisor({ currency }: Props) {
     <YouHaveTile
       d={d}
       currency={currency}
-      span={daily ? pairSpan(true, steps.length > 0) : 12}
+      span={pairSpan(true, steps.length > 0)}
       mdSpan={6}
-      hero={!daily}
       onCheck={() => setCheckInOpen(true)}
-      extra={!daily && d.missingStableIncome ? (
+      extra={d.missingStableIncome ? (
         <p className="mt-2 text-sm text-slate-600">{t('home.hero.noIncome')}</p>
       ) : undefined}
     />
@@ -259,9 +250,10 @@ export function Advisor({ currency }: Props) {
           />
         )}
 
+        <MonthTiles today={today} />
+
         {adv.loading ? (
           <>
-            <Tile span={12} padding="none"><Skeleton variant="stat" bare className="p-6" /></Tile>
             <Skeleton variant="row" count={3} className="md:col-span-6 xl:col-span-6" />
             <Skeleton variant="row" count={3} className="md:col-span-6 xl:col-span-6" />
           </>
@@ -271,28 +263,18 @@ export function Advisor({ currency }: Props) {
           <>
             {adv.error && <ErrorTile compact className={FULL} message={adv.error} onRetry={adv.refetch} />}
 
-            <SpendHero
-              d={d}
+            <PlansFit
+              means={d.means}
+              goals={d.goals}
+              month={month}
               currency={currency}
-              cached={{ isCached: adv.isCached, cachedAt: adv.cachedAt }}
-              onSeeDue={seeDue}
-              footer={(
-                <PlansFit
-                  means={d.means}
-                  goals={d.goals}
-                  month={month}
-                  currency={currency}
-                  busyId={busyPlan}
-                  onMakeWish={makeWish}
-                  onChange={changePlan}
-                />
-              )}
-              fallback={youHave}
+              busyId={busyPlan}
+              onMakeWish={makeWish}
+              onChange={changePlan}
             />
 
             {upcoming && (
               <ComingUpTile
-                ref={comingUpRef}
                 rows={upcoming}
                 currency={currency}
                 month={month}
@@ -323,7 +305,7 @@ export function Advisor({ currency }: Props) {
               </Tile>
             )}
 
-            {daily && youHave}
+            {youHave}
 
             {steps.length > 0 && (
               <NextStepsTile

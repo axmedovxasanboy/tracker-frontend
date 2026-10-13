@@ -9,6 +9,8 @@ import type { BarPart } from './BulletRow'
 import { OUT_ROWS_BEFORE_SMALLER } from './decisions'
 import { dayWord, historyHref, lineDrawn, lineLabel, rankLines } from './figures'
 import type { LineMode } from './figures'
+import { InfoList } from './Info'
+import type { InfoListItem } from './Info'
 import { SlotStrip, slotValues } from './MiniColumns'
 import { OTHER_HEX } from './palette'
 import type { Slot } from './palette'
@@ -44,6 +46,74 @@ const stripFill = (line: BreakdownLine) => outParts(line)[0]?.className ?? SERIE
  */
 function childFilter(child: BreakdownLine, mode: LineMode): LineHistory | null {
   return mode === 'month' ? child.history : null
+}
+
+/**
+ * What an Out line is called and what is said about it: the name with "· bill" or "· from wallet
+ * checks" after it when that is what it is, and its captions — expected, to come, paid off, the
+ * bills inside a category — or, over a range, "a month". A month's list shows short names and no
+ * captions (2026-10-13: the owner found the page too wordy); the full text is the "!" dialog's.
+ */
+function useLineText(mode: LineMode, open: boolean, paidOff: number) {
+  const { t, lang, categoryName } = useLang()
+
+  const label = (line: BreakdownLine, full: boolean) => {
+    const name = lineLabel(line, t, categoryName, lang)
+    if (!full) return name
+    if (line.key === 'unitemised' || line.kind === 'NOT_ITEMISED') return `${name} · ${t('analytics.b.notItemisedHint')}`
+    // A category that is all bill says so after its name; one with both parts says it below.
+    if (line.kind === 'CATEGORY' && (line.bills ?? 0) > 0 && (line.everyday ?? 0) <= 0) {
+      return `${name} · ${t('analytics.d.kind.bill')}`
+    }
+    if (line.kind === 'BILL') return `${name} · ${t('analytics.d.kind.bill')}`
+    return name
+  }
+
+  const captions = (line: BreakdownLine) => {
+    const bills = line.kind === 'CATEGORY' && (line.bills ?? 0) > 0 && (line.everyday ?? 0) > 0
+      ? t('an.inclBills', { amount: compact(line.bills ?? 0) })
+      : null
+    if (mode === 'range') {
+      return [line.average != null ? t('an.year.aMonth', { amount: compact(line.average) }) : null, bills]
+    }
+    return [
+      vsExpected(t, {
+        soFar: line.amount,
+        expected: line.expected,
+        open,
+        isNew: line.isNew,
+        closed: line.closed,
+        paidOff: line.key === 'loans' ? paidOff : 0,
+      }),
+      bills,
+    ]
+  }
+
+  const childCaption = (c: BreakdownLine) => mode === 'range'
+    ? (c.average != null ? t('an.year.aMonth', { amount: compact(c.average) }) : null)
+    : vsExpected(t, { soFar: c.amount, expected: c.expected, open, isNew: c.isNew, closed: c.closed })
+
+  return { label, captions, childCaption }
+}
+
+/**
+ * The "!" of a month's category list: every line in the list's order, each with its full name
+ * and what is said about it, and its sub-categories, bills, loans or check days under it.
+ */
+export function OutLinesInfo({ lines, base, open, paidOff = 0 }: {
+  lines: BreakdownLine[]
+  base: boolean
+  open: boolean
+  paidOff?: number
+}) {
+  const { label, captions, childCaption } = useLineText('month', open, paidOff)
+  const items: InfoListItem[] = rankLines(lines.filter(l => lineDrawn(l, 'month')), base, 'month').flatMap(line => [
+    { key: line.key, name: label(line, true), amount: compact(line.amount), notes: captions(line) },
+    ...rankLines(line.children.filter(c => lineDrawn(c, 'month')), base, 'month').map(c => ({
+      key: `${line.key}/${c.key}`, name: label(c, true), amount: compact(c.amount), notes: [childCaption(c)], child: true,
+    })),
+  ])
+  return <InfoList items={items} />
 }
 
 /**
@@ -93,36 +163,11 @@ export function LineList({ lines, mode, base, open, month, months, slots, total,
     ? drawn.reduce((max, l) => Math.max(max, ...l.byMonth), 0)
     : 0
 
-  const label = (line: BreakdownLine) => {
-    const name = lineLabel(line, t, categoryName, lang)
-    if (line.key === 'unitemised' || line.kind === 'NOT_ITEMISED') return `${name} · ${t('analytics.b.notItemisedHint')}`
-    // A category that is all bill says so after its name; one with both parts says it below.
-    if (line.kind === 'CATEGORY' && (line.bills ?? 0) > 0 && (line.everyday ?? 0) <= 0) {
-      return `${name} · ${t('analytics.d.kind.bill')}`
-    }
-    if (line.kind === 'BILL') return `${name} · ${t('analytics.d.kind.bill')}`
-    return name
-  }
-
-  const captions = (line: BreakdownLine) => {
-    const bills = line.kind === 'CATEGORY' && (line.bills ?? 0) > 0 && (line.everyday ?? 0) > 0
-      ? t('an.inclBills', { amount: compact(line.bills ?? 0) })
-      : null
-    if (mode === 'range') {
-      return [line.average != null ? t('an.year.aMonth', { amount: compact(line.average) }) : null, bills]
-    }
-    return [
-      vsExpected(t, {
-        soFar: line.amount,
-        expected: line.expected,
-        open,
-        isNew: line.isNew,
-        closed: line.closed,
-        paidOff: line.key === 'loans' ? paidOff : 0,
-      }),
-      bills,
-    ]
-  }
+  const text = useLineText(mode, open, paidOff)
+  const range = mode === 'range'
+  // A month's rows: short names, no captions — the "!" has them (`OutLinesInfo`).
+  const label = (line: BreakdownLine) => text.label(line, range)
+  const captions = (line: BreakdownLine) => (range ? text.captions(line) : [])
 
   const panel = (line: BreakdownLine) => {
     const children = rankLines(line.children.filter(c => lineDrawn(c, mode)), base, mode)
@@ -136,9 +181,7 @@ export function LineList({ lines, mode, base, open, month, months, slots, total,
               key={c.key}
               label={label(c)}
               amount={mode === 'range' ? formatNumber(c.amount) : compact(c.amount)}
-              caption={mode === 'range'
-                ? (c.average != null ? t('an.year.aMonth', { amount: compact(c.average) }) : null)
-                : vsExpected(t, { soFar: c.amount, expected: c.expected, open, isNew: c.isNew, closed: c.closed })}
+              caption={range ? text.childCaption(c) : null}
               to={f ? historyHref(month, f) : null}
             />
           )
@@ -203,7 +246,8 @@ export function LineList({ lines, mode, base, open, month, months, slots, total,
             label={t('an.smaller', { count: rest.length })}
             amount={mode === 'range' || smallerOpen ? formatNumber(smallerAmount) : compact(smallerAmount)}
             share={shareOf(smallerAmount, total)}
-            captions={[rest.map(l => lineLabel(l, t, categoryName, lang)).join(', ')]}
+            // A month names them only when opened; a range lists them under the row.
+            captions={range ? [rest.map(l => lineLabel(l, t, categoryName, lang)).join(', ')] : []}
             tone={tone(smallerAmount)}
             onToggle={() => toggle('smaller')}
             expanded={smallerOpen}

@@ -5,10 +5,9 @@ import type { AxiosError } from 'axios'
 import { CloudOff, Inbox } from 'lucide-react'
 import { AnalyticsSkeleton } from '../../components/analytics/AnalyticsFallback'
 import { AnalyticsNav } from '../../components/analytics/AnalyticsNav'
-import { monthWord, rangeLabel } from '../../components/analytics/figures'
+import { rangeLabel } from '../../components/analytics/figures'
 import { MonthPicker, RangeLabel } from '../../components/analytics/MonthPicker'
 import { monthSearch, sectionOf, SECTION_PATH } from '../../components/analytics/sections'
-import type { Section } from '../../components/analytics/sections'
 import { CacheBadge } from '../../components/ui/CacheBadge'
 import { ErrorTile } from '../../components/ui/ErrorTile'
 import { IconChip } from '../../components/ui/IconChip'
@@ -236,7 +235,7 @@ export function AnalyticsLayout() {
     return (
       <>
         {stale}
-        <HeaderLine d={d} section={section} cached={{ isCached: q.isCached, cachedAt: q.cachedAt }} />
+        <HeaderLine cached={{ isCached: q.isCached, cachedAt: q.cachedAt }} />
         {emptyPast ? (
           <TileGrid>
             <Notice
@@ -282,52 +281,14 @@ function Notice({ icon, text }: { icon: ReactNode; text: string }) {
 }
 
 /**
- * The first line under the strip (§3.0): the day of a month in progress, what Expected rests on
- * (or that nothing earlier exists), the one place "UZS" is said, and entries dated ahead.
- *
- *   Day 2 of 31 · Expected: average of 1 month (September) · UZS
- *
- * Goals compares with what each plan asks, so it states no average; 12 months states how many
- * months the range holds and how many full months "a month" rests on.
+ * What used to be the first line under the strip (§3.0) now closes each "!" dialog
+ * (`useBasisLine`, 2026-10-13: the owner found the pages too wordy). What stays here is the one
+ * thing about the page as a whole: figures read from the offline copy say so.
  */
-function HeaderLine({ d, section, cached }: {
-  d: AnalyticsBreakdown
-  section: Section
-  cached: { isCached: boolean; cachedAt: string | null }
-}) {
-  const { t, lang } = useLang()
-  const pieces: string[] = []
-  const last = d.months[d.months.length - 1]
-
-  if (section === '12-months') {
-    pieces.push(t(d.months.length === 1 ? 'an.year.rangeOne' : 'an.year.range', { count: d.months.length }))
-    const n = d.average?.basedOn.length ?? 0
-    if (n > 0) pieces.push(t(n === 1 ? 'an.year.basisOne' : 'an.year.basisMany', { count: n }))
-  } else {
-    if (last && !last.complete) pieces.push(t('an.day', { day: last.days, days: last.daysInMonth }))
-    if (section !== 'goals') {
-      const based = d.expected?.basedOn ?? []
-      if (d.expected && based.length > 0) {
-        // Month names in full — only chart axes shorten them (§5.4); four or more become a range.
-        const names = based.length >= 4
-          ? `${monthWord(based[0], lang)}–${monthWord(based[based.length - 1], lang)}`
-          : based.map(m => monthWord(m, lang)).join(', ')
-        let basis = t(based.length === 1 ? 'an.basis.one' : 'an.basis.many', { count: based.length, months: names })
-        if (d.expected.skipped.length > 0) {
-          basis += ` ${t('an.basis.skipped', { months: d.expected.skipped.map(m => monthWord(m, lang)).join(', ') })}`
-        }
-        pieces.push(basis)
-      } else {
-        pieces.push(t('an.basis.none'))
-      }
-    }
-  }
-  pieces.push(t('an.unit'))
-  if (d.notYetCount > 0) pieces.push(t(d.notYetCount === 1 ? 'an.notYetOne' : 'an.notYet', { count: d.notYetCount }))
-
+function HeaderLine({ cached }: { cached: { isCached: boolean; cachedAt: string | null } }) {
+  if (!cached.isCached) return null
   return (
-    <div className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 xl:mb-4">
-      <p className="min-w-0 text-sm text-slate-600 tabular-nums">{pieces.join(' · ')}</p>
+    <div className="mb-3 flex xl:mb-4">
       <CacheBadge isCached={cached.isCached} cachedAt={cached.cachedAt} />
     </div>
   )

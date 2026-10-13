@@ -1,19 +1,20 @@
 import type { ReactNode } from 'react'
-import { useOutletContext } from 'react-router-dom'
+import { useLocation, useOutletContext } from 'react-router-dom'
 import { ArrowDownLeft, ArrowUpRight, Maximize2, PiggyBank, RotateCcw } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { Tile, TileGrid } from '../../components/ui/Tile'
 import type { TileMdSpan, TileSpan } from '../../components/ui/Tile'
 import { dayWord, historyHref, lineLabel, monthWord } from '../../components/analytics/figures'
+import { FigureInfo, InfoButton } from '../../components/analytics/Info'
 import type { LineMode } from '../../components/analytics/figures'
-import { SECTION_LABEL } from '../../components/analytics/sections'
+import { SECTION_LABEL, sectionOf } from '../../components/analytics/sections'
 import type { Section } from '../../components/analytics/sections'
 import { compact } from '../../components/analytics/shared'
 import { ShareRow } from '../../components/analytics/ShareRow'
 import { useLang } from '../../i18n/LanguageContext'
 import type { TKey } from '../../i18n/LanguageContext'
-import { formatNumber } from '../../utils/format'
+import { formatMonth, formatNumber } from '../../utils/format'
 import type { AnalyticsBreakdown, BreakdownMonth, BreakdownLine, ReceivedForOtherMonth } from '../../types/analyticsBreakdown'
 import type { TransactionFlow } from '../../types/fixes'
 
@@ -48,6 +49,83 @@ export interface PageProps {
   size?: 'full' | 'mini'
   /** The mini card's Open button. */
   onOpen?: () => void
+}
+
+// ── What a page's figures rest on (§3.0) ─────────────────────────────────────────────────────
+
+/**
+ * The basis line — the day of a month in progress, what Expected rests on (or that nothing earlier
+ * exists), the unit, entries dated ahead:
+ *
+ *   Day 13 of 31 · Expected: average of 1 month (September) · UZS
+ *
+ * Goals compares with what each plan asks, so it states no average; 12 months states how many
+ * months the range holds and how many full months "a month" rests on. It used to head every page;
+ * since 2026-10-13 it closes every "!" dialog instead, so the page itself carries figures only.
+ */
+export function useBasisLine(): string {
+  const { t, lang } = useLang()
+  const { d } = useAnalytics()
+  const section = sectionOf(useLocation().pathname)
+  const pieces: string[] = []
+  const last = d.months[d.months.length - 1]
+
+  if (section === '12-months') {
+    pieces.push(t(d.months.length === 1 ? 'an.year.rangeOne' : 'an.year.range', { count: d.months.length }))
+    const n = d.average?.basedOn.length ?? 0
+    if (n > 0) pieces.push(t(n === 1 ? 'an.year.basisOne' : 'an.year.basisMany', { count: n }))
+  } else {
+    if (last && !last.complete) pieces.push(t('an.day', { day: last.days, days: last.daysInMonth }))
+    if (section !== 'goals') {
+      const based = d.expected?.basedOn ?? []
+      if (d.expected && based.length > 0) {
+        // Month names in full — only chart axes shorten them (§5.4); four or more become a range.
+        const names = based.length >= 4
+          ? `${monthWord(based[0], lang)}–${monthWord(based[based.length - 1], lang)}`
+          : based.map(m => monthWord(m, lang)).join(', ')
+        let basis = t(based.length === 1 ? 'an.basis.one' : 'an.basis.many', { count: based.length, months: names })
+        if (d.expected.skipped.length > 0) {
+          basis += ` ${t('an.basis.skipped', { months: d.expected.skipped.map(m => monthWord(m, lang)).join(', ') })}`
+        }
+        pieces.push(basis)
+      } else {
+        pieces.push(t('an.basis.none'))
+      }
+    }
+  }
+  pieces.push(t('an.unit'))
+  if (d.notYetCount > 0) pieces.push(t(d.notYetCount === 1 ? 'an.notYetOne' : 'an.notYet', { count: d.notYetCount }))
+  return pieces.join(' · ')
+}
+
+/** A tile's "!" with the page's basis line under whatever it explains. */
+export function TileInfo({ title, children }: { title: string; children: ReactNode }) {
+  const basis = useBasisLine()
+  return <InfoButton title={title} footer={basis}>{children}</InfoButton>
+}
+
+/** A figure's "!": its exact amount and every sentence about it. */
+export function FigureTileInfo({ title, amount, lines }: { title: string; amount: number; lines: ReactNode[] }) {
+  return <TileInfo title={title}><FigureInfo amount={amount} lines={lines} /></TileInfo>
+}
+
+/** "September 2026: 35,3 M" — last month's figure, said in a dialog beside the badge it explains. */
+export function useLastMonthLine() {
+  const { t, lang } = useLang()
+  const { prev } = useAnalytics()
+  return (value: number | null | undefined): string | null => prev && value != null
+    ? t('an.info.prev', { month: formatMonth(prev.month, lang), amount: compact(value) })
+    : null
+}
+
+/** A tile's heading with its "!" in the top corner. */
+export function TileHead({ title, info }: { title: string; info?: ReactNode }) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <h2 className="min-w-0 pt-0.5 text-title text-slate-900 [overflow-wrap:anywhere]">{title}</h2>
+      {info}
+    </div>
+  )
 }
 
 // ── Layout ───────────────────────────────────────────────────────────────────────────────────
