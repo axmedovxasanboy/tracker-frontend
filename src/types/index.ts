@@ -33,6 +33,11 @@ export interface Category {
   descriptionRequired: boolean
   anonymizes: boolean
   bonusIncome: boolean
+  /**
+   * The description is a person ("Kimga"): the add form offers the people already named in this
+   * category's family, or a new one. Absent from an older server, which reads as off.
+   */
+  asksPerson?: boolean
   parentId: number | null
   children: Category[]
 }
@@ -186,6 +191,8 @@ export interface CategoryRequest {
   descriptionRequired?: boolean
   anonymizes?: boolean
   bonusIncome?: boolean
+  /** Left out, an edit keeps what the category has and a new sub-category takes its parent's. */
+  asksPerson?: boolean
 }
 
 export interface CachedEntry<T> {

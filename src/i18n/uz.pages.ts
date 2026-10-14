@@ -159,6 +159,8 @@ export const uz_pages: Partial<Record<keyof typeof en_pages, string>> = {
   'page.categories.descLabelDefaultHint': 'Standart "Tavsif" nomini ishlatish uchun boʻsh qoldiring.',
   'page.categories.descRequiredLabel': 'Tranzaksiya qoʻshishda majburiy',
   'page.categories.anonDonationLabel': 'Anonim xayriya (qabul qiluvchini avtomatik "Anonim" deb belgilaydi)',
+  'page.categories.asksPersonLabel': 'Bu odam — avval yozilganlardan tanlash',
+  'page.categories.asksPersonHint': 'Bu kategoriyaga qoʻshganda shu yerda yozilgan hamma odamlar roʻyxati chiqadi, yana «Yangi odam…».',
   'page.categories.bonusIncomeLabel': 'Bonus daromad sifatida hisoblanadi',
 
   // ── Cards ───────────────────────────────────────────────────────────────

@@ -63,6 +63,7 @@ const hasAdvanced = (f: CategoryRequest) =>
   || f.descriptionRequired === false
   || !!f.anonymizes
   || !!f.bonusIncome
+  || !!f.asksPerson
 
 interface ModalState {
   open: boolean
@@ -130,6 +131,7 @@ export function Categories() {
       descriptionRequired: c.descriptionRequired,
       anonymizes: c.anonymizes,
       bonusIncome: c.bonusIncome,
+      asksPerson: c.asksPerson,
     },
     { open: true, editTarget: c, parentCategory: null },
   )
@@ -141,6 +143,7 @@ export function Categories() {
       parentId: parent.id,
       descriptionLabel: parent.descriptionLabel ?? undefined,
       descriptionRequired: parent.descriptionRequired,
+      asksPerson: parent.asksPerson,
     },
     { open: true, editTarget: null, parentCategory: parent },
   )
@@ -626,6 +629,19 @@ export function Categories() {
                       className="h-4 w-4 rounded text-indigo-600 focus-ring"
                     />
                     <span className="text-sm text-slate-600">{t('page.categories.descRequiredLabel')}</span>
+                  </label>
+                  {/* Family & support's "Kimga": the add form then lists the people named here. */}
+                  <label className="flex cursor-pointer items-start gap-2 py-1">
+                    <input
+                      type="checkbox"
+                      checked={form.asksPerson ?? false}
+                      onChange={e => set('asksPerson', e.target.checked)}
+                      className="mt-0.5 h-4 w-4 rounded text-indigo-600 focus-ring"
+                    />
+                    <span className="text-sm text-slate-600">
+                      {t('page.categories.asksPersonLabel')}
+                      <span className="mt-0.5 block text-xs text-slate-500">{t('page.categories.asksPersonHint')}</span>
+                    </span>
                   </label>
                   {modal.parentCategory?.name === 'Donation' && (
                     <label className="flex min-h-[44px] cursor-pointer items-center gap-2">

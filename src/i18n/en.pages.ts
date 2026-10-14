@@ -158,6 +158,8 @@ export const en_pages = {
   'page.categories.descLabelDefaultHint': 'Leave blank to use the default "Description".',
   'page.categories.descRequiredLabel': 'Required when adding a transaction',
   'page.categories.anonDonationLabel': 'Anonymous donation (auto-fills recipient as "Anonymous")',
+  'page.categories.asksPersonLabel': 'It is a person — pick from the people named before',
+  'page.categories.asksPersonHint': 'Adding to this category then lists everyone already written here, plus "New person…".',
   'page.categories.bonusIncomeLabel': 'Counts as bonus income',
 
   // ── Cards ───────────────────────────────────────────────────────────────

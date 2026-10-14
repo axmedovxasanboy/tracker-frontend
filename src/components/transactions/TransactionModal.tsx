@@ -68,7 +68,7 @@ const DIRECTION_OPTION =
 /** Which control the current validation message belongs to, so it renders beside it. */
 type ErrorField =
   | 'amount' | 'split' | 'category' | 'subCategory' | 'investment' | 'counterparty'
-  | 'card' | 'description' | 'date'
+  | 'card' | 'description' | 'person' | 'date'
 
 /** Where focus goes when a check fails — the control the message is about. */
 const FIELD_TARGET: Record<ErrorField, string> = {
@@ -80,6 +80,7 @@ const FIELD_TARGET: Record<ErrorField, string> = {
   counterparty: '#tx-counterparty',
   card: '#tx-wallet [role="radio"]',
   description: '#tx-description',
+  person: '#tx-person-name',
   date: '#tx-date',
 }
 
@@ -210,6 +211,12 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
   const [showSuggestions, setShowSuggestions] = useState(false)
   const suggestTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // A category that asks who the money is for (Family & support's "Kimga") offers the people already
+  // named under its root, like the Loans page's borrower picker. 'failed' (an older server): the
+  // plain field with its suggestions, as before.
+  const [people, setPeople] = useState<{ rootId: number; names: string[] } | 'failed' | null>(null)
+  const [newPerson, setNewPerson] = useState(false)
+
   // New category / sub-category, inline — a name is all they ask.
   const [showNewCat, setShowNewCat] = useState(false)
   const [newCatName, setNewCatName] = useState('')
@@ -312,6 +319,7 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
     setShowNewCat(false); setNewCatName(''); setNewCatError(null)
     setShowNewSubCat(false); setNewSubCatName(''); setNewSubCatError(null)
     setSuggestions([]); setShowSuggestions(false)
+    setPeople(null); setNewPerson(false)
     setShowBankPopover(false); setShowBorrowerPopover(false); setBankOptions([])
     setTouched(false); setCategoryCleared(false)
     counterpartySeeded.current = false
@@ -480,6 +488,7 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
     setForm(prev => ({ ...prev, categoryId: id }))
     setCategoryCleared(false)
     setShowNewSubCat(false)
+    setNewPerson(false)
     clearFieldError('category'); clearFieldError('subCategory')
     if (id) loadSubs(id, !transaction)
     else wantedRootRef.current = undefined
@@ -550,6 +559,42 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
   // optional — left blank, the server names the row after the category.
   const descriptionLabel = activeCategory?.descriptionLabel || translate('cmp.txModal.label.whatFor')
   const descriptionRequired = activeCategory?.descriptionRequired ?? false
+
+  // Who the money is for, picked from the people named before — see `people`.
+  const asksPerson = !!activeCategory?.asksPerson
+  useEffect(() => {
+    if (!open || !asksPerson || selectedRootId == null) return
+    let live = true
+    transactionsApi.getPersonNames(selectedRootId)
+      .then(res => { if (live) setPeople({ rootId: selectedRootId, names: res.data }) })
+      .catch(() => { if (live) setPeople('failed') })
+    return () => { live = false }
+  }, [open, asksPerson, selectedRootId])
+  const personNames = asksPerson && people && people !== 'failed' && people.rootId === selectedRootId
+    ? people.names : null
+  // The picker shows while the list loads too; with nobody named yet it is just the name field.
+  const personPicker = asksPerson && people !== 'failed' && !(personNames && personNames.length === 0)
+  const typedName = (form.description ?? '').trim()
+  const listedName = typedName
+    ? personNames?.find(n => n.toLowerCase() === typedName.toLowerCase())
+    : undefined
+  // A name that is not on the list (an edited row, or text typed before the category was picked)
+  // opens as a new person, the text kept.
+  useEffect(() => {
+    if (personNames && typedName && !listedName && !newPerson) setNewPerson(true)
+  }, [personNames, typedName, listedName, newPerson])
+
+  const pickPerson = (value: string) => {
+    clearFieldError('description'); clearFieldError('person')
+    if (value === 'new') {
+      setNewPerson(true)
+      set('description', '')
+      setTimeout(() => document.getElementById('tx-person-name')?.focus(), 0)
+    } else {
+      setNewPerson(false)
+      set('description', value.startsWith('p:') ? value.slice(2) : '')
+    }
+  }
 
   const isAnonymousDonation =
     form.subType === 'DONATION' &&
@@ -625,7 +670,10 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
       fail('card', translate(split ? 'cmp.err.pickCardForPortion' : 'cmp.txModal.err.selectCardOrSwitch')); return
     }
     if (descriptionRequired && !(form.description && form.description.trim())) {
-      fail('description', translate('cmp.txModal.err.fillInField', { field: descriptionLabel.toLowerCase() })); return
+      if (personPicker && newPerson) fail('person', translate('shell.form.errName'))
+      else if (personPicker) fail('description', translate('shell.form.errPerson'))
+      else fail('description', translate('cmp.txModal.err.fillInField', { field: descriptionLabel.toLowerCase() }))
+      return
     }
     if (!form.transactionDate) { fail('date', translate('cmp.txModal.err.selectDate')); return }
 
@@ -1107,7 +1155,44 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
             />
           )}
 
-          {/* 5. What for — optional unless the category asks for it. */}
+          {/* 5. What for — optional unless the category asks for it. A category that names a person
+              asks who, from the people named before or a new one. */}
+          {personPicker ? (
+            <>
+              <Field
+                id="tx-description"
+                label={descriptionRequired ? descriptionLabel : optional(descriptionLabel)}
+                required={descriptionRequired}
+                error={fieldError('description')}
+              >
+                <select
+                  value={newPerson ? 'new' : listedName ? `p:${listedName}` : ''}
+                  onChange={e => pickPerson(e.target.value)}
+                  disabled={!personNames}
+                  className={fieldError('description') ? CONTROL_INVALID : CONTROL}>
+                  {/* Optional: going back to nobody is allowed, and the server names the row. */}
+                  <option value="" disabled={descriptionRequired}>
+                    {personNames ? translate('shell.form.choosePerson') : translate('ui.loading')}
+                  </option>
+                  {(personNames ?? []).map(n => <option key={n} value={`p:${n}`}>{n}</option>)}
+                  <option value="new">{translate('shell.form.newPerson')}</option>
+                </select>
+              </Field>
+              {newPerson && (
+                <Field
+                  id="tx-person-name"
+                  label={translate('shell.form.name')}
+                  required={descriptionRequired}
+                  error={fieldError('person')}
+                >
+                  <input ref={descriptionRef} value={form.description ?? ''}
+                    onChange={e => { set('description', e.target.value); clearFieldError('person') }}
+                    className={fieldError('person') ? CONTROL_INVALID : CONTROL}
+                    autoComplete="off" />
+                </Field>
+              )}
+            </>
+          ) : (
           <div className="relative">
             <Field
               id="tx-description"
@@ -1165,6 +1250,7 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
               </div>
             )}
           </div>
+          )}
 
           {/* 6. Date — today on the owner's clock, one line. */}
           <CompactDate

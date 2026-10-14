@@ -41,6 +41,10 @@ export const transactionsApi = {
   getSuggestions: (q: string, categoryId?: number) =>
     apiClient.get<string[]>('/transactions/suggestions', { params: { q, categoryId } }),
 
+  /** The people named in a category that asks for one (`asksPerson`), its whole family's, most used first. */
+  getPersonNames: (categoryId: number) =>
+    apiClient.get<string[]>('/transactions/names', { params: { categoryId } }),
+
   transfer: (data: BalanceTransferRequest) =>
     apiClient.post<Transaction[]>('/transactions/transfer', data),
 }
