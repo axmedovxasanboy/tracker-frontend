@@ -23,7 +23,7 @@ interface Props {
 
 /**
  * One situation of one level, edited in one step (spec §2.3, with the owner's §6): its three
- * percentages, the level's "Split at" line when it is one of the four split rows, "From which
+ * percentages and each own saving's, the level's "Split at" line when it is one of the four split rows, "From which
  * month?", Save.
  *
  * A fresh form on every open — keyed by level and situation, so it never shows the last one's
@@ -114,6 +114,7 @@ function RuleEditForm({ onClose, data, entry, situation, onSaved }: Props & { en
           check={check}
           showErrors={tried || Object.keys(check.errors).length > 0}
           split={isSplit ? { value: cutoff, onChange: v => { setTouched(true); setCutoff(v) }, invalid: !(cutoff > 0) } : undefined}
+          own={data.customSavings ?? []}
           disabled={saving}
         />
         {check.values && income != null && income > 0 && (

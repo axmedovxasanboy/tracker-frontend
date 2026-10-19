@@ -27,6 +27,9 @@ import type { PageProps } from './common'
 const GROUPS = [
   { key: 'group:INVESTMENTS', fill: SERIES_BG.investments, hex: HEX.investments },
   { key: 'group:EMERGENCY', fill: SERIES_BG.emergency, hex: HEX.emergency },
+  // The owner's own savings (sent only once there is one): violet — Loans' hue, never drawn on this
+  // page — between amber and cyan, clear of Goals' indigo and Investments' teal around the ring.
+  { key: 'group:CUSTOM', fill: SERIES_BG.loans, hex: HEX.loans },
   { key: 'group:DONATIONS', fill: SERIES_BG.given, hex: HEX.given },
   { key: 'group:GOALS', fill: SERIES_BG.goals, hex: HEX.goals },
 ] as const
@@ -348,9 +351,10 @@ function SinceStartBlock({ mode, monthSaved }: { mode: 'month' | 'range'; monthS
   )
 }
 
-const GROUP_NAME: Partial<Record<string, 'an.group.INVESTMENTS' | 'an.group.EMERGENCY' | 'an.group.GOALS' | 'an.group.DONATIONS'>> = {
+const GROUP_NAME: Partial<Record<string, 'an.group.INVESTMENTS' | 'an.group.EMERGENCY' | 'an.group.CUSTOM' | 'an.group.GOALS' | 'an.group.DONATIONS'>> = {
   'group:INVESTMENTS': 'an.group.INVESTMENTS',
   'group:EMERGENCY': 'an.group.EMERGENCY',
+  'group:CUSTOM': 'an.group.CUSTOM',
   'group:GOALS': 'an.group.GOALS',
   'group:DONATIONS': 'an.group.DONATIONS',
 }

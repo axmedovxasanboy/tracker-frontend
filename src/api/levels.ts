@@ -1,5 +1,5 @@
 import { apiClient } from './client'
-import type { LevelNotice, LevelRulesRequest, LevelsResponse } from '../types/levels'
+import type { LevelNotice, LevelRulesRequest, LevelsResponse, OwnSavingRequest } from '../types/levels'
 import { todayLocal } from '../utils/format'
 
 export const levelsApi = {
@@ -12,6 +12,17 @@ export const levelsApi = {
   /** Remove the version that starts in `month` (YYYY-MM); its months fall back to the one before. */
   removeVersion: (level: number, month: string) =>
     apiClient.delete(`/levels/${level}/rules/${month}`, { params: { date: todayLocal() } }),
+  /** A saving of the owner's own, asked `percent` everywhere from `from`. Answers with the same body as `get`. */
+  createSaving: (req: OwnSavingRequest) =>
+    apiClient.post<LevelsResponse>('/levels/savings', req, { params: { date: todayLocal() } }),
+  renameSaving: (id: number, name: string) =>
+    apiClient.put<LevelsResponse>(`/levels/savings/${id}`, { name }, { params: { date: todayLocal() } }),
+  /** Asks nothing more of it from `from` on; the months before keep their asks. */
+  stopSaving: (id: number, from: string) =>
+    apiClient.post<LevelsResponse>(`/levels/savings/${id}/stop`, { from }, { params: { date: todayLocal() } }),
+  /** Only one no money ever moved through. */
+  deleteSaving: (id: number) =>
+    apiClient.delete<LevelsResponse>(`/levels/savings/${id}`, { params: { date: todayLocal() } }),
   /** The oldest level change the web has not shown: 200 with it, or 204 (empty) with none. */
   notice: () =>
     // `date` matters here: the server records a Level 5 change only when asked for the owner's today.

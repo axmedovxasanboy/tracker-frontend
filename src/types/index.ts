@@ -412,6 +412,8 @@ export interface InvestmentResponse {
   /** True when recorded as an opening balance (already-owned holding; no transaction; excluded
       from the monthly allocation buckets). */
   openingBalance: boolean
+  /** One of the owner's own savings (made on Savings rules), not an investment. Absent on an older server. */
+  customSaving?: boolean
   createdAt: string
   /** A savings goal's deadline, YYYY-MM-DD (the last day of its month). Absent on an older backend. */
   targetDate?: string | null
@@ -671,7 +673,12 @@ export interface AdvisorBill {
 }
 
 export interface AdvisorSetAside {
-  bucket: Bucket
+  /** CUSTOM: one of the owner's own savings (`refId`, `name`). */
+  bucket: Bucket | 'CUSTOM'
+  /** CUSTOM only: the saving's id. */
+  refId?: number | null
+  /** CUSTOM only: the saving's name. */
+  name?: string | null
   percent: number | null
   /** This month's rule amount alone. */
   target: number
@@ -696,10 +703,10 @@ export interface AdvisorSuggestion {
   /** DO: due now · IDEA: optional encouragement · WARN: a heads-up with nothing to tap. */
   kind: 'DO' | 'IDEA' | 'WARN'
   action: AdvisorAction | null
-  /** PAY_SUBSCRIPTION: the subscription id. SET_ASIDE into a goal: the goal id. */
+  /** PAY_SUBSCRIPTION: the subscription id. SET_ASIDE into a goal or an own saving: its id. */
   refId: number | null
-  /** SET_ASIDE: DONATION | EMERGENCY | INVESTMENTS | SAVINGS. */
-  bucket: Bucket | 'SAVINGS' | null
+  /** SET_ASIDE: DONATION | EMERGENCY | INVESTMENTS | SAVINGS (a goal) | CUSTOM (an own saving; `params.name`). */
+  bucket: Bucket | 'SAVINGS' | 'CUSTOM' | null
   amount: number | null
 }
 
@@ -773,8 +780,11 @@ export interface AdvisorDaily extends AdvisorDailyFix {
 
 /** One savings line for this month: what it asks, what went in, what is left. */
 export interface AdvisorSavingsRow {
-  /** GOAL: one savings goal, its target being the goal's monthly payment. Not sent by an older backend. */
-  bucket: Bucket | 'GOAL'
+  /**
+   * GOAL: one savings goal, its target being the goal's monthly payment. CUSTOM: one of the owner's
+   * own savings, asked a percentage and carried like the three. Neither sent by an older backend.
+   */
+  bucket: Bucket | 'GOAL' | 'CUSTOM'
   percent: number | null
   /** This month's rule amount alone. */
   target: number
@@ -783,9 +793,9 @@ export interface AdvisorSavingsRow {
   remaining: number
   /** Unpaid from earlier months (an overpayment never carries). Absent on an older server. */
   carried?: number
-  /** GOAL only: the goal's investment id. */
+  /** GOAL / CUSTOM: the goal's or the saving's investment id. */
   refId?: number | null
-  /** GOAL only: the goal's name. */
+  /** GOAL / CUSTOM: its name. */
   name?: string | null
 }
 

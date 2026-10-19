@@ -31,6 +31,27 @@ export interface LevelPercents {
   donation: number
   emergency: number
   investments: number
+  /**
+   * Each of the owner's own savings, by its id ("12") — every saving listed, 0 when not asked.
+   * Absent on an older server, on the level notice, and in a request that leaves them as they are.
+   */
+  custom?: Record<string, number>
+}
+
+/** One of the owner's own savings: a column beside the three, made on Savings rules. */
+export interface OwnSaving {
+  id: number
+  name: string
+  /** Money ever moved through it, or it holds some: it can be stopped, not deleted. */
+  hasMoney: boolean
+}
+
+/** `POST /levels/savings` (all three), `PUT /levels/savings/{id}` (name), `POST …/{id}/stop` (from). */
+export interface OwnSavingRequest {
+  name?: string
+  percent?: number
+  /** YYYY-MM; left out, this month. */
+  from?: string
 }
 
 /** One level's rules from a month on, until that level's next version. */
@@ -94,6 +115,8 @@ export interface LevelsResponse {
   firstMonth: string
   /** Always five, Level 1 first. */
   levels: LevelEntry[]
+  /** The owner's own savings, oldest first. Absent on an older server. */
+  customSavings?: OwnSaving[]
 }
 
 /** `PUT /levels/{level}/rules` */

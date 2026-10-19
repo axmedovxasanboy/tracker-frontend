@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import type { AxiosError } from 'axios'
 import { ChevronLeft, ChevronRight, CloudOff, X } from 'lucide-react'
@@ -10,6 +10,7 @@ import { ErrorTile } from '../components/ui/ErrorTile'
 import { IconChip } from '../components/ui/IconChip'
 import { Skeleton } from '../components/ui/Skeleton'
 import { RuleEditSheet } from '../components/levels/RuleEditSheet'
+import { OwnSavings, ownPct } from '../components/levels/OwnSavings'
 import {
   GROUPS, LEVEL5_PAY, amountsOf, groupName, incomeFor, lineLabel, pctCell, percentsText, situationName, totalOf, versionAt,
 } from '../components/levels/levelWords'
@@ -28,18 +29,27 @@ const FULL = 'md:col-span-6 xl:col-span-12'
 const LEVELS = [1, 2, 3, 4, 5] as const
 
 /** The three bucket columns, each with the dot of its usual colour. */
-const BUCKETS: ReadonlyArray<{ key: keyof LevelPercents; label: TKey; dot: string }> = [
+const BUCKETS: ReadonlyArray<{ key: 'donation' | 'emergency' | 'investments'; label: TKey; dot: string }> = [
   { key: 'donation', label: 'cmp.bucket.donation', dot: 'bg-pink-500' },
   { key: 'emergency', label: 'cmp.bucket.emergency', dot: 'bg-amber-500' },
   { key: 'investments', label: 'cmp.bucket.investments', dot: 'bg-teal-500' },
 ]
 
+/** One figure column: a built-in bucket, or one of the owner's own savings after them. */
+interface Column {
+  key: string
+  label: string
+  dot: string
+  value: (p: LevelPercents) => number
+}
+
 /**
- * The row grid. A phone has three cells — the name (which wraps, never truncates), the three
- * figures as one "5% · 2% · 8%", the chevron. From `sm` the figures take a column each, under
- * their bucket's header. The hidden cells are `display: none`, so they hold no grid track.
+ * The row grid. A phone has three cells — the name (which wraps, never truncates), the figures as
+ * one "5% · 2% · 8%", the chevron. From `sm` the figures take a column each, under their header —
+ * as many as there are (`--rule-cols`: the three and each own saving). The hidden cells are
+ * `display: none`, so they hold no grid track.
  */
-const ROW_GRID = 'grid grid-cols-[minmax(0,1fr)_auto_1rem] sm:grid-cols-[minmax(0,1fr)_5rem_5.5rem_6rem_1rem]'
+const ROW_GRID = 'grid grid-cols-[minmax(0,1fr)_auto_1rem] sm:grid-cols-[minmax(0,1fr)_repeat(var(--rule-cols),5.75rem)_1rem]'
 
 type Result = { kind: 'ok'; data: LevelsResponse } | { kind: 'outdated' }
 
@@ -80,6 +90,12 @@ export function SavingsRules() {
   const d = result?.kind === 'ok' ? result.data : null
   const shown = picked ?? d?.level ?? 1
   const entry = d?.levels.find(l => l.level === shown) ?? null
+  const columns: Column[] = [
+    ...BUCKETS.map(b => ({ key: b.key, label: t(b.label), dot: b.dot, value: (p: LevelPercents) => p[b.key] })),
+    ...(d?.customSavings ?? []).map(s => ({
+      key: `c:${s.id}`, label: s.name, dot: 'bg-indigo-500', value: (p: LevelPercents) => ownPct(p, s.id),
+    })),
+  ]
 
   const removeVersion = async (level: number, month: string) => {
     const name = formatDate(month, lang, 'monthShort')
@@ -144,6 +160,7 @@ export function SavingsRules() {
                   <RulesTable
                     d={d}
                     entry={entry}
+                    columns={columns}
                     onEdit={setEditing}
                   />
                   <VersionsLine
@@ -153,6 +170,9 @@ export function SavingsRules() {
                   />
                 </div>
               </Tile>
+
+              {/* Savings of the owner's own, beside the three — Savings' "New" may open its form. */}
+              <OwnSavings d={d} startNew={params.get('new') === '1'} />
             </>
           ) : null}
         </TileGrid>
@@ -278,30 +298,38 @@ function LevelTabs({ current, active, onChange }: { current: number | null; acti
 
 // ── The table ─────────────────────────────────────────────────────────────────────────────────
 
-function RulesTable({ d, entry, onEdit }: { d: LevelsResponse; entry: LevelEntry; onEdit: (s: LevelSituation) => void }) {
+function RulesTable({ d, entry, columns, onEdit }: {
+  d: LevelsResponse
+  entry: LevelEntry
+  columns: Column[]
+  onEdit: (s: LevelSituation) => void
+}) {
   const { t, lang } = useLang()
   const inForce = versionAt(entry, d.month)
   const future = [...entry.versions].filter(v => v.from > d.month).sort((a, b) => a.from.localeCompare(b.from))
   const onThisLevel = d.level === entry.level
+  // As many figure columns as there are savings; wider than the tile, the table scrolls on its own.
+  const grid = { '--rule-cols': columns.length } as CSSProperties
 
   return (
-    <div>
+    <div style={grid} className="overflow-x-auto">
+      <div className="sm:min-w-[calc(12rem+var(--rule-cols)*6.5rem)]">
       {/* The bucket names, once. Columns from `sm`; one legend line on a phone. */}
       <div className={`${ROW_GRID} hidden items-end gap-x-3 border-y border-hairline bg-slate-50 px-4 py-2 text-xs font-medium text-slate-600 sm:grid sm:px-5`}>
         <span />
-        {BUCKETS.map(b => (
-          <span key={b.key} className="flex items-start justify-end gap-1.5 text-right leading-tight">
-            <span aria-hidden="true" className={`mt-1 h-2 w-2 shrink-0 rounded-full ${b.dot}`} />
-            {t(b.label)}
+        {columns.map(c => (
+          <span key={c.key} className="flex items-start justify-end gap-1.5 text-right leading-tight [overflow-wrap:anywhere]">
+            <span aria-hidden="true" className={`mt-1 h-2 w-2 shrink-0 rounded-full ${c.dot}`} />
+            {c.label}
           </span>
         ))}
         <span />
       </div>
       <p className="flex flex-wrap items-center gap-x-3 gap-y-1 border-y border-hairline bg-slate-50 px-4 py-2 text-xs text-slate-600 sm:hidden">
-        {BUCKETS.map(b => (
-          <span key={b.key} className="inline-flex items-center gap-1.5">
-            <span aria-hidden="true" className={`h-2 w-2 rounded-full ${b.dot}`} />
-            {t(b.label)}
+        {columns.map(c => (
+          <span key={c.key} className="inline-flex items-center gap-1.5">
+            <span aria-hidden="true" className={`h-2 w-2 rounded-full ${c.dot}`} />
+            {c.label}
           </span>
         ))}
       </p>
@@ -329,6 +357,7 @@ function RulesTable({ d, entry, onEdit }: { d: LevelsResponse; entry: LevelEntry
                     now={onThisLevel && d.situation === s}
                     yours={!onThisLevel && d.situation === s}
                     later={later}
+                    columns={columns}
                     onClick={() => onEdit(s)}
                   />
                 )
@@ -336,6 +365,7 @@ function RulesTable({ d, entry, onEdit }: { d: LevelsResponse; entry: LevelEntry
             </div>
           )
         })}
+      </div>
       </div>
     </div>
   )
@@ -346,17 +376,18 @@ function RulesTable({ d, entry, onEdit }: { d: LevelsResponse; entry: LevelEntry
  * and "Now"; on another level's tab, the owner's situation has a dashed frame and "Your situation"
  * — the row that would apply on that level today.
  */
-function RuleRow({ label, nested, percents, now, yours, later, onClick }: {
+function RuleRow({ label, nested, percents, now, yours, later, columns, onClick }: {
   label: string
   nested: boolean
   percents: LevelPercents
   now: boolean
   yours: boolean
   later: string[]
+  columns: Column[]
   onClick: () => void
 }) {
   const { t } = useLang()
-  const spoken = BUCKETS.map(b => `${t(b.label)} ${pctCell(percents[b.key])}`).join(', ')
+  const spoken = columns.map(c => `${c.label} ${pctCell(c.value(percents))}`).join(', ')
   return (
     <button
       type="button"
@@ -387,11 +418,11 @@ function RuleRow({ label, nested, percents, now, yours, later, onClick }: {
         {percentsText(percents)}
       </span>
       {/* From sm: a column each. */}
-      {BUCKETS.map(b => (
-        <span key={b.key} aria-hidden="true" className={`hidden text-right text-sm tabular-nums sm:block ${
-          percents[b.key] > 0 ? 'font-semibold text-slate-900' : 'text-slate-500'
+      {columns.map(c => (
+        <span key={c.key} aria-hidden="true" className={`hidden text-right text-sm tabular-nums sm:block ${
+          c.value(percents) > 0 ? 'font-semibold text-slate-900' : 'text-slate-500'
         }`}>
-          {pctCell(percents[b.key])}
+          {pctCell(c.value(percents))}
         </span>
       ))}
       <ChevronRight className="h-4 w-4 text-slate-400" aria-hidden="true" />

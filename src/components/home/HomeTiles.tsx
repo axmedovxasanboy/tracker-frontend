@@ -33,6 +33,8 @@ const SUGGESTION_KEY: Record<string, TKey> = {
   'advisor.s.extraToEmergency': 'page.advisor.s.extraToEmergency',
   'advisor.s.extraToInvestments': 'page.advisor.s.extraToInvestments',
   'advisor.s.paceWarning': 'home.s.paceWarning',
+  // One of the owner's own savings: the same sentence, the saving named by `params.name`.
+  'advisor.s.setAsideOwn': 'page.advisor.s.setAside',
 }
 
 const BUCKET_KEY: Record<string, TKey> = {
@@ -80,6 +82,7 @@ export function visibleSteps(d: AdvisorResponse, opts: {
   const upcoming = opts.upcoming
   const savedBuckets = new Set<string>(opts.savings.map(r => r.bucket))
   const savedGoals = new Set(opts.savings.filter(r => r.bucket === 'GOAL').map(r => r.refId))
+  const savedOwn = new Set(opts.savings.filter(r => r.bucket === 'CUSTOM').map(r => r.refId))
 
   const covered = (s: AdvisorSuggestion): boolean => {
     if (s.code === 'advisor.s.short' && daily?.shortBy) return true
@@ -99,6 +102,8 @@ export function visibleSteps(d: AdvisorResponse, opts: {
         if (s.kind !== 'DO') return false
         // A goal's own row covers its monthly payment.
         if (s.bucket === 'SAVINGS') return s.refId != null && savedGoals.has(s.refId)
+        // An own saving's row covers its set-aside the same way.
+        if (s.bucket === 'CUSTOM') return s.refId != null && savedOwn.has(s.refId)
         return isBucket(s.bucket) && savedBuckets.has(s.bucket)
       default:
         return false
@@ -278,6 +283,8 @@ export function NextStepsTile({ steps, currency, span, mdSpan, onAct }: {
       days: p.days ?? '',
       bucket: (() => {
         const b = p.bucket ?? s.bucket
+        // An own saving is named by its own name, never by its key.
+        if (b === 'CUSTOM') return p.name ?? ''
         return b && BUCKET_KEY[b] ? t(BUCKET_KEY[b]) : (b ?? '')
       })(),
       amount: amount != null ? moneyFull(amount, currency) : '',

@@ -152,6 +152,7 @@ export function lineLabel(line: BreakdownLine, t: Translate, categoryName: Categ
 export const GROUP_WORD: Partial<Record<string, TKey>> = {
   INVESTMENTS: 'an.group.INVESTMENTS',
   EMERGENCY: 'an.group.EMERGENCY',
+  CUSTOM: 'an.group.CUSTOM',
   GOALS: 'an.group.GOALS',
   DONATIONS: 'an.group.DONATIONS',
 }

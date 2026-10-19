@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import type { KeyboardEvent, ReactNode } from 'react'
 import {
-  AlertTriangle, ArrowDownToLine, Building2, HeartHandshake, Pencil, Plus, Repeat, ShieldAlert, Target, Trash2,
-  TrendingUp,
+  AlertTriangle, ArrowDownToLine, Building2, HeartHandshake, Pencil, PiggyBank, Plus, Repeat, Settings2, ShieldAlert,
+  Target, Trash2, TrendingUp,
 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { PageHeader } from '../components/ui/PageHeader'
 import { Sheet } from '../components/ui/Sheet'
 import { Button } from '../components/ui/Button'
@@ -21,7 +22,7 @@ import { ContributeInvestmentModal } from '../components/finance/ContributeInves
 import { UpdateValueModal } from '../components/finance/UpdateValueModal'
 import { WithdrawInvestmentModal } from '../components/finance/WithdrawInvestmentModal'
 import { PayBucketModal } from '../components/overview/PayBucketModal'
-import { SavingsThisMonth } from '../components/savings/SavingsThisMonth'
+import { OWN_ICON, SavingsThisMonth } from '../components/savings/SavingsThisMonth'
 import { AddGoalSheet, requestFrom } from '../components/savings/AddGoalSheet'
 import { AddInvestmentSheet } from '../components/savings/AddInvestmentSheet'
 import { HoldingHistorySheet } from '../components/savings/HoldingHistorySheet'
@@ -47,7 +48,7 @@ const FULL = 'md:col-span-6 xl:col-span-12'
 const HALF = 'md:col-span-6 xl:col-span-6'
 const LATEST = 5
 
-type AddKind = 'goal' | 'investment'
+type AddKind = 'goal' | 'investment' | 'own'
 
 /** A holding's worth: its market value when one was set, else what went in. */
 const valueOf = (i: InvestmentResponse) => growthOf(i).value
@@ -81,6 +82,7 @@ function opens(onOpen: () => void, label: string) {
  */
 export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
   const { t, lang } = useLang()
+  const navigate = useNavigate()
   const confirm = useConfirm()
   const { showSuccess, showError } = useToast()
   const today = todayLocal()
@@ -111,13 +113,15 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
   /** The chooser closes first, so the form it opens hands focus back to the page's Add. */
   const startAdd = (kind: AddKind) => {
     setChooserOpen(false)
+    // An own saving is a rule as much as a pot: it is made on Savings rules, beside the three.
+    if (kind === 'own') { navigate('/settings/rules?new=1'); return }
     setTimeout(() => {
       if (kind === 'goal') setGoalForm({ goal: null })
       else setInvestmentForm({ investment: null })
     }, 0)
   }
 
-  /** A goal's row in "This month" pays through the goal's own Add money. */
+  /** A goal's or an own saving's row in "This month" pays through its pot's own Add money. */
   const payGoal = async (goalId: number | null | undefined, amount: number) => {
     try {
       const g = (investments.data ?? []).find(i => i.id === goalId)
@@ -147,7 +151,9 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
   const plans = goals.filter(g => goalKindOf(g) === 'PLAN')
   const wishes = goals.filter(g => goalKindOf(g) === 'WISH')
   const emergencyHoldings = all.filter(i => i.emergencyFund && !i.savingsGoal)
-  const holdings = all.filter(i => !i.savingsGoal && !i.emergencyFund)
+  const holdings = all.filter(i => !i.savingsGoal && !i.emergencyFund && !i.customSaving)
+  // The owner's own savings (made on Savings rules): a pot each, beside the three.
+  const own = all.filter(i => i.customSaving)
   const holdingsTotal = snap(holdings.reduce((sum, i) => sum + valueOf(i), 0))
 
   // The emergency fund is kept in two places — contributions, and holdings flagged as the fund.
@@ -362,7 +368,7 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
                     rows={savingsRows}
                     currency={currency}
                     month={d?.month}
-                    onPay={(row, amount) => row.bucket === 'GOAL'
+                    onPay={(row, amount) => row.bucket === 'GOAL' || row.bucket === 'CUSTOM'
                       ? payGoal(row.refId, amount)
                       : setBucket({ bucket: row.bucket, amount })}
                   />
@@ -463,6 +469,42 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
             )}
           </Section>
         </QuerySlot>
+
+        {/* ── The owner's own savings ── once there is one; made and changed on Savings rules. */}
+        {own.length > 0 && (
+          <QuerySlot query={investments} className={HALF}>
+            <Section
+              span={6} mdSpan={6}
+              title={t('own.title')}
+              action={<SmallAdd label={t('action.new')} onClick={() => navigate('/settings/rules?new=1')} />}
+            >
+              <p className="mt-2 text-stat tabular-nums text-slate-900">{money(snap(own.reduce((s, i) => s + valueOf(i), 0)), currency)}</p>
+              <ul className="mt-2 divide-y divide-hairline">
+                {own.map(i => {
+                  const nameId = `own-${i.id}`
+                  return (
+                    <li key={i.id} className="py-3">
+                      <div className="flex items-center gap-3">
+                        <div {...openHistory(i)} className={`flex min-w-0 flex-1 items-center gap-3 ${OPENS}`}>
+                          <IconChip tone={OWN_ICON.tone}>{OWN_ICON.icon}</IconChip>
+                          <p id={nameId} className="min-w-0 flex-1 truncate text-sm font-medium text-slate-900">{i.name}</p>
+                          <p className="shrink-0 text-sm font-semibold tabular-nums text-slate-900">{moneyFull(valueOf(i), i.currency)}</p>
+                        </div>
+                        <Button size="sm" label={t('cmp.action.topUp')} aria-describedby={nameId}
+                          icon={<Plus className="h-3.5 w-3.5" aria-hidden="true" />}
+                          onClick={() => setContributeFor({ investment: i })} className="shrink-0" />
+                        <ActionMenu actions={[
+                          { label: t('cmp.withdraw.action'), icon: <ArrowDownToLine className="h-4 w-4" aria-hidden="true" />, disabled: valueOf(i) <= 0, onClick: () => setWithdrawFor(i) },
+                          { label: t('lvl.title'), icon: <Settings2 className="h-4 w-4" aria-hidden="true" />, onClick: () => navigate('/settings/rules') },
+                        ]} />
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            </Section>
+          </QuerySlot>
+        )}
 
         {/* ── Emergency fund ── one total over both places it is kept. */}
         <QuerySlot query={emergencyQuery} className={HALF}>
@@ -573,6 +615,7 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
           {([
             { kind: 'goal', label: t('page.advisor.btn.addGoal'), icon: <Target className="h-4 w-4" aria-hidden="true" />, tone: 'indigo' },
             { kind: 'investment', label: t('page.investments.addInvestment'), icon: <Building2 className="h-4 w-4" aria-hidden="true" />, tone: 'teal' },
+            { kind: 'own', label: t('own.new'), icon: <PiggyBank className="h-4 w-4" aria-hidden="true" />, tone: 'indigo' },
           ] as const).map(o => (
             <button
               key={o.kind}

@@ -65,11 +65,15 @@ export const pctNumber = (p: number): string => (Number.isInteger(p) ? String(p)
 /** One bucket's figure: "5%", or "—" for a bucket that is not asked. */
 export const pctCell = (p: number): string => (p > 0 ? `${pctNumber(p)}%` : '—')
 
-/** "5% · 2% · 8%" — donation, emergency, investments. */
-export const percentsText = (p: LevelPercents): string =>
-  [p.donation, p.emergency, p.investments].map(pctCell).join(' · ')
+/** The owner's own savings' figures, in the order the server lists the savings (oldest first). */
+export const ownValues = (p: LevelPercents): number[] => Object.values(p.custom ?? {})
 
-export const totalOf = (p: LevelPercents): number => p.donation + p.emergency + p.investments
+/** "5% · 2% · 8%" — donation, emergency, investments, then each own saving's. */
+export const percentsText = (p: LevelPercents): string =>
+  [p.donation, p.emergency, p.investments, ...ownValues(p)].map(pctCell).join(' · ')
+
+export const totalOf = (p: LevelPercents): number =>
+  p.donation + p.emergency + p.investments + ownValues(p).reduce((s, x) => s + x, 0)
 
 /** The version of a level in force in `month` (YYYY-MM): the latest `from` ≤ it, else the first. */
 export function versionAt(entry: LevelEntry, month: string): LevelRulesVersion {
@@ -95,14 +99,17 @@ export function incomeFor(settings: SettingsResponse | null, month: string): num
   return settings.monthlyStableIncome ?? null
 }
 
-/** Percent × income, per bucket, in whole UZS. */
+/** Percent × income, per bucket — own savings too — in whole UZS. */
 export function amountsOf(p: LevelPercents, income: number): LevelPercents {
   const of = (x: number) => Math.round((income * x) / 100)
-  return { donation: of(p.donation), emergency: of(p.emergency), investments: of(p.investments) }
+  return {
+    donation: of(p.donation), emergency: of(p.emergency), investments: of(p.investments),
+    ...(p.custom ? { custom: Object.fromEntries(Object.entries(p.custom).map(([id, x]) => [id, of(x)])) } : {}),
+  }
 }
 
-/** "350.000 · 140.000 · 560.000 UZS" — each bucket's amount, the currency once at the end. */
+/** "350.000 · 140.000 · 560.000 UZS" — each bucket's amount, own savings after, the currency once at the end. */
 export function amountsText(a: LevelPercents): string {
-  const parts = [a.donation, a.emergency, a.investments]
+  const parts = [a.donation, a.emergency, a.investments, ...ownValues(a)]
   return parts.map((x, i) => (i === parts.length - 1 ? moneyFull(x) : moneyFull(x).replace(/\s*UZS$/, ''))).join(' · ')
 }

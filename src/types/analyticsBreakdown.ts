@@ -204,7 +204,8 @@ export interface BreakdownHolding {
   /** Null for the emergency money that sits in no account. */
   refId: number | null
   name: string
-  kind: 'INVESTMENT' | 'EMERGENCY' | 'GOAL'
+  /** CUSTOM: one of the owner's own savings (made on Savings rules). */
+  kind: 'INVESTMENT' | 'EMERGENCY' | 'GOAL' | 'CUSTOM'
   value: number
   putIn: number
   valueTracked: boolean
@@ -454,7 +455,7 @@ export function withBreakdownDefaults(raw: RawBreakdown | null | undefined): Ana
     holdingsNow: list(r.holdingsNow).map(x => ({
       refId: numOrNull(x?.refId),
       name: str(x?.name),
-      kind: x?.kind === 'EMERGENCY' || x?.kind === 'GOAL' ? x.kind : 'INVESTMENT',
+      kind: x?.kind === 'EMERGENCY' || x?.kind === 'GOAL' || x?.kind === 'CUSTOM' ? x.kind : 'INVESTMENT',
       value: num(x?.value),
       putIn: num(x?.putIn),
       valueTracked: x?.valueTracked === true,

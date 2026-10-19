@@ -10,8 +10,13 @@ export type ProfileReason =
   | 'NO_DEBT' | 'BANK_LOAN_COMFORTABLE' | 'BANK_LOAN_TIGHT' | 'DEBTS_COMFORTABLE' | 'DEBTS_TIGHT'
   | 'BANK_AND_DEBTS' | 'HEAVY_DEBT' | 'CUSTOM' | 'NO_RULE'
 
+/** The three, then CUSTOM rows — the owner's own savings (`refId`, `name`). */
 export interface ProfileBucket {
-  bucket: Bucket
+  bucket: Bucket | 'CUSTOM'
+  /** CUSTOM only. */
+  refId?: number
+  /** CUSTOM only. */
+  name?: string
   /** 0 = not asked for this month. */
   percent: number
   amount: number
@@ -26,7 +31,7 @@ export interface ProfileNextMonth {
   reason: ProfileReason
   loanPayments: number
   leftForSavings: number
-  buckets: { bucket: Bucket; percent: number; normalMonthAmount: number }[]
+  buckets: { bucket: Bucket | 'CUSTOM'; refId?: number; name?: string; percent: number; normalMonthAmount: number }[]
   /** As on `rule`, for that month. Not sent today — read when a server does. */
   smallMonthlyLoans?: boolean
   monthlyLoanLimit?: number
@@ -68,7 +73,11 @@ export interface ProfileIncomeThisMonth {
 }
 
 export interface ProfileAllocatedLine {
-  bucket: Bucket | 'GOALS'
+  bucket: Bucket | 'CUSTOM' | 'GOALS'
+  /** CUSTOM only. */
+  refId?: number
+  /** CUSTOM only. */
+  name?: string
   amount: number
   /** Null while there is no income this month. */
   percentOfIncome: number | null

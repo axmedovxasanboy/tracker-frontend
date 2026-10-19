@@ -174,7 +174,8 @@ export function Advisor({ currency }: Props) {
         // The short goal form, right here — no trip to another page.
         case 'ADD_GOAL': setGoalForm({ goal: null }); return
         case 'SET_ASIDE': {
-          if (s.bucket === 'SAVINGS' && s.refId != null) {
+          // A goal's payment, or one of the owner's own savings: into its pot.
+          if ((s.bucket === 'SAVINGS' || s.bucket === 'CUSTOM') && s.refId != null) {
             const g = (await financeApi.getInvestments()).data.find(i => i.id === s.refId)
             if (g) setGoal({ investment: g, amount: s.amount ?? undefined })
             else refetch()
@@ -297,7 +298,7 @@ export function Advisor({ currency }: Props) {
                     rows={savingsRows}
                     currency={currency}
                     month={d?.month}
-                    onPay={(row, amount) => row.bucket === 'GOAL'
+                    onPay={(row, amount) => row.bucket === 'GOAL' || row.bucket === 'CUSTOM'
                       ? payGoal(row.refId, amount)
                       : setBucket({ bucket: row.bucket, amount })}
                   />

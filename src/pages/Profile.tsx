@@ -10,7 +10,7 @@ import { ErrorTile } from '../components/ui/ErrorTile'
 import { IconChip } from '../components/ui/IconChip'
 import { Skeleton } from '../components/ui/Skeleton'
 import { LinkButton, TileHead } from '../components/home/HomeTiles'
-import { SAVINGS_ICON, SAVINGS_NAME_KEY } from '../components/savings/SavingsThisMonth'
+import { SAVINGS_NAME_KEY, savingLook } from '../components/savings/SavingsThisMonth'
 import { useApi } from '../hooks/useApi'
 import { useAuth } from '../context/AuthContext'
 import { useLevels } from '../context/LevelsContext'
@@ -47,9 +47,15 @@ const NAMES_CUTOFF = new Set<ProfileReason>(['BANK_LOAN_COMFORTABLE', 'BANK_LOAN
 /** "5", "2,5" — a percent written the way the app writes numbers. */
 const percentText = (p: number) => (Number.isInteger(p) ? String(p) : formatNumber(p, 1))
 
-/** Only the three this page knows how to name; a newer server's extra row is left out. */
-const known = <T extends { bucket: Bucket }>(rows: T[] | null | undefined): T[] =>
-  (rows ?? []).filter(r => r.bucket in SAVINGS_NAME_KEY)
+/**
+ * The three, then the owner's own savings (CUSTOM, each by its name) — the rows this page knows how
+ * to name; anything else a newer server sends is left out.
+ */
+const known = <T extends { bucket: string; name?: string | null }>(rows: T[] | null | undefined): T[] =>
+  (rows ?? []).filter(r => r.bucket in SAVINGS_NAME_KEY || (r.bucket === 'CUSTOM' && !!r.name))
+
+/** A row's key: the bucket, or the own saving's id. */
+const rowKey = (r: { bucket: string; refId?: number | null }) => (r.bucket === 'CUSTOM' ? `own-${r.refId}` : r.bucket)
 
 type ProfileResult = { kind: 'ok'; profile: ProfileResponse } | { kind: 'outdated' }
 
@@ -286,7 +292,7 @@ function Lead({ p }: { p: ProfileResponse }) {
 // ── This month so far ──────────────────────────────────────────────────────────────────────────
 
 /** The order the savings rows always come in; goals, when there are any, last. */
-const ALLOCATED_ORDER: ProfileAllocatedLine['bucket'][] = ['DONATION', 'EMERGENCY', 'INVESTMENTS', 'GOALS']
+const ALLOCATED_ORDER: ProfileAllocatedLine['bucket'][] = ['DONATION', 'EMERGENCY', 'INVESTMENTS', 'CUSTOM', 'GOALS']
 
 /** "10,9%" — one decimal, or a dash while there is nothing to measure against yet. */
 const share = (p: number | null | undefined) => (p == null ? '—' : `${formatNumber(p, 1)}%`)
@@ -359,14 +365,14 @@ function SoFarTile({ p }: { p: ProfileResponse }) {
             {allocatedLines.map(l => {
               const icon = l.bucket === 'GOALS'
                 ? { icon: <Target className="h-4 w-4" aria-hidden="true" />, tone: 'indigo' as const }
-                : SAVINGS_ICON[l.bucket]
-              const name = l.bucket === 'GOALS' ? t('home.goals.title') : t(SAVINGS_NAME_KEY[l.bucket])
+                : savingLook(t, l).icon
+              const name = l.bucket === 'GOALS' ? t('home.goals.title') : savingLook(t, l).name
               // This month's advice plus what earlier months left unpaid — the server's `over` is
               // measured against the same sum.
               const due = (l.target ?? 0) + Math.max(0, l.carried ?? 0)
               const met = due > 0 && l.amount >= due
               return (
-                <li key={l.bucket} className="flex items-center gap-3 py-2">
+                <li key={rowKey(l)} className="flex items-center gap-3 py-2">
                   <IconChip tone={icon.tone}>{icon.icon}</IconChip>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm text-slate-900">{name}</p>
@@ -428,9 +434,9 @@ function RuleTile({ p, onChange }: { p: ProfileResponse; onChange?: () => void }
       )}
       <ul className="mt-2 divide-y divide-hairline">
         {known(p.buckets).map(b => (
-          <li key={b.bucket} className="flex min-h-[48px] items-center gap-3 py-2">
-            <IconChip tone={SAVINGS_ICON[b.bucket].tone}>{SAVINGS_ICON[b.bucket].icon}</IconChip>
-            <span className="min-w-0 flex-1 truncate text-sm text-slate-700">{t(SAVINGS_NAME_KEY[b.bucket])}</span>
+          <li key={rowKey(b)} className="flex min-h-[48px] items-center gap-3 py-2">
+            <IconChip tone={savingLook(t, b).icon.tone}>{savingLook(t, b).icon.icon}</IconChip>
+            <span className="min-w-0 flex-1 truncate text-sm text-slate-700">{savingLook(t, b).name}</span>
             <span className={`shrink-0 text-sm tabular-nums ${b.percent > 0 ? 'font-semibold text-slate-900' : 'text-slate-500'}`}>
               {b.percent > 0 ? `${percentText(b.percent)}%` : t('shell.profile.notThisMonth')}
             </span>
@@ -645,9 +651,9 @@ function SetAsideTile({ p, full = false, onHome, onSavings }: {
       <TileHead title={t('shell.profile.setAsideTitle')} />
       <ul className="mt-2 divide-y divide-hairline">
         {rows.map(b => (
-          <li key={b.bucket} className="flex items-start justify-between gap-3 py-2">
+          <li key={rowKey(b)} className="flex items-start justify-between gap-3 py-2">
             <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-slate-900">{t(SAVINGS_NAME_KEY[b.bucket])}</p>
+              <p className="truncate text-sm font-medium text-slate-900">{savingLook(t, b).name}</p>
               <p className="text-xs tabular-nums text-slate-500">
                 {b.percent > 0
                   ? t('shell.profile.percentOf', { percent: percentText(b.percent), base: moneyFull(p.savingsBase) })
@@ -672,7 +678,7 @@ function SetAsideTile({ p, full = false, onHome, onSavings }: {
         <div className="mt-3 rounded-control bg-slate-50 px-3 py-2.5 tabular-nums">
           <p className="text-sm text-slate-700">{t('shell.profile.withoutBonus', { amount: moneyFull(p.normalMonthTotal) })}</p>
           <p className="mt-0.5 text-xs text-slate-500">
-            {rows.map(b => `${t(SAVINGS_NAME_KEY[b.bucket])} ${moneyFull(b.normalMonthAmount)}`).join(' · ')}
+            {rows.map(b => `${savingLook(t, b).name} ${moneyFull(b.normalMonthAmount)}`).join(' · ')}
           </p>
         </div>
       )}

@@ -97,6 +97,7 @@ export const uz_analytics: Record<keyof typeof en_analytics, string> = {
   // ── Ajratildi ───────────────────────────────────────────────────────────────────────────────
   'an.group.INVESTMENTS': 'Investitsiyalar',
   'an.group.EMERGENCY': 'Zaxira fondi',
+  'an.group.CUSTOM': 'Oʻz jamgʻarmalaringiz',
   'an.group.GOALS': 'Maqsadlar',
   'an.group.DONATIONS': 'Xayriya',
   'an.emergencyNoAccount': 'Zaxira fondi (hisobsiz)',

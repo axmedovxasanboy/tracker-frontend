@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Building2, CheckCircle2, HeartHandshake, Plus, ShieldAlert, Target } from 'lucide-react'
+import { Building2, CheckCircle2, HeartHandshake, PiggyBank, Plus, ShieldAlert, Target } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { IconChip } from '../ui/IconChip'
 import type { IconTone } from '../ui/StatTile'
@@ -21,17 +21,35 @@ export const SAVINGS_ICON: Record<Bucket, { icon: ReactNode; tone: IconTone }> =
 }
 
 const GOAL_ICON = { icon: <Target className="h-4 w-4" aria-hidden="true" />, tone: 'indigo' as IconTone }
+/** One of the owner's own savings — a pot of its own, like a goal, but asked a percentage. */
+export const OWN_ICON = { icon: <PiggyBank className="h-4 w-4" aria-hidden="true" />, tone: 'indigo' as IconTone }
 
 const isBucketRow = (r: AdvisorSavingsRow): r is AdvisorSavingsRow & { bucket: Bucket } =>
   r.bucket in SAVINGS_NAME_KEY
-/** A goal's row can only be paid through its goal, so one without an id is not shown. */
+/** A goal's or an own saving's row can only be paid through its pot, so one without an id is not shown. */
 const isGoalRow = (r: AdvisorSavingsRow) => r.bucket === 'GOAL' && r.refId != null
+const isOwnRow = (r: AdvisorSavingsRow) => r.bucket === 'CUSTOM' && r.refId != null
+
+/** A saving line's name and icon: a built-in bucket's own, else what the row is called. */
+export function savingLook(
+  t: (key: TKey) => string,
+  r: { bucket: string; name?: string | null },
+): { name: string; icon: { icon: ReactNode; tone: IconTone } } {
+  if (r.bucket in SAVINGS_NAME_KEY) {
+    const b = r.bucket as Bucket
+    return { name: t(SAVINGS_NAME_KEY[b]), icon: SAVINGS_ICON[b] }
+  }
+  return {
+    name: r.name?.trim() || t('page.advisor.bucket.savings'),
+    icon: r.bucket === 'CUSTOM' ? OWN_ICON : GOAL_ICON,
+  }
+}
 
 /**
  * What this month asks to set aside, one line each: "Donation · 0 of 884.000 UZS · Give",
  * "Investments · … · Put in", or "✓ Done" once it is in — with "Put in more" / "Give more" beside
- * it, since the owner often puts in more than the month asks. Pay is for bills and loans only. Each
- * savings goal with a monthly payment follows the three, by its own name. The same rows on Home and
+ * it, since the owner often puts in more than the month asks. Pay is for bills and loans only. The
+ * owner's own savings follow the three, then each savings goal with a monthly payment, by name. The same rows on Home and
  * on Savings, so the two pages can never read differently.
  *
  * What an earlier month left unpaid carries into this one: the row asks for this month's amount plus
@@ -47,7 +65,7 @@ export function SavingsThisMonth({ rows, currency, month, onPay }: {
 }) {
   const { t, lang } = useLang()
   // Anything this client does not know how to pay is left out rather than shown half-working.
-  const shown = [...rows.filter(isBucketRow), ...rows.filter(isGoalRow)]
+  const shown = [...rows.filter(isBucketRow), ...rows.filter(isOwnRow), ...rows.filter(isGoalRow)]
   const previousMonth = formatDate(shiftMonth((month ?? monthLocal()).slice(0, 7), -1), lang, 'monthName')
 
   return (
@@ -59,10 +77,8 @@ export function SavingsThisMonth({ rows, currency, month, onPay }: {
         const due = r.target + carried
         // More than the month asked: shown, not hidden under "Done".
         const over = done && due > 0 ? r.paid - due : 0
-        const goal = r.bucket === 'GOAL'
-        const key = goal ? `goal-${r.refId}` : r.bucket
-        const name = isBucketRow(r) ? t(SAVINGS_NAME_KEY[r.bucket]) : r.name?.trim() || t('page.advisor.bucket.savings')
-        const icon = isBucketRow(r) ? SAVINGS_ICON[r.bucket] : GOAL_ICON
+        const key = r.bucket === 'GOAL' ? `goal-${r.refId}` : r.bucket === 'CUSTOM' ? `own-${r.refId}` : r.bucket
+        const { name, icon } = savingLook(t, r)
         const nameId = `savings-row-${key}`
         return (
           // A done row carries two things on its right — the "Done" mark and "Put in more" — and on

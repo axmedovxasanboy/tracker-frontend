@@ -17,7 +17,8 @@ import { extractErrorMessage } from '../../api/client'
 import { formatDate, moneyFull, shiftMonth, todayLocal } from '../../utils/format'
 import { BalanceTransferModal } from './BalanceTransferModal'
 import { PayBucketModal } from '../overview/PayBucketModal'
-import { SAVINGS_ICON, SAVINGS_NAME_KEY } from '../savings/SavingsThisMonth'
+import { ContributeInvestmentModal } from '../finance/ContributeInvestmentModal'
+import { OWN_ICON, SAVINGS_ICON, SAVINGS_NAME_KEY } from '../savings/SavingsThisMonth'
 import { CashPart, ChipGroup, CompactDate, CONTROL, CONTROL_INVALID, LINK_BLOCK, useOptional } from './formParts'
 import { WalletPicker } from './WalletPicker'
 import { readLastChild, rememberChild, rememberWallet, useWalletChoice, useWallets } from './wallets'
@@ -246,6 +247,17 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
   // So does a savings payment: which kind first, then the dialog that pays it.
   const [savingsChooserOpen, setSavingsChooserOpen] = useState(false)
   const [savingsBucket, setSavingsBucket] = useState<Bucket | null>(null)
+  // The owner's own savings, offered in the same chooser after the three; one picked is put into.
+  const [ownPots, setOwnPots] = useState<InvestmentResponse[]>([])
+  const [ownPot, setOwnPot] = useState<InvestmentResponse | null>(null)
+  useEffect(() => {
+    if (!open || !savingsChooserOpen) return
+    let live = true
+    financeApi.getInvestments()
+      .then(res => { if (live) setOwnPots(res.data.filter(i => i.customSaving)) })
+      .catch(() => {})
+    return () => { live = false }
+  }, [open, savingsChooserOpen])
 
   // Pay (salary, avans, bonus): the month it is for, YYYY-MM. Null = the row's own month.
   const [salaryMonth, setSalaryMonth] = useState<string | null>(null)
@@ -314,7 +326,7 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
   }, [])
 
   useEffect(() => {
-    if (!open) { setTransferOpen(false); setSavingsChooserOpen(false); setSavingsBucket(null); return }
+    if (!open) { setTransferOpen(false); setSavingsChooserOpen(false); setSavingsBucket(null); setOwnPot(null); return }
     setError(null); setIsBalanceError(false); setValidationError(null); setInvalidField(null)
     setShowNewCat(false); setNewCatName(''); setNewCatError(null)
     setShowNewSubCat(false); setNewSubCatName(''); setNewSubCatError(null)
@@ -1347,6 +1359,20 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
               {translate(SAVINGS_NAME_KEY[b])}
             </button>
           ))}
+          {ownPots.map(pot => (
+            <button
+              key={pot.id}
+              type="button"
+              onClick={() => {
+                setSavingsChooserOpen(false)
+                setTimeout(() => setOwnPot(pot), 0)
+              }}
+              className="focus-ring flex min-h-[56px] w-full items-center gap-3 rounded-control border border-slate-200 bg-white px-3 text-left text-sm font-medium text-slate-900 transition-colors hover:bg-slate-50"
+            >
+              <IconChip tone={OWN_ICON.tone}>{OWN_ICON.icon}</IconChip>
+              <span className="min-w-0 truncate">{pot.name}</span>
+            </button>
+          ))}
         </div>
       </Sheet>
       <PayBucketModal
@@ -1359,6 +1385,14 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
         presetWallet={!split && (typeof wallet === 'number' || wallet === 'cash') ? wallet : undefined}
         onClose={() => setSavingsBucket(null)}
         onSaved={() => { setSavingsBucket(null); onSaved(); onClose() }}
+      />
+      {/* One of the owner's own savings, picked in the chooser: its pot's Put in, the amount carried along. */}
+      <ContributeInvestmentModal
+        open={open && !!ownPot}
+        investment={ownPot}
+        defaultAmount={total > 0 ? total : undefined}
+        onClose={() => setOwnPot(null)}
+        onSaved={() => { setOwnPot(null); onSaved(); onClose() }}
       />
     </>
   )

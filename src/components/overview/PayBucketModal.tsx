@@ -63,7 +63,8 @@ const valueOf = (i: InvestmentResponse) => i.currentValue ?? i.investedAmount
  */
 function accountsFor(bucket: Bucket, currency: Currency, all: InvestmentResponse[], last: string | null) {
   return all
-    .filter(i => i.currency === currency && !i.savingsGoal
+    // An own saving's pot is its own, never an Investments or Emergency account.
+    .filter(i => i.currency === currency && !i.savingsGoal && !i.customSaving
       && (bucket === 'EMERGENCY' ? i.emergencyFund : !i.emergencyFund))
     .sort((a, b) =>
       Number(String(b.id) === last) - Number(String(a.id) === last) || valueOf(b) - valueOf(a))

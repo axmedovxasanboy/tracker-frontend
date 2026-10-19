@@ -100,6 +100,7 @@ export const en_analytics = {
   // ── Set aside ───────────────────────────────────────────────────────────────────────────────
   'an.group.INVESTMENTS': 'Investments',
   'an.group.EMERGENCY': 'Emergency fund',
+  'an.group.CUSTOM': 'Your own savings',
   'an.group.GOALS': 'Goals',
   'an.group.DONATIONS': 'Donations',
   'an.emergencyNoAccount': 'Emergency fund (no account)',
