@@ -67,6 +67,9 @@ export const financeApi = {
     apiClient.post<InvestmentResponse>(`${base}/investments/${id}/value`, d),
   withdrawInvestment: (id: number, d: InvestmentWithdrawRequest) =>
     apiClient.post<InvestmentResponse>(`${base}/investments/${id}/withdraw`, d),
+  /** Every put-in and take-out booked on one holding, its first deposit included, newest first. */
+  getInvestmentContributions: (id: number) =>
+    apiClient.get<Transaction[]>(`${base}/investments/${id}/contributions`),
 
   // Repayments
   repayLoanTaken: (id: number, d: RepaymentRequest) =>

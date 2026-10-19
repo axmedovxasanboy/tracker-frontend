@@ -685,6 +685,9 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
       amount: total,
       currency: defaultCurrency,
       description: form.description ?? '',
+      // "For what" when the category asks who; otherwise an edit keeps the stored note (a move's
+      // wallet, say) and a new entry sends none — text typed before switching category included.
+      note: asksPerson ? (form.note?.trim() || undefined) : transaction ? form.note : undefined,
       cardId: onCard ? wallet : undefined,
       // The cash part of the amount: all of it for cash, none for a card, the typed part for a split.
       cashAmount: split ? (cashPart || 0) : onCard ? 0 : total,
@@ -722,7 +725,7 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
   const typedSomething = transaction
     ? touched
     : total > 0 || (cashPart || 0) > 0
-      || !!form.description?.trim() || !!form.counterpartyName?.trim()
+      || !!form.description?.trim() || !!form.counterpartyName?.trim() || !!form.note?.trim()
       || (showNewCat && !!newCatName.trim()) || (showNewSubCat && !!newSubCatName.trim())
   const isDirty = typedSomething && !saving
 
@@ -1250,6 +1253,18 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
               </div>
             )}
           </div>
+          )}
+
+          {/* For what — under a category that asks who, the name says who and this says why, so the
+              money can be found again by what it was for. Kept in the row's note. */}
+          {asksPerson && (
+            <Field id="tx-note" label={optional(translate('shell.form.forWhat'))}>
+              <input value={form.note ?? ''} onChange={e => set('note', e.target.value)}
+                maxLength={255}
+                className={CONTROL}
+                placeholder={translate('shell.form.forWhatPlaceholder')}
+                autoComplete="off" />
+            </Field>
           )}
 
           {/* 6. Date — today on the owner's clock, one line. */}

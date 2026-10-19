@@ -127,6 +127,9 @@ export const en_shell = {
   'shell.form.asapRuleNoIncome': 'A small loan is due at once; a larger one is spread over a few months.',
   'shell.form.errPerson': 'Pick who it is, or add someone new.',
   'shell.form.errName': 'Enter a name.',
+  // Under a category that asks who (Family & support): why the money went, kept in the row's note.
+  'shell.form.forWhat': 'For what',
+  'shell.form.forWhatPlaceholder': 'e.g. medicine, school fees',
 
   // ── People ──────────────────────────────────────────────────────────────
   'shell.people.lendersTitle': 'You borrowed most from',
@@ -202,4 +205,12 @@ export const en_shell = {
   'shell.profile.ofBase': '{percent}% of your monthly income + bonus',
   'shell.profile.overAdvice': '+{amount} more than asked',
   'shell.profile.carried': '+ {amount} carried from {month}',
+
+  // ── One holding's money in and out (Savings → tap a holding) ─────────────
+  'shell.holding.open': '{name}: money in and out',
+  'shell.holding.in': 'Put in',
+  'shell.holding.out': 'Taken out',
+  'shell.holding.already': 'Already there',
+  'shell.holding.alreadyHint': 'Not from a wallet',
+  'shell.holding.empty': 'Nothing put in yet.',
 } as const

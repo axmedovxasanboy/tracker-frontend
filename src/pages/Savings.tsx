@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { ReactNode } from 'react'
+import type { KeyboardEvent, ReactNode } from 'react'
 import {
   AlertTriangle, ArrowDownToLine, Building2, HeartHandshake, Pencil, Plus, Repeat, ShieldAlert, Target, Trash2,
   TrendingUp,
@@ -24,6 +24,7 @@ import { PayBucketModal } from '../components/overview/PayBucketModal'
 import { SavingsThisMonth } from '../components/savings/SavingsThisMonth'
 import { AddGoalSheet, requestFrom } from '../components/savings/AddGoalSheet'
 import { AddInvestmentSheet } from '../components/savings/AddInvestmentSheet'
+import { HoldingHistorySheet } from '../components/savings/HoldingHistorySheet'
 import { TileHead } from '../components/home/HomeTiles'
 import { useApi } from '../hooks/useApi'
 import { useToast } from '../context/ToastContext'
@@ -50,6 +51,26 @@ type AddKind = 'goal' | 'investment'
 
 /** A holding's worth: its market value when one was set, else what went in. */
 const valueOf = (i: InvestmentResponse) => growthOf(i).value
+
+/** A block that opens a holding's money in and out: tinted on hover, ringed on focus. */
+const OPENS = 'focus-ring -m-1.5 cursor-pointer rounded-control p-1.5 transition-colors hover:bg-slate-50'
+
+/**
+ * What makes a block open something, as `ListRow` does: a click, or Enter / Space while the block
+ * itself has focus. The buttons beside it are siblings, never inside it, so nothing bubbles in.
+ */
+function opens(onOpen: () => void, label: string) {
+  return {
+    role: 'button' as const,
+    tabIndex: 0,
+    'aria-label': label,
+    onClick: onOpen,
+    onKeyDown: (e: KeyboardEvent<HTMLElement>) => {
+      if (e.target !== e.currentTarget) return
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen() }
+    },
+  }
+}
 
 /**
  * Savings: everything put by, on one page — what this month asks to set aside, goals (plans and
@@ -79,6 +100,8 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
   const [contributeFor, setContributeFor] = useState<{ investment: InvestmentResponse; amount?: number } | null>(null)
   const [valueFor, setValueFor] = useState<InvestmentResponse | null>(null)
   const [withdrawFor, setWithdrawFor] = useState<InvestmentResponse | null>(null)
+  // The holding whose money in and out is open — any goal, investment or emergency-fund holding.
+  const [historyFor, setHistoryFor] = useState<InvestmentResponse | null>(null)
   const [showAllEmergency, setShowAllEmergency] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
 
@@ -240,7 +263,7 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
     return (
       <li key={g.id} className="py-3">
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
+          <div {...openHistory(g)} className={`min-w-0 flex-1 ${OPENS}`}>
             <p id={nameId} className="text-sm font-medium text-slate-900 max-sm:line-clamp-2 max-sm:[overflow-wrap:anywhere] sm:truncate">{g.name}</p>
             <p className="text-xs tabular-nums text-slate-500">
               {target != null
@@ -276,6 +299,8 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
       </li>
     )
   }
+
+  const openHistory = (i: InvestmentResponse) => opens(() => setHistoryFor(i), t('shell.holding.open', { name: i.name }))
 
   const holdingActions = (i: InvestmentResponse, withEdit: boolean): MenuAction[] => [
     ...(withEdit ? [{
@@ -408,7 +433,7 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
                     const nameId = `inv-${i.id}`
                     return (
                       <li key={i.id} className="py-3">
-                        <div className="flex items-start gap-3">
+                        <div {...openHistory(i)} className={`flex items-start gap-3 ${OPENS}`}>
                           <IconChip tone="teal"><Building2 className="h-4 w-4" aria-hidden="true" /></IconChip>
                           <div className="min-w-0 flex-1">
                             <p id={nameId} className="truncate text-sm font-medium text-slate-900">{i.name}</p>
@@ -456,6 +481,7 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
                   {(showAllEmergency ? emergencyEntries : emergencyEntries.slice(0, LATEST)).map(e => e.kind === 'holding' ? (
                     <EntryRow
                       key={`h-${e.holding.id}`}
+                      open={openHistory(e.holding)}
                       icon={<IconChip tone="amber"><ShieldAlert className="h-4 w-4" aria-hidden="true" /></IconChip>}
                       title={e.holding.name}
                       sub={formatDate(e.date, lang)}
@@ -594,6 +620,7 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
         open={!!withdrawFor} investment={withdrawFor}
         onClose={() => setWithdrawFor(null)} onSaved={refetchAll}
       />
+      <HoldingHistorySheet investment={historyFor} onClose={() => setHistoryFor(null)} />
     </div>
   )
 }
@@ -623,7 +650,7 @@ function SmallAdd({ label, onClick }: { label: string; onClick: () => void }) {
 }
 
 /** One entry in a tile's list: what, when, how much, and its ⋯ menu. */
-function EntryRow({ icon, title, sub, extra, amount, actions }: {
+function EntryRow({ icon, title, sub, extra, amount, actions, open }: {
   icon: ReactNode
   title: string
   sub?: string
@@ -631,16 +658,20 @@ function EntryRow({ icon, title, sub, extra, amount, actions }: {
   extra?: ReactNode
   amount: string
   actions: MenuAction[]
+  /** A holding's row opens its money in and out (`opens`); everything but the ⋯ menu is the target. */
+  open?: ReturnType<typeof opens>
 }) {
   return (
     <li className="flex min-h-[56px] items-center gap-3 py-2">
-      {icon}
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-slate-900">{title}</p>
-        {sub && <p className="truncate text-xs text-slate-500">{sub}</p>}
-        {extra}
+      <div {...open} className={`flex min-w-0 flex-1 items-center gap-3 ${open ? OPENS : ''}`}>
+        {icon}
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-slate-900">{title}</p>
+          {sub && <p className="truncate text-xs text-slate-500">{sub}</p>}
+          {extra}
+        </div>
+        <p className="shrink-0 text-sm font-semibold tabular-nums text-slate-900">{amount}</p>
       </div>
-      <p className="shrink-0 text-sm font-semibold tabular-nums text-slate-900">{amount}</p>
       <ActionMenu actions={actions} />
     </li>
   )

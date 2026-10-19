@@ -145,7 +145,8 @@ export function TransactionDetailModal({ transaction: tx, open, onClose, onEdit,
             </Row>
           )}
 
-          {tx.note && <Row label={t('tx.note')}>{tx.note}</Row>}
+          {/* Under a category that asks who, the note is what the money was for. */}
+          {tx.note && <Row label={t(tx.category?.asksPerson ? 'shell.form.forWhat' : 'tx.note')}>{tx.note}</Row>}
 
           <Row label={t('cmp.txDetail.created')}>{formatDate(tx.createdAt, lang, 'time')}</Row>
         </div>

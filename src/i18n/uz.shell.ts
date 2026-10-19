@@ -121,6 +121,8 @@ export const uz_shell: Partial<Record<keyof typeof en_shell, string>> = {
   'shell.form.asapRuleNoIncome': 'Kichik qarz darhol toʻlanadi; kattarogʻi bir necha oyga boʻlinadi.',
   'shell.form.errPerson': 'Kimligini tanlang yoki yangi odam qoʻshing.',
   'shell.form.errName': 'Ismni kiriting.',
+  'shell.form.forWhat': 'Nimaga',
+  'shell.form.forWhatPlaceholder': 'masalan: dori, kontrakt',
 
   // ── Odamlar ─────────────────────────────────────────────────────────────
   'shell.people.lendersTitle': 'Eng koʻp kimdan qarz olgansiz',
@@ -192,4 +194,12 @@ export const uz_shell: Partial<Record<keyof typeof en_shell, string>> = {
   'shell.profile.ofBase': 'oylik daromadingiz va bonusingizning {percent}%',
   'shell.profile.overAdvice': '+{amount} soʻralganidan koʻp',
   'shell.profile.carried': '+ {amount} {month} oyidan oʻtgan',
+
+  // ── Bitta jamgʻarmaning kirim-chiqimi ───────────────────────────────────
+  'shell.holding.open': '{name}: kirim va chiqim',
+  'shell.holding.in': 'Kiritildi',
+  'shell.holding.out': 'Yechildi',
+  'shell.holding.already': 'Avvaldan bor edi',
+  'shell.holding.alreadyHint': 'Hamyondan emas',
+  'shell.holding.empty': 'Hali pul kiritilmagan.',
 }
