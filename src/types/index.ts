@@ -286,9 +286,27 @@ export interface LoanTakenResponse {
   repaymentType?: RepaymentType
   /** The person lent it. Absent on an older server. */
   lenderId?: number | null
+  /** A nasiya (e.g. Uzum Nasiya): pay all by `dueDate`, a fee on top. Absent on an older server. */
+  nasiya?: boolean
+  /** Nasiya: the money that landed in the wallet; null = same as totalAmount. */
+  principalAmount?: number | null
+  /** Nasiya: what it costs on top of the money received (fee, later fee + penalty). */
+  extraCost?: number | null
+  /** Nasiya: the day it was switched to monthly installments; null = not switched. */
+  installmentsSince?: string | null
+}
+
+/** POST /finance/loans-taken/{id}/installments — the owner switches an open nasiya to installments. */
+export interface NasiyaInstallmentsRequest {
+  left: number
+  monthlyPayment: number
+  firstPaymentDate: string
 }
 
 export interface LoanTakenRequest {
+  /** Nasiya: dueDate + principalAmount required; null on an edit keeps the stored value. */
+  nasiya?: boolean | null
+  principalAmount?: number | null
   /** Null keeps (or puts back) the default rule: the server stores exactly what is sent. */
   plannedMonthlyPayment?: number | null
   repaymentType?: RepaymentType

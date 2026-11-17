@@ -12,6 +12,7 @@ import { PayBucketModal } from '../components/overview/PayBucketModal'
 import { CheckInModal } from '../components/months/CheckInModal'
 import { useAddForm } from '../context/AddFormContext'
 import { MonthTiles } from '../components/home/MonthTiles'
+import { NasiyaTiles } from '../components/home/NasiyaTiles'
 import { PlansFit } from '../components/home/PlansFit'
 import { LevelDownNotice } from '../components/levels/LevelDownNotice'
 import {
@@ -80,7 +81,9 @@ export function Advisor({ currency }: Props) {
   const [busyKey, setBusyKey] = useState<string | null>(null)
 
   const d = adv.data
-  const refetch = () => { adv.refetch(); summary.refetch() }
+  // Bumped on every refetch, so the nasiya tiles (their own read) follow a payment made here.
+  const [refreshes, setRefreshes] = useState(0)
+  const refetch = () => { adv.refetch(); summary.refetch(); setRefreshes(n => n + 1) }
 
   const openAdd = (type?: TransactionType) => addForm.open(type)
 
@@ -252,6 +255,8 @@ export function Advisor({ currency }: Props) {
         )}
 
         <MonthTiles today={today} />
+
+        <NasiyaTiles today={today} version={refreshes} />
 
         {adv.loading ? (
           <>

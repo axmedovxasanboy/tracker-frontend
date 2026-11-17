@@ -6,6 +6,7 @@ import {
   AlertTriangle, Banknote, CalendarClock, Check, ChevronDown, CreditCard, HandCoins, History as HistoryIcon,
   Landmark, Pause, Pencil, Play, Plus, Receipt, Trash2, Wallet,
 } from 'lucide-react'
+import { NasiyaLeftSheet, NasiyaSwitchSheet } from '../components/finance/NasiyaSheets'
 import { PaySubscriptionModal } from '../components/finance/PaySubscriptionModal'
 import { RepaymentModal } from '../components/finance/RepaymentModal'
 import { PayBankInstallmentModal } from '../components/overview/PayBankInstallmentModal'
@@ -48,6 +49,10 @@ import type {
   MonthlyPaymentResponse, RecordStatus, RepaymentType, Transaction,
 } from '../types'
 import type { PersonKind, PersonSummary } from '../types/people'
+import {
+  NASIYA_DEFAULT_DAYS, NASIYA_DEFAULT_FEE, NASIYA_DEFAULT_LENDER, NASIYA_SOON_DAYS, addDays, daysUntil,
+  isOpenNasiya, isSwitchedNasiya, nasiyaCost, nasiyaFeePct, nasiyaTotal,
+} from '../utils/nasiya'
 import type { BillRow, Obligation, Receivable } from '../types/shell'
 import { fetchMonthTransactions } from './History'
 
@@ -97,7 +102,15 @@ const personChoice = (id: number | null | undefined, people: PersonSummary[]): s
 /** Most-used first — the order a picker offers people in. */
 const byUse = (people: PersonSummary[]) => [...people].sort((a, b) => b.times - a.times || b.total - a.total)
 
-const REPAY_TYPES: RepaymentType[] = ['MONTHLY', 'ASAP']
+/**
+ * How the form asks it to be repaid: the server's two kinds, plus a nasiya — sent as ASAP with
+ * `nasiya: true` (paid in full by a deadline, a fee on top; switched to installments later).
+ */
+type BorrowType = RepaymentType | 'NASIYA'
+const REPAY_TYPES: BorrowType[] = ['MONTHLY', 'ASAP', 'NASIYA']
+const REPAY_LABEL: Record<BorrowType, TKey> = {
+  MONTHLY: 'shell.form.repayMonthly', ASAP: 'shell.form.repayAsap', NASIYA: 'shell.form.repayNasiya',
+}
 
 const ym = (date: string | null | undefined): string | null => (date ? date.slice(0, 7) : null)
 
@@ -208,12 +221,16 @@ interface BankForm { bankName: string; monthly: number; total: number; takenDate
  * `firstMonth` is YYYY-MM: the server keeps only the month a loan's payments start in.
  */
 interface BorrowedForm {
-  person: string; name: string; amount: number; date: string; type: RepaymentType; monthly: number; firstMonth: string
+  person: string; name: string; amount: number; date: string; type: BorrowType; monthly: number; firstMonth: string
+  /** Nasiya: the service fee in percent, and the last day to pay it all. */
+  fee: number; deadline: string
+  /** Editing a nasiya already switched to installments: a monthly loan whose amount is the total to pay. */
+  switched: boolean
 }
 interface DebtForm { name: string; amount: number; firstMonth: string }
 interface LentForm { person: string; name: string; amount: number; date: string; expected: string }
 
-type FieldErrors = Partial<Record<'amount' | 'monthly' | 'endDate' | 'expected' | 'person' | 'name' | 'wallet', string>>
+type FieldErrors = Partial<Record<'amount' | 'monthly' | 'endDate' | 'expected' | 'person' | 'name' | 'wallet' | 'fee' | 'deadline', string>>
 
 type PeopleList = { supported: boolean; people: PersonSummary[] }
 
@@ -454,6 +471,9 @@ export function Loans() {
   const [openPeople, setOpenPeople] = useState<Set<string>>(new Set())
   const [showPeople, setShowPeople] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
+  // A nasiya being switched to installments, or having what is left set to the lender's figure.
+  const [switching, setSwitching] = useState<LoanTakenResponse | null>(null)
+  const [settingLeft, setSettingLeft] = useState<LoanTakenResponse | null>(null)
 
   /** Every payment is refused until a monthly income is set; take the owner to it instead. */
   const gate = (open: () => void) => () => {
@@ -481,6 +501,7 @@ export function Loans() {
   const [bank, setBank] = useState<BankForm>({ bankName: '', monthly: 0, total: 0, takenDate: today, endDate: '' })
   const [borrowed, setBorrowed] = useState<BorrowedForm>({
     person: '', name: '', amount: 0, date: today, type: 'MONTHLY', monthly: 0, firstMonth: nextMonth(),
+    fee: NASIYA_DEFAULT_FEE, deadline: addDays(today, NASIYA_DEFAULT_DAYS), switched: false,
   })
   const [debt, setDebt] = useState<DebtForm>({ name: '', amount: 0, firstMonth: '' })
   const [lent, setLent] = useState<LentForm>({ person: '', name: '', amount: 0, date: today, expected: '' })
@@ -496,8 +517,34 @@ export function Loans() {
   const editBorrowed = edit<BorrowedForm>(setBorrowed)
   const editDebt = edit<DebtForm>(setDebt)
   const editLent = edit<LentForm>(setLent)
+  /**
+   * Picking how it is repaid. A nasiya on a new loan starts on the service the owner uses — the
+   * person on file under that name, else the name typed in — unless a lender is already chosen.
+   */
+  const chooseType = (type: BorrowType) => {
+    const patch: Partial<BorrowedForm> = { type }
+    if (type === 'NASIYA' && form?.editId == null) {
+      const untouched = borrowed.person === '' || (borrowed.person === 'new' && !borrowed.name.trim())
+      if (untouched) {
+        const known = lenderPeople.find(p => p.name.trim().toLocaleLowerCase() === NASIYA_DEFAULT_LENDER.toLocaleLowerCase())
+        if (known && lendersOn) patch.person = String(known.id)
+        else { patch.person = 'new'; patch.name = NASIYA_DEFAULT_LENDER }
+      }
+      if (!borrowed.deadline) patch.deadline = addDays(borrowed.date, NASIYA_DEFAULT_DAYS)
+    }
+    editBorrowed(patch)
+  }
+  /** A new borrowed date moves a deadline still on its default term along with it. */
+  const chooseBorrowedDate = (date: string) => {
+    const onDefault = !borrowed.deadline || borrowed.deadline === addDays(borrowed.date, NASIYA_DEFAULT_DAYS)
+    editBorrowed(onDefault && date ? { date, deadline: addDays(date, NASIYA_DEFAULT_DAYS) } : { date })
+  }
   // "How will you repay?" is a radiogroup: arrow keys move and pick, one tab stop.
-  const repayKeys = useRadioGroupKeys(REPAY_TYPES, borrowed.type, v => editBorrowed({ type: v }))
+  const repayKeys = useRadioGroupKeys(REPAY_TYPES, borrowed.type, chooseType)
+  // A nasiya being edited stays one: the choice is not offered again.
+  const editingNasiya = form?.kind === 'borrowed' && form.editId != null && (borrowed.type === 'NASIYA' || borrowed.switched)
+  const nasiyaPreview = borrowed.type === 'NASIYA' && borrowed.amount > 0 && Number.isFinite(borrowed.fee) && borrowed.fee >= 0
+    ? nasiyaTotal(borrowed.amount, borrowed.fee) : null
 
   // A new loan moves the money through a wallet in the same step: into one when borrowed, out of
   // one when lent — or, for money already counted, through none. Edits leave the wallets alone.
@@ -551,6 +598,7 @@ export function Loans() {
       setBorrowed({
         person: lenderPeople.length > 0 ? '' : 'new', name: '', amount: 0, date: todayLocal(),
         type: 'MONTHLY', monthly: 0, firstMonth: nextMonth(),
+        fee: NASIYA_DEFAULT_FEE, deadline: addDays(todayLocal(), NASIYA_DEFAULT_DAYS), switched: false,
       })
     }
     if (kind === 'lent') {
@@ -570,11 +618,17 @@ export function Loans() {
       openForm('bank', b.id, b.bankName)
     } else if (o.kind === 'taken') {
       const l = o.record
-      // An edit keeps who lent it and how it is repaid.
+      // An edit keeps who lent it and how it is repaid. A nasiya not yet switched is edited as the
+      // money received + fee + deadline; a switched one as a monthly loan of what is to pay in all.
+      const open = !!l.nasiya && !l.installmentsSince
       setBorrowed({
-        person: personChoice(l.lenderId, lenderPeople), name: l.lenderName, amount: l.totalAmount,
-        date: l.borrowedDate, type: repaymentOf(l), monthly: l.plannedMonthlyPayment ?? 0,
+        person: personChoice(l.lenderId, lenderPeople), name: l.lenderName,
+        amount: open ? l.principalAmount ?? l.totalAmount : l.totalAmount,
+        date: l.borrowedDate, type: open ? 'NASIYA' : repaymentOf(l), monthly: l.plannedMonthlyPayment ?? 0,
         firstMonth: ym(l.paymentStartDate) ?? nextMonth(),
+        fee: open ? nasiyaFeePct(l) : NASIYA_DEFAULT_FEE,
+        deadline: l.dueDate ?? addDays(l.borrowedDate, NASIYA_DEFAULT_DAYS),
+        switched: isSwitchedNasiya(l),
       })
       openForm('borrowed', l.id, l.lenderName)
     } else {
@@ -612,6 +666,13 @@ export function Loans() {
       if (borrowed.type === 'MONTHLY') {
         if (!positive(borrowed.monthly)) e.monthly = t('shell.form.errAmount')
         else if (positive(borrowed.amount) && borrowed.monthly > borrowed.amount) e.monthly = t('shell.form.errMonthlyTooBig')
+      }
+      if (borrowed.type === 'NASIYA') {
+        if (!Number.isFinite(borrowed.fee) || borrowed.fee < 0 || borrowed.fee > 100) e.fee = t('shell.form.errFee')
+        if (!borrowed.deadline) e.deadline = t('shell.form.errDeadline')
+        else if (borrowed.deadline < borrowed.date) {
+          e.deadline = t('shell.form.errDateBefore', { date: formatDate(borrowed.date, lang) })
+        }
       }
     }
     if (form.kind === 'debt' && !positive(debt.amount)) e.amount = t('shell.form.errAmount')
@@ -696,20 +757,31 @@ export function Loans() {
         const existing = editId != null ? loansTaken.data?.find(l => l.id === editId) : undefined
         const who = await personFor('LENDER', borrowed.person, borrowed.name, lenderPeople, lendersOn)
         const monthlyPlan = borrowed.type === 'MONTHLY'
+        const nasiya = borrowed.type === 'NASIYA'
+        // A nasiya owes the money received plus the fee; the wallet gets only what was received.
+        const total = nasiya ? nasiyaTotal(borrowed.amount, borrowed.fee) : borrowed.amount
+        // A switched nasiya pays on its first installment's day; an edit that leaves the month alone
+        // sends no start, so the server keeps that day (a sent one is moved to the 1st).
+        const keepStartDay = borrowed.switched && !!existing?.paymentStartDate
+          && ym(existing.paymentStartDate) === borrowed.firstMonth
         // What has been paid back is left out on purpose: the server keeps it as it is when a
         // request does not carry it. Repaid as fast as possible, the loan has no plan.
         const req: LoanTakenRequest = {
           lenderName: who.name,
           lenderId: who.id,
-          totalAmount: borrowed.amount,
+          totalAmount: total,
           currency: existing?.currency ?? 'UZS',
           borrowedDate: borrowed.date,
-          dueDate: existing?.dueDate ?? undefined,
+          dueDate: nasiya ? borrowed.deadline : existing?.dueDate ?? undefined,
           description: existing?.description ?? undefined,
-          repaymentType: borrowed.type,
-          paymentStartDate: monthlyPlan && borrowed.firstMonth ? `${borrowed.firstMonth}-01` : undefined,
+          repaymentType: borrowed.type === 'NASIYA' ? 'ASAP' : borrowed.type,
+          paymentStartDate: monthlyPlan && borrowed.firstMonth
+            ? keepStartDay ? undefined : `${borrowed.firstMonth}-01`
+            : undefined,
           plannedMonthlyPayment: monthlyPlan ? borrowed.monthly : null,
-          status: existing ? repaymentStatus(existing.paidAmount, borrowed.amount) : undefined,
+          status: existing ? repaymentStatus(existing.paidAmount, total) : undefined,
+          // Sent only for a nasiya; left out, an edit keeps what the server has.
+          ...(nasiya ? { nasiya: true, principalAmount: borrowed.amount } : {}),
         }
         if (editId != null) await financeApi.updateLoanTaken(editId, req)
         else {
@@ -849,19 +921,26 @@ export function Loans() {
     const showLoanName = !!loanName && loanName !== o.name && !DEFAULT_LOAN_NAMES.has(loanName.trim().toLocaleLowerCase())
     const canPay = !o.paidOff && (o.kind !== 'bank' || o.monthly != null)
     const overdue = !o.paidOff && !!upcomingFor(o.kind, o.id)?.overdue
+    // A nasiya switched to installments: its badge, and what it costs on top of the money received.
+    const nasiya = o.kind === 'taken' && !!o.record.nasiya
+    const cost = o.kind === 'taken' && nasiya ? nasiyaCost(o.record) : 0
     return (
       <MoneyRow
         key={o.key}
         icon={<Icon className="h-4 w-4" aria-hidden="true" />}
         chip={o.kind === 'bank' ? 'bg-indigo-100 text-indigo-600' : o.kind === 'taken' ? 'bg-pink-100 text-pink-600' : 'bg-slate-100 text-slate-500'}
         title={o.name}
-        badge={showLoanName || overdue ? (
+        badge={showLoanName || overdue || nasiya ? (
           <>
             {showLoanName && <Chip>{loanName}</Chip>}
+            {nasiya && <Chip>{t('shell.nasiya.installmentsBadge')}</Chip>}
             {overdue && <OverdueChip />}
           </>
         ) : undefined}
-        detail={o.paidOff ? t('shell.loans.paidOff') : [leftLine(o), nextLine(o)].filter(Boolean).join(' · ')}
+        detail={[
+          o.paidOff ? t('shell.loans.paidOff') : [leftLine(o), nextLine(o)].filter(Boolean).join(' · '),
+          cost > 0 ? t('shell.nasiya.cost', { amount: moneyFull(cost, o.currency) }) : null,
+        ].filter(Boolean).join(' · ')}
         amount={o.paidOff
           ? moneyFull(o.record.totalAmount, o.currency)
           : o.monthly != null ? moneyFull(o.monthly, o.currency) : '—'}
@@ -870,13 +949,78 @@ export function Loans() {
           <Button size="sm" label={t('page.shared.payButton')} onClick={gate(() => payObligation(o))} />
         ) : undefined}
         menu={menuFor(o.key, () => startEditObligation(o), () => setHistory({ kind: o.kind, id: o.id, name: o.name }),
-          () => deleteObligation(o))}
+          () => deleteObligation(o),
+          o.kind === 'taken' && nasiya && !o.paidOff ? [updateLeftAction(o.record)] : [])}
+      />
+    )
+  }
+
+  const updateLeftAction = (l: LoanTakenResponse): MenuAction => ({
+    label: t('shell.nasiya.updateLeft'), icon: <Pencil className="h-4 w-4" aria-hidden="true" />,
+    onClick: gate(() => setSettingLeft(l)),
+  })
+
+  /**
+   * A nasiya still to be paid by its deadline: what is left, the deadline and how many days remain
+   * (amber in the last five, red once it has passed), what it costs on top, and — once overdue —
+   * the way on: switch it to installments.
+   */
+  const nasiyaRow = (o: Obligation & { kind: 'taken' }) => {
+    const l = o.record
+    const left = o.remaining ?? 0
+    const open = !o.paidOff && isOpenNasiya(l)
+    const days = l.dueDate ? daysUntil(l.dueDate, today) : null
+    const overdue = open && days != null && days < 0
+    const cost = nasiyaCost(l)
+    const dayChip = !open || days == null ? null
+      : overdue ? (
+        <span className="shrink-0 rounded-chip bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-expense">
+          {t('shell.nasiya.overdue')}
+        </span>
+      ) : (
+        <span className={`shrink-0 rounded-chip px-2 py-0.5 text-[11px] font-semibold ${
+          days <= NASIYA_SOON_DAYS ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'
+        }`}>
+          {days === 0 ? t('shell.nasiya.lastDay')
+            : plural(days, t('shell.nasiya.daysLeftOne', { count: days }), t('shell.nasiya.daysLeftMany', { count: days }), lang)}
+        </span>
+      )
+    const detail = o.paidOff ? t('shell.loans.paidOff') : [
+      l.dueDate ? t('shell.nasiya.payBy', { date: formatDate(l.dueDate, lang, 'dayShort') }) : null,
+      cost > 0 ? t('shell.nasiya.cost', { amount: moneyFull(cost, o.currency) }) : null,
+    ].filter(Boolean).join(' · ')
+    const payButton = (
+      <Button size="sm" label={t('page.shared.payButton')} onClick={gate(() => payObligation(o, left))} />
+    )
+    return (
+      <MoneyRow
+        key={o.key}
+        icon={<Banknote className="h-4 w-4" aria-hidden="true" />}
+        chip="bg-pink-100 text-pink-600"
+        title={o.name}
+        badge={<><Chip>{t('shell.nasiya.badge')}</Chip>{dayChip}</>}
+        detail={detail}
+        amount={moneyFull(o.paidOff ? l.totalAmount : left, o.currency)}
+        caption={o.paidOff ? t('page.shared.total') : t('shell.loans.leftCaption')}
+        action={o.paidOff ? undefined : overdue ? (
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="primary" label={t('shell.nasiya.switch')} onClick={gate(() => setSwitching(l))} />
+            {payButton}
+          </div>
+        ) : payButton}
+        menu={menuFor(o.key, () => startEditObligation(o), () => setHistory({ kind: o.kind, id: o.id, name: o.name }),
+          () => deleteObligation(o),
+          open ? [
+            { label: t('shell.nasiya.switch'), icon: <CalendarClock className="h-4 w-4" aria-hidden="true" />, onClick: gate(() => setSwitching(l)) },
+            updateLeftAction(l),
+          ] : [])}
       />
     )
   }
 
   /** Repaid as fast as possible: what is left, and what this month asks of it. */
   const asapRow = (o: Obligation) => {
+    if (o.kind === 'taken' && o.record.nasiya && !o.record.installmentsSince) return nasiyaRow(o)
     const Icon = o.kind === 'taken' ? Banknote : Receipt
     const left = o.remaining ?? 0
     const rule = asapDue(left, income)
@@ -1327,38 +1471,65 @@ export function Loans() {
                 personError={errors.person}
                 nameError={errors.name}
               />
-              <Field id="loans-borrowed-amount" label={t('shell.form.amount')} required error={errors.amount}>
+              <Field id="loans-borrowed-amount" required error={errors.amount}
+                label={t(borrowed.type === 'NASIYA' ? 'shell.form.nasiyaReceived'
+                  : borrowed.switched ? 'shell.form.nasiyaTotal' : 'shell.form.amount')}>
                 <AmountInput required value={borrowed.amount} currency="UZS" suffix="UZS"
                   onChange={v => editBorrowed({ amount: v })} className={MONEY_INPUT} />
               </Field>
               {walletField}
               <Field id="loans-borrowed-date" label={t('shell.form.date')} required>
                 <input required type="date" value={borrowed.date}
-                  onChange={e => editBorrowed({ date: e.target.value })} className={INPUT} />
+                  onChange={e => chooseBorrowedDate(e.target.value)} className={INPUT} />
               </Field>
-              <div>
-                <p id="loans-borrowed-type-label" className="mb-1 text-xs font-medium text-slate-600">
-                  {t('shell.form.howRepay')}
-                </p>
-                <div role="radiogroup" aria-labelledby="loans-borrowed-type-label" className="flex gap-1 rounded-control bg-slate-100 p-1">
-                  {REPAY_TYPES.map((v, i) => (
-                    <button
-                      key={v}
-                      type="button"
-                      role="radio"
-                      aria-checked={borrowed.type === v}
-                      {...repayKeys(i)}
-                      onClick={() => editBorrowed({ type: v })}
-                      className={`focus-ring min-h-[44px] flex-1 rounded-chip px-2 text-xs font-semibold transition-colors focus-visible:ring-offset-slate-100 ${
-                        borrowed.type === v ? 'bg-white text-indigo-600 shadow-tile' : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                    >
-                      {t(v === 'MONTHLY' ? 'shell.form.repayMonthly' : 'shell.form.repayAsap')}
-                    </button>
-                  ))}
+              {!editingNasiya && (
+                <div>
+                  <p id="loans-borrowed-type-label" className="mb-1 text-xs font-medium text-slate-600">
+                    {t('shell.form.howRepay')}
+                  </p>
+                  <div role="radiogroup" aria-labelledby="loans-borrowed-type-label" className="flex gap-1 rounded-control bg-slate-100 p-1">
+                    {REPAY_TYPES.map((v, i) => (
+                      <button
+                        key={v}
+                        type="button"
+                        role="radio"
+                        aria-checked={borrowed.type === v}
+                        {...repayKeys(i)}
+                        onClick={() => chooseType(v)}
+                        className={`focus-ring min-h-[44px] flex-1 rounded-chip px-2 text-xs font-semibold leading-tight transition-colors focus-visible:ring-offset-slate-100 ${
+                          borrowed.type === v ? 'bg-white text-indigo-600 shadow-tile' : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        {t(REPAY_LABEL[v])}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-              {borrowed.type === 'MONTHLY' ? (
+              )}
+              {borrowed.type === 'NASIYA' ? (
+                <>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <Field id="loans-borrowed-fee" label={t('shell.form.nasiyaFee')} required error={errors.fee}>
+                      <input required type="number" inputMode="decimal" min={0} max={100} step={0.1}
+                        value={Number.isFinite(borrowed.fee) ? borrowed.fee : ''}
+                        onChange={e => editBorrowed({ fee: e.target.value === '' ? NaN : Number(e.target.value) })}
+                        className={INPUT} />
+                    </Field>
+                    <Field id="loans-borrowed-deadline" label={t('shell.form.nasiyaDeadline')} required error={errors.deadline}>
+                      <input required type="date" value={borrowed.deadline} min={borrowed.date}
+                        onChange={e => editBorrowed({ deadline: e.target.value })} className={INPUT} />
+                    </Field>
+                  </div>
+                  <p className="text-xs leading-snug text-slate-600">{t('shell.form.nasiyaDeadlineHelp')}</p>
+                  {nasiyaPreview != null && (
+                    <p aria-live="polite" className="rounded-control bg-slate-50 px-3 py-2 text-sm font-medium tabular-nums text-slate-900">
+                      {t('shell.form.nasiyaTotalLine', {
+                        total: moneyFull(nasiyaPreview), fee: moneyFull(nasiyaPreview - borrowed.amount),
+                      })}
+                    </p>
+                  )}
+                </>
+              ) : borrowed.type === 'MONTHLY' ? (
                 <>
                   <Field id="loans-borrowed-monthly" label={t('shell.form.monthlyPayment')} required
                     help={t('shell.form.monthlyHelp')} error={errors.monthly}>
@@ -1463,6 +1634,17 @@ export function Loans() {
           loansTaken.refetch(); debts.refetch(); loansGiven.refetch(); advisor.refetch(); monthTx.refetch()
           setRepay(null)
         }}
+      />
+
+      <NasiyaSwitchSheet
+        loan={switching}
+        onClose={() => setSwitching(null)}
+        onSaved={() => { setSwitching(null); refetchAll() }}
+      />
+      <NasiyaLeftSheet
+        loan={settingLeft}
+        onClose={() => setSettingLeft(null)}
+        onSaved={() => { setSettingLeft(null); refetchAll() }}
       />
 
       {history && (

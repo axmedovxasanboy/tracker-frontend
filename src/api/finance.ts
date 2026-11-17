@@ -2,7 +2,7 @@ import { apiClient } from './client'
 import type {
   DebtRequest, DebtResponse,
   LoanGivenRequest, LoanGivenResponse,
-  LoanTakenRequest, LoanTakenResponse,
+  LoanTakenRequest, LoanTakenResponse, NasiyaInstallmentsRequest,
   BankLoanRequest, BankLoanResponse,
   MonthlyPaymentRequest, MonthlyPaymentResponse, MonthlyPaymentPayRequest,
   DonationRequest, DonationResponse,
@@ -31,6 +31,12 @@ export const financeApi = {
   createLoanTaken: (d: LoanTakenRequest) => apiClient.post<LoanTakenResponse>(`${base}/loans-taken`, d),
   updateLoanTaken: (id: number, d: LoanTakenRequest) => apiClient.put<LoanTakenResponse>(`${base}/loans-taken/${id}`, d),
   deleteLoanTaken: (id: number) => apiClient.delete(`${base}/loans-taken/${id}`),
+  /** Nasiya: switch to monthly installments (the owner's button). */
+  nasiyaInstallments: (id: number, d: NasiyaInstallmentsRequest) =>
+    apiClient.post<LoanTakenResponse>(`${base}/loans-taken/${id}/installments`, d),
+  /** Nasiya: set what is left to the figure Uzum shows (0 = paid off). */
+  nasiyaLeft: (id: number, left: number) =>
+    apiClient.post<LoanTakenResponse>(`${base}/loans-taken/${id}/left`, { left }),
 
   // Bank Loans
   getBankLoans: () => apiClient.get<BankLoanResponse[]>(`${base}/bank-loans`),
