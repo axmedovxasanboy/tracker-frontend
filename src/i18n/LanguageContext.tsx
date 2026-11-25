@@ -16,10 +16,12 @@ import { en_fixes } from './en.fixes'
 import { uz_fixes } from './uz.fixes'
 import { en_levels } from './en.levels'
 import { uz_levels } from './uz.levels'
+import { en_invest } from './en.invest'
+import { uz_invest } from './uz.invest'
 
 // Split by area purely so the files stay manageable; they form one flat key space.
-const en = { ...enCore, ...en_pages, ...en_components, ...en_shell, ...en_home, ...en_analytics, ...en_fixes, ...en_levels }
-const uz = { ...uzCore, ...uz_pages, ...uz_components, ...uz_shell, ...uz_home, ...uz_analytics, ...uz_fixes, ...uz_levels }
+const en = { ...enCore, ...en_pages, ...en_components, ...en_shell, ...en_home, ...en_analytics, ...en_fixes, ...en_levels, ...en_invest }
+const uz = { ...uzCore, ...uz_pages, ...uz_components, ...uz_shell, ...uz_home, ...uz_analytics, ...uz_fixes, ...uz_levels, ...uz_invest }
 
 export type Lang = 'en' | 'uz'
 export type TKey = keyof typeof en

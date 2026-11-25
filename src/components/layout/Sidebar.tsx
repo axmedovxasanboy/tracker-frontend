@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
 import {
-  ArrowLeftRight, ChartColumn, History, House, LogOut, PiggyBank, Receipt, Settings as SettingsIcon, UserRound,
+  ArrowLeftRight, ChartColumn, History, House, Landmark, LogOut, PiggyBank, Receipt, Settings as SettingsIcon, UserRound,
   Wallet, WifiOff,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -11,7 +11,7 @@ import { useLang } from '../../i18n/LanguageContext'
 import type { TKey } from '../../i18n/LanguageContext'
 
 /**
- * The whole app, eight places, one flat list (2026-09 rebuild; Profile and Analytics since). Nothing is
+ * The whole app, nine places, one flat list (2026-09 rebuild; Profile and Analytics since). Nothing is
  * folded away any more: the old "Details" group hid seven screens the owner had to learn, and the
  * rebuild merged them into these. Analytics sits beside History — it is History seen from further
  * away. Developer stays out of the list — Settings › Advanced is its way in.
@@ -22,6 +22,7 @@ const NAV: ReadonlyArray<{ to: string; labelKey: TKey; icon: LucideIcon; exact?:
   { to: '/analytics', labelKey: 'shell.nav.analytics', icon: ChartColumn },
   { to: '/wallets', labelKey: 'nav.wallets', icon: Wallet },
   { to: '/savings', labelKey: 'shell.nav.savings', icon: PiggyBank },
+  { to: '/investments', labelKey: 'invest.nav', icon: Landmark },
   { to: '/loans', labelKey: 'shell.nav.loans', icon: Receipt },
   { to: '/profile', labelKey: 'shell.nav.profile', icon: UserRound },
   { to: '/settings', labelKey: 'nav.settings', icon: SettingsIcon },

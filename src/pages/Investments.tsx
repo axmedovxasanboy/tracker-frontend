@@ -1,0 +1,319 @@
+import { useState } from 'react'
+import type { KeyboardEvent } from 'react'
+import { ArrowDownToLine, ArrowLeftRight, Landmark, Pencil, Plus, Trash2, TrendingUp, Undo2 } from 'lucide-react'
+import { PageHeader } from '../components/ui/PageHeader'
+import { Button } from '../components/ui/Button'
+import { Tile, TileGrid } from '../components/ui/Tile'
+import { ActionMenu } from '../components/ui/ActionMenu'
+import type { MenuAction } from '../components/ui/ActionMenu'
+import { IconChip } from '../components/ui/IconChip'
+import { ErrorTile } from '../components/ui/ErrorTile'
+import { ExactAmount } from '../components/ui/ExactAmount'
+import { Skeleton } from '../components/ui/Skeleton'
+import { ContributeInvestmentModal } from '../components/finance/ContributeInvestmentModal'
+import { UpdateValueModal } from '../components/finance/UpdateValueModal'
+import { WithdrawInvestmentModal } from '../components/finance/WithdrawInvestmentModal'
+import { AddInvestmentSheet } from '../components/savings/AddInvestmentSheet'
+import { HoldingHistorySheet } from '../components/savings/HoldingHistorySheet'
+import { GrowthChip, growthOf } from '../components/savings/growth'
+import { MoveInvestmentSheet, investmentIcon } from '../components/investments/MoveInvestmentSheet'
+import { TileHead } from '../components/home/HomeTiles'
+import { useApi } from '../hooks/useApi'
+import { useToast } from '../context/ToastContext'
+import { useConfirm } from '../context/ConfirmContext'
+import { useLang } from '../i18n/LanguageContext'
+import type { TKey } from '../i18n/LanguageContext'
+import { financeApi } from '../api/finance'
+import { extractErrorMessage } from '../api/client'
+import { formatDate, formatNumber, money, moneyFull, snap } from '../utils/format'
+import type { InvestmentResponse, InvestmentTransferResponse, InvestmentType } from '../types'
+
+/** A full-width row of the twelve-column page grid. */
+const FULL = 'md:col-span-6 xl:col-span-12'
+/** Half a row on a wide screen, the whole row on a tablet or phone. */
+const HALF = 'md:col-span-6 xl:col-span-6'
+const RECENT = 10
+
+/** A block that opens a holding's money in and out: tinted on hover, ringed on focus. */
+const OPENS = 'focus-ring -m-1.5 cursor-pointer rounded-control p-1.5 transition-colors hover:bg-slate-50'
+
+const TYPE_KEY: Record<InvestmentType, TKey> = {
+  BUSINESS: 'cmp.investmentType.business',
+  ISLAMIC_BANK: 'cmp.investmentType.islamicBank',
+  REAL_ESTATE: 'cmp.investmentType.realEstate',
+  BONDS: 'cmp.investmentType.bonds',
+  MUTUAL_FUND: 'cmp.investmentType.mutualFund',
+  GOLD: 'cmp.investmentType.gold',
+  OTHER: 'cmp.investmentType.other',
+}
+
+/** A plain investment: not a goal, not the emergency fund, not an own saving (INVEST-SPEC.md §2). */
+const isPlain = (i: InvestmentResponse) => !i.savingsGoal && !i.emergencyFund && !i.customSaving
+
+/** What makes a block open something, as on Savings: a click, or Enter / Space on the block itself. */
+function opens(onOpen: () => void, label: string) {
+  return {
+    role: 'button' as const,
+    tabIndex: 0,
+    'aria-label': label,
+    onClick: onOpen,
+    onKeyDown: (e: KeyboardEvent<HTMLElement>) => {
+      if (e.target !== e.currentTarget) return
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen() }
+    },
+  }
+}
+
+/**
+ * Investments: where the owner keeps money safe — a business, an Islamic bank (INVEST-SPEC.md §2).
+ * The aim is keeping, not growing, so the page leads with how much is where; growth shows only
+ * when a value was typed. Money moves between them like between cards, and a move is neither
+ * spending nor income. Goals, the emergency fund and own savings stay on Savings.
+ */
+export function Investments() {
+  const { t, lang } = useLang()
+  const confirm = useConfirm()
+  const { showSuccess, showError } = useToast()
+
+  const investments = useApi(() => financeApi.getInvestments(), [])
+  // A server without moves answers 404: the page then simply has no "Recent moves".
+  const transfers = useApi(
+    () => financeApi.getInvestmentTransfers({ limit: RECENT })
+      .catch(() => ({ data: [] as InvestmentTransferResponse[] })),
+    [],
+  )
+
+  const [form, setForm] = useState<{ investment: InvestmentResponse | null } | null>(null)
+  const [moveFrom, setMoveFrom] = useState<{ fromId: number | null } | null>(null)
+  const [contributeFor, setContributeFor] = useState<InvestmentResponse | null>(null)
+  const [valueFor, setValueFor] = useState<InvestmentResponse | null>(null)
+  const [withdrawFor, setWithdrawFor] = useState<InvestmentResponse | null>(null)
+  const [historyFor, setHistoryFor] = useState<InvestmentResponse | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+
+  const refetchAll = () => { investments.refetch(); transfers.refetch() }
+  const savedToast = () => { refetchAll(); showSuccess(t('page.investments.savedToast')) }
+
+  const holdings = (investments.data ?? [])
+    .filter(isPlain)
+    .sort((a, b) => growthOf(b).value - growthOf(a).value)
+  const total = snap(holdings.reduce((sum, i) => sum + growthOf(i).value, 0))
+  const putIn = snap(holdings.reduce((sum, i) => sum + growthOf(i).putIn, 0))
+  const totalGrowth = { putIn, value: total, growth: snap(total - putIn), percent: putIn > 0 ? Math.round(((total - putIn) / putIn) * 1000) / 10 : null }
+  const canMove = holdings.length >= 2
+  const recent = transfers.data ?? []
+
+  const openMove = (fromId: number | null) => setMoveFrom({ fromId })
+
+  const deleteHolding = async (i: InvestmentResponse) => {
+    if (!await confirm({ message: t('page.investments.confirmDelete'), destructive: true })) return
+    setBusy(`inv-${i.id}`)
+    try {
+      await financeApi.deleteInvestment(i.id)
+      refetchAll()
+      showSuccess(t('page.investments.deletedToast'))
+    } catch (err) {
+      showError(extractErrorMessage(err))
+    } finally { setBusy(null) }
+  }
+
+  const undoMove = async (m: InvestmentTransferResponse) => {
+    const ok = await confirm({
+      message: t('invest.undoConfirm', { amount: moneyFull(m.amount, m.currency), from: m.fromName, to: m.toName }),
+      destructive: true,
+    })
+    if (!ok) return
+    setBusy(`move-${m.id}`)
+    try {
+      await financeApi.deleteInvestmentTransfer(m.id)
+      refetchAll()
+      showSuccess(t('invest.undoneToast'))
+    } catch (err) {
+      showError(extractErrorMessage(err))
+    } finally { setBusy(null) }
+  }
+
+  const holdingActions = (i: InvestmentResponse): MenuAction[] => [
+    { label: t('page.investments.updateValue'), icon: <TrendingUp className="h-4 w-4" aria-hidden="true" />, onClick: () => setValueFor(i) },
+    {
+      label: t('cmp.withdraw.action'), icon: <ArrowDownToLine className="h-4 w-4" aria-hidden="true" />,
+      disabled: growthOf(i).value <= 0, onClick: () => setWithdrawFor(i),
+    },
+    { label: t('action.edit'), icon: <Pencil className="h-4 w-4" aria-hidden="true" />, onClick: () => setForm({ investment: i }) },
+    {
+      label: t('action.delete'), icon: <Trash2 className="h-4 w-4" aria-hidden="true" />, danger: true,
+      disabled: busy === `inv-${i.id}`, onClick: () => deleteHolding(i),
+    },
+  ]
+
+  const staleError = [investments, transfers].find(q => q.error && q.data)?.error ?? null
+
+  return (
+    <div className="p-4 sm:p-6">
+      <TileGrid>
+        <div className={FULL}>
+          <PageHeader
+            title={t('invest.title')}
+            primary={{ label: t('action.new'), onClick: () => setForm({ investment: null }), icon: <Plus className="h-4 w-4" aria-hidden="true" /> }}
+          />
+        </div>
+
+        {staleError && <ErrorTile compact className={FULL} message={staleError} onRetry={refetchAll} />}
+
+        {investments.loading ? (
+          <>
+            <Skeleton variant="stat" className={FULL} />
+            <Skeleton variant="row" count={3} className={HALF} />
+          </>
+        ) : investments.error && !investments.data ? (
+          <ErrorTile className={FULL} message={investments.error} onRetry={investments.refetch} />
+        ) : holdings.length === 0 ? (
+          /* ── Nothing yet ── */
+          <Tile span={12} padding="hero" as="section">
+            <div className="flex items-start gap-3">
+              <IconChip tone="teal"><Landmark className="h-4 w-4" aria-hidden="true" /></IconChip>
+              <div className="min-w-0">
+                <h2 className="text-title text-slate-900">{t('invest.empty.title')}</h2>
+                <p className="mt-1 text-sm text-slate-600">{t('invest.empty.body')}</p>
+                <p className="mt-1 text-sm text-slate-500">{t('invest.hint')}</p>
+                <Button variant="primary" className="mt-4" label={t('page.investments.addInvestment')}
+                  icon={<Plus className="h-4 w-4" aria-hidden="true" />} onClick={() => setForm({ investment: null })} />
+              </div>
+            </div>
+          </Tile>
+        ) : (
+          <>
+            {/* ── How much, in how many places ── the page's one big number. */}
+            <Tile span={12} padding="hero" as="section">
+              <h2 className="text-label uppercase text-slate-500">{t('invest.total')}</h2>
+              <p className="mt-3 text-hero tabular-nums text-slate-900 whitespace-nowrap">{money(total, 'UZS')}</p>
+              <ExactAmount amount={total} currency="UZS" className="mt-0.5" />
+              <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm tabular-nums text-slate-600">
+                <span>{t('invest.putIn', { amount: moneyFull(putIn, 'UZS') })}</span>
+                <span aria-hidden="true">·</span>
+                <span>{holdings.length === 1 ? t('invest.placesOne') : t('invest.places', { count: holdings.length })}</span>
+                <GrowthChip g={totalGrowth} currency="UZS" />
+              </p>
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <Button label={t('invest.move')} icon={<ArrowLeftRight className="h-4 w-4" aria-hidden="true" />}
+                  disabled={!canMove} disabledReason={canMove ? undefined : t('invest.moveNeedsTwo')}
+                  onClick={() => openMove(null)} />
+              </div>
+              <p className="mt-3 text-xs text-slate-500">{t('invest.hint')}</p>
+            </Tile>
+
+            {/* ── One tile per place ── */}
+            {holdings.map(i => {
+              const g = growthOf(i)
+              const nameId = `inv-${i.id}`
+              const share = total > 0 ? (g.value / total) * 100 : 0
+              const sub = [t(TYPE_KEY[i.type] ?? 'cmp.investmentType.other'), i.broker].filter(Boolean).join(' · ')
+              return (
+                <Tile key={i.id} span={6} mdSpan={6} as="section">
+                  <div {...opens(() => setHistoryFor(i), t('shell.holding.open', { name: i.name }))}
+                    className={`flex items-start gap-3 ${OPENS}`}>
+                    <IconChip tone="teal">{investmentIcon(i.type)}</IconChip>
+                    <div className="min-w-0 flex-1">
+                      <h2 id={nameId} className="truncate text-sm font-semibold text-slate-900">{i.name}</h2>
+                      <p className="truncate text-xs text-slate-500">{sub}</p>
+                    </div>
+                  </div>
+                  <p className="mt-3 text-stat tabular-nums text-slate-900">{moneyFull(g.value, i.currency)}</p>
+                  <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs tabular-nums text-slate-500">
+                    <span>{t('invest.putIn', { amount: moneyFull(g.putIn, i.currency) })}</span>
+                    <GrowthChip g={g} currency={i.currency} />
+                  </p>
+                  <div className="mt-3 flex items-center gap-2">
+                    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100" aria-hidden="true">
+                      <div className="h-full rounded-full bg-teal-500" style={{ width: `${Math.min(100, share)}%` }} />
+                    </div>
+                    <span className="shrink-0 text-xs tabular-nums text-slate-500">
+                      {t('invest.share', { pct: formatNumber(Math.round(share), 0) })}
+                    </span>
+                  </div>
+                  {i.lastMovedAt && (
+                    <p className="mt-1 text-xs text-slate-500">
+                      {t('invest.lastMoved', { date: formatDate(i.lastMovedAt, lang, 'dayShort') })}
+                    </p>
+                  )}
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <Button size="sm" label={t('cmp.action.topUp')} aria-describedby={nameId}
+                      icon={<Plus className="h-3.5 w-3.5" aria-hidden="true" />}
+                      onClick={() => setContributeFor(i)} />
+                    <Button size="sm" label={t('invest.move')} aria-describedby={nameId}
+                      icon={<ArrowLeftRight className="h-3.5 w-3.5" aria-hidden="true" />}
+                      disabled={!canMove || g.value <= 0}
+                      disabledReason={!canMove ? t('invest.moveNeedsTwo') : undefined}
+                      onClick={() => openMove(i.id)} />
+                    <div className="ml-auto">
+                      <ActionMenu actions={holdingActions(i)} />
+                    </div>
+                  </div>
+                </Tile>
+              )
+            })}
+
+            {/* ── Recent moves ── hidden while there are none. */}
+            {recent.length > 0 && (
+              <Tile span={12} as="section">
+                <TileHead title={t('invest.recent')} />
+                <ul className="mt-2 divide-y divide-hairline">
+                  {recent.map(m => {
+                    const actions: MenuAction[] = m.canUndo ? [{
+                      label: t('invest.undo'), icon: <Undo2 className="h-4 w-4" aria-hidden="true" />,
+                      disabled: busy === `move-${m.id}`, onClick: () => undoMove(m),
+                    }] : []
+                    return (
+                      <li key={m.id} className="flex min-h-[56px] items-center gap-3 py-2">
+                        <IconChip tone="neutral"><ArrowLeftRight className="h-4 w-4" aria-hidden="true" /></IconChip>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-slate-900">
+                            {t('invest.recentRow', { from: m.fromName, to: m.toName })}
+                          </p>
+                          <p className="truncate text-xs text-slate-500">
+                            {[formatDate(m.date, lang, 'dayShort'), m.note].filter(Boolean).join(' · ')}
+                          </p>
+                        </div>
+                        <p className="shrink-0 text-sm font-semibold tabular-nums text-slate-900">{moneyFull(m.amount, m.currency)}</p>
+                        {actions.length > 0
+                          ? <ActionMenu actions={actions} />
+                          : <span className="w-11 shrink-0" aria-hidden="true" />}
+                      </li>
+                    )
+                  })}
+                </ul>
+              </Tile>
+            )}
+          </>
+        )}
+      </TileGrid>
+
+      <AddInvestmentSheet
+        open={!!form} investment={form?.investment ?? null} defaultType="ISLAMIC_BANK"
+        onClose={() => setForm(null)} onSaved={refetchAll}
+      />
+      <MoveInvestmentSheet
+        open={!!moveFrom} fromId={moveFrom?.fromId ?? null} holdings={holdings}
+        onClose={() => setMoveFrom(null)} onSaved={refetchAll}
+      />
+      <ContributeInvestmentModal
+        open={!!contributeFor} investment={contributeFor}
+        onClose={() => setContributeFor(null)} onSaved={savedToast}
+      />
+      <UpdateValueModal
+        open={!!valueFor} investment={valueFor}
+        onClose={() => setValueFor(null)} onSaved={savedToast}
+        onAddMoney={() => {
+          const inv = valueFor
+          setValueFor(null)
+          if (inv) setTimeout(() => setContributeFor(inv), 0)
+        }}
+      />
+      <WithdrawInvestmentModal
+        open={!!withdrawFor} investment={withdrawFor}
+        onClose={() => setWithdrawFor(null)} onSaved={refetchAll}
+      />
+      <HoldingHistorySheet investment={historyFor} onClose={() => setHistoryFor(null)} />
+    </div>
+  )
+}

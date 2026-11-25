@@ -8,6 +8,7 @@ import type {
   DonationRequest, DonationResponse,
   InvestmentRequest, InvestmentResponse,
   InvestmentContributeRequest, InvestmentValueRequest, InvestmentWithdrawRequest,
+  InvestmentTransferRequest, InvestmentTransferResponse,
   RepaymentRequest,
   Transaction,
 } from '../types'
@@ -76,6 +77,12 @@ export const financeApi = {
   /** Every put-in and take-out booked on one holding, its first deposit included, newest first. */
   getInvestmentContributions: (id: number) =>
     apiClient.get<Transaction[]>(`${base}/investments/${id}/contributions`),
+  // Moves between investments (INVEST-SPEC.md §1b) — no wallet and no transaction is touched.
+  transferInvestment: (d: InvestmentTransferRequest) =>
+    apiClient.post<InvestmentTransferResponse>(`${base}/investments/transfer`, d),
+  getInvestmentTransfers: (params?: { investmentId?: number; limit?: number }) =>
+    apiClient.get<InvestmentTransferResponse[]>(`${base}/investments/transfers`, { params }),
+  deleteInvestmentTransfer: (id: number) => apiClient.delete(`${base}/investments/transfers/${id}`),
 
   // Repayments
   repayLoanTaken: (id: number, d: RepaymentRequest) =>

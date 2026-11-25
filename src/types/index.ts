@@ -18,7 +18,10 @@ export type Currency = 'UZS' | 'USD' | 'EUR'
 export type CategoryType = 'INCOME' | 'EXPENSE' | 'BOTH'
 export type CardType = 'UZCARD' | 'HUMO' | 'VISA' | 'CASH'
 export type RecordStatus = 'PENDING' | 'PARTIALLY_PAID' | 'PAID' | 'OVERDUE'
-export type InvestmentType = 'REAL_ESTATE' | 'BONDS' | 'MUTUAL_FUND' | 'GOLD' | 'OTHER'
+export type InvestmentType = 'BUSINESS' | 'ISLAMIC_BANK' | 'REAL_ESTATE' | 'BONDS' | 'MUTUAL_FUND' | 'GOLD' | 'OTHER'
+
+/** Every investment type, the two the owner uses (a business, an Islamic bank) first. */
+export const INVESTMENT_TYPES: InvestmentType[] = ['BUSINESS', 'ISLAMIC_BANK', 'REAL_ESTATE', 'BONDS', 'MUTUAL_FUND', 'GOLD', 'OTHER']
 
 export interface Category {
   id: number
@@ -450,6 +453,37 @@ export interface InvestmentResponse {
   wish?: boolean
   /** PLAN or WISH for a savings goal, null for anything else. Absent on an older server. */
   goalKind?: GoalKind | null
+  /** The latest day money moved in or out of it — a put-in, a take-out or a move (YYYY-MM-DD).
+   *  Null when nothing has; absent on an older server. */
+  lastMovedAt?: string | null
+}
+
+/** Move money from one investment to another (INVEST-SPEC.md §1b): no wallet, no transaction. */
+export interface InvestmentTransferRequest {
+  fromId: number
+  toId: number
+  amount: number
+  date: string
+  note?: string
+}
+
+export interface InvestmentTransferResponse {
+  id: number
+  /** Null once that holding was deleted; the name stays. */
+  fromId: number | null
+  fromName: string
+  toId: number | null
+  toName: string
+  /** The money moved (what it was worth). */
+  amount: number
+  /** The part of "put in" that travelled with it — equal to `amount` unless the holding grew. */
+  putInMoved: number
+  currency: Currency
+  date: string
+  note: string | null
+  createdAt: string
+  /** Both holdings still exist and the receiving one still holds the amount. */
+  canUndo: boolean
 }
 
 export interface InvestmentRequest {

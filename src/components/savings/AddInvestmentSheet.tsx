@@ -15,10 +15,10 @@ import {
 import { WalletPicker } from '../transactions/WalletPicker'
 import { rememberWallet, useWalletChoice, useWallets } from '../transactions/wallets'
 import { requestFrom } from './AddGoalSheet'
+import { INVESTMENT_TYPES } from '../../types'
 import type { InvestmentResponse, InvestmentType } from '../../types'
 
 const FORM_ID = 'add-investment-form'
-const INVESTMENT_TYPES: InvestmentType[] = ['REAL_ESTATE', 'BONDS', 'MUTUAL_FUND', 'GOLD', 'OTHER']
 
 /**
  * A new investment: its name, how much, where the money came from, when. "I already own it"
@@ -27,17 +27,23 @@ const INVESTMENT_TYPES: InvestmentType[] = ['REAL_ESTATE', 'BONDS', 'MUTUAL_FUND
  *
  * Editing changes the name and those details only — money goes in with "Add money", and a new
  * market value with "Update value".
+ *
+ * `defaultType` (the Investments page passes ISLAMIC_BANK): a new one starts as that type, and the
+ * type is asked up front instead of under "More" — there it tells a business from a bank.
  */
-export function AddInvestmentSheet({ open, onClose, onSaved, investment }: {
+export function AddInvestmentSheet({ open, onClose, onSaved, investment, defaultType }: {
   open: boolean
   onClose: () => void
   onSaved: () => void
   investment?: InvestmentResponse | null
+  defaultType?: InvestmentType
 }) {
   const { t } = useLang()
   const optional = useOptional()
   const { showSuccess } = useToast()
   const TYPE_LABEL: Record<InvestmentType, string> = {
+    BUSINESS: t('cmp.investmentType.business'),
+    ISLAMIC_BANK: t('cmp.investmentType.islamicBank'),
     REAL_ESTATE: t('cmp.investmentType.realEstate'),
     BONDS: t('cmp.investmentType.bonds'),
     MUTUAL_FUND: t('cmp.investmentType.mutualFund'),
@@ -71,18 +77,27 @@ export function AddInvestmentSheet({ open, onClose, onSaved, investment }: {
     setName(investment?.name ?? '')
     setAmount(0)
     setDate(todayLocal())
-    setType(investment?.type ?? 'OTHER')
+    setType(investment?.type ?? defaultType ?? 'OTHER')
     setBroker(investment?.broker ?? '')
     setDescription(investment?.description ?? '')
     setMoreOpen(false)
     setError(null)
     setInvalid(null)
-  }, [open, investment])
+  }, [open, investment, defaultType])
 
   const dirty = editing
     ? name !== investment!.name || type !== investment!.type
       || broker !== (investment!.broker ?? '') || description !== (investment!.description ?? '')
     : !!name.trim() || amount > 0 || !!broker.trim() || !!description.trim()
+
+  const typeUpfront = !!defaultType
+  const typeField = (
+    <Field id="inv-type" label={t('tx.type')}>
+      <select value={type} onChange={e => setType(e.target.value as InvestmentType)} className={CONTROL}>
+        {INVESTMENT_TYPES.map(it => <option key={it} value={it}>{TYPE_LABEL[it]}</option>)}
+      </select>
+    </Field>
+  )
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -148,6 +163,8 @@ export function AddInvestmentSheet({ open, onClose, onSaved, investment }: {
             placeholder={t('page.investments.namePlaceholder')} />
         </Field>
 
+        {typeUpfront && typeField}
+
         {!editing && (
           <>
             <Field id="inv-amount" label={t('tx.amount')} required error={invalid === 'amount' ? error ?? undefined : undefined}>
@@ -181,11 +198,7 @@ export function AddInvestmentSheet({ open, onClose, onSaved, investment }: {
           </button>
           {moreOpen && (
             <div className="mt-2 space-y-4">
-              <Field id="inv-type" label={t('tx.type')}>
-                <select value={type} onChange={e => setType(e.target.value as InvestmentType)} className={CONTROL}>
-                  {INVESTMENT_TYPES.map(it => <option key={it} value={it}>{TYPE_LABEL[it]}</option>)}
-                </select>
-              </Field>
+              {!typeUpfront && typeField}
               <Field id="inv-broker" label={optional(t('page.investments.brokerLabel'))}>
                 <input value={broker} onChange={e => setBroker(e.target.value)} className={CONTROL} />
               </Field>

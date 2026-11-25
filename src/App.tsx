@@ -21,6 +21,7 @@ import { Advisor } from './pages/Advisor'
 import { History } from './pages/History'
 import { Cards } from './pages/Cards'
 import { Savings } from './pages/Savings'
+import { Investments } from './pages/Investments'
 import { Loans } from './pages/Loans'
 import { Profile } from './pages/Profile'
 import { Categories } from './pages/Categories'
@@ -193,6 +194,7 @@ function AppRoutes() {
               />
               <Route path="/wallets" element={<Cards />} />
               <Route path="/savings" element={<Savings />} />
+              <Route path="/investments" element={<Investments />} />
               <Route path="/loans" element={<Loans />} />
               <Route path="/profile" element={<Profile />} />
               <Route path="/settings" element={<Settings />} />

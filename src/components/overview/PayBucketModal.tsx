@@ -21,6 +21,7 @@ import {
   useWallets,
 } from '../transactions/wallets'
 import type { WalletValue } from '../transactions/wallets'
+import { INVESTMENT_TYPES } from '../../types'
 import type { Bucket, Category, Currency, InvestmentResponse, InvestmentType } from '../../types'
 
 interface Props {
@@ -41,7 +42,6 @@ interface Props {
   defaultMonth: string
 }
 
-const INVESTMENT_TYPES: InvestmentType[] = ['REAL_ESTATE', 'BONDS', 'MUTUAL_FUND', 'GOLD', 'OTHER']
 
 // The two targets that are not an existing holding's id.
 /** EMERGENCY only: a plain emergency-fund contribution (an `Emergency` + its mirrored transaction). */
@@ -102,6 +102,8 @@ export function PayBucketModal({
     INVESTMENTS: t('cmp.bucket.investments'),
   }
   const INVESTMENT_TYPE_LABELS: Record<InvestmentType, string> = {
+    BUSINESS: t('cmp.investmentType.business'),
+    ISLAMIC_BANK: t('cmp.investmentType.islamicBank'),
     REAL_ESTATE: t('cmp.investmentType.realEstate'),
     BONDS: t('cmp.investmentType.bonds'),
     MUTUAL_FUND: t('cmp.investmentType.mutualFund'),

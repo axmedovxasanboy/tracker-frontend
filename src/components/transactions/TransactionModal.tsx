@@ -23,6 +23,7 @@ import { CashPart, ChipGroup, CompactDate, CONTROL, CONTROL_INVALID, LINK_BLOCK,
 import { WalletPicker } from './WalletPicker'
 import { readLastChild, rememberChild, rememberWallet, useWalletChoice, useWallets } from './wallets'
 import type { WalletValue } from './wallets'
+import { INVESTMENT_TYPES } from '../../types'
 import type {
   Bucket, Category, CategoryType, Currency, DonationResponse, InvestmentResponse, InvestmentType,
   LoanGivenResponse, Transaction, TransactionRequest, TransactionSubType, TransactionType,
@@ -185,6 +186,8 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
     DONATION: translate('cmp.txModal.counterparty.recipientName'),
   }
   const INVESTMENT_TYPE_LABELS: Record<InvestmentType, string> = {
+    BUSINESS: translate('cmp.investmentType.business'),
+    ISLAMIC_BANK: translate('cmp.investmentType.islamicBank'),
     REAL_ESTATE: translate('cmp.investmentType.realEstate'),
     BONDS: translate('cmp.investmentType.bonds'),
     MUTUAL_FUND: translate('cmp.investmentType.mutualFund'),
@@ -1131,7 +1134,7 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
                   <select value={form.investmentType ?? 'OTHER'}
                     onChange={e => set('investmentType', e.target.value as InvestmentType)}
                     className={CONTROL}>
-                    {(['REAL_ESTATE', 'BONDS', 'MUTUAL_FUND', 'GOLD', 'OTHER'] as InvestmentType[]).map(it => (
+                    {INVESTMENT_TYPES.map(it => (
                       <option key={it} value={it}>{INVESTMENT_TYPE_LABELS[it]}</option>
                     ))}
                   </select>

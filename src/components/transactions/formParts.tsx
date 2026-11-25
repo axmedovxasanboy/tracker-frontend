@@ -123,12 +123,14 @@ export function ChipGroup<T extends string | number>({
  * The date, on one line: it is almost always today, so it should cost one glance, not a block.
  * The owner's local day comes in as `value`; this never computes "today" itself.
  */
-export function CompactDate({ id, label, value, onChange, error }: {
+export function CompactDate({ id, label, value, onChange, error, max }: {
   id: string
   label: string
   value: string
   onChange: (v: string) => void
   error?: string
+  /** The latest day the picker offers (YYYY-MM-DD) — today, where a future day means nothing. */
+  max?: string
 }) {
   const errorId = error ? `${id}-error` : undefined
   return (
@@ -140,6 +142,7 @@ export function CompactDate({ id, label, value, onChange, error }: {
           type="date"
           required
           value={value}
+          max={max}
           onChange={e => onChange(e.target.value)}
           aria-invalid={error ? true : undefined}
           aria-describedby={errorId}

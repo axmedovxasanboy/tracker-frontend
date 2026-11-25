@@ -26,7 +26,7 @@ import { OWN_ICON, SavingsThisMonth } from '../components/savings/SavingsThisMon
 import { AddGoalSheet, requestFrom } from '../components/savings/AddGoalSheet'
 import { AddInvestmentSheet } from '../components/savings/AddInvestmentSheet'
 import { HoldingHistorySheet } from '../components/savings/HoldingHistorySheet'
-import { TileHead } from '../components/home/HomeTiles'
+import { LinkButton, TileHead } from '../components/home/HomeTiles'
 import { useApi } from '../hooks/useApi'
 import { useToast } from '../context/ToastContext'
 import { useConfirm } from '../context/ConfirmContext'
@@ -426,7 +426,13 @@ export function Savings({ currency = 'UZS' }: { currency?: Currency } = {}) {
           <Section
             span={6} mdSpan={6}
             title={t('cmp.bucket.investments')}
-            action={<SmallAdd label={t('action.new')} onClick={() => setInvestmentForm({ investment: null })} />}
+            action={
+              <div className="flex shrink-0 items-center gap-1">
+                {/* The page of their own: types, shares, moves between them. */}
+                <LinkButton label={t('invest.seeAll')} onClick={() => navigate('/investments')} />
+                <SmallAdd label={t('action.new')} onClick={() => setInvestmentForm({ investment: null })} />
+              </div>
+            }
           >
             {holdings.length === 0 ? (
               <p className="mt-3 text-sm text-slate-500">{t('page.investments.empty')}</p>
