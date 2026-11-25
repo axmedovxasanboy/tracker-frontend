@@ -98,4 +98,20 @@ export const uz_levels: Record<keyof typeof en_levels, string> = {
   'own.deleted': '{name} oʻchirildi.',
   'own.errName': 'Nom bering.',
   'own.money': 'Hozirgi daromadingizda oyiga taxminan {amount}.',
+
+  // ── Recalculate this month's rule (RECALC-SPEC §2) ─────────────────────────────────────────────────
+  'rc.button': 'Qayta hisoblash',
+  'rc.title': '{month} qoidasini qayta hisoblash',
+  'rc.intro': '{month} hozir qancha ajratadi va bugungi holatingiz qancha berardi — yonma-yon.',
+  'rc.now': 'Hozir',
+  'rc.today': 'Bugungi holatingiz boʻyicha',
+  'rc.total': 'Jami',
+  'rc.same': 'Holatingiz oʻzgarmagan — qoida oʻzgarmaydi.',
+  'rc.apply': '{month} uchun qoʻllash',
+  'rc.applying': 'Qoʻllanmoqda…',
+  'rc.note': 'Faqat shu oy oʻzgaradi. 1-sanada keyingi oy qoidasi yana oʻzi belgilanadi.',
+  'rc.applied': 'Qoʻllandi: {month} endi jami {total}% ajratadi.',
+  'rc.when': 'Qayta hisoblangan: {date}',
+  'rc.changed': 'Oʻzgardi',
+  'rc.retry': 'Qayta urinish',
 }

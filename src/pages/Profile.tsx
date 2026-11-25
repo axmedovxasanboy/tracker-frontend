@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { AxiosError } from 'axios'
-import { AlertTriangle, Check, CheckCircle2, ChevronDown, CloudOff, Target } from 'lucide-react'
+import { AlertTriangle, Check, CheckCircle2, ChevronDown, CloudOff, RefreshCw, Target } from 'lucide-react'
 import { PageHeader } from '../components/ui/PageHeader'
 import { Tile, TileGrid } from '../components/ui/Tile'
 import { Button } from '../components/ui/Button'
@@ -16,6 +16,7 @@ import { useAuth } from '../context/AuthContext'
 import { useLevels } from '../context/LevelsContext'
 import { useSettings } from '../context/SettingsContext'
 import { LevelDownNotice } from '../components/levels/LevelDownNotice'
+import { RecalcSheet } from '../components/levels/RecalcSheet'
 import { LEVEL5_PAY, situationName } from '../components/levels/levelWords'
 import { LEVEL_SITUATIONS } from '../types/levels'
 import type { LevelSituation } from '../types/levels'
@@ -90,6 +91,7 @@ export function Profile() {
   // (`baseLevel`), and so does the shell's one question to /levels.
   const { available } = useLevels()
   const rulesAvailable = available === true || p?.baseLevel !== undefined
+  const [recalcOpen, setRecalcOpen] = useState(false)
   const openRules = rulesAvailable && p?.level != null
     ? () => navigate(`/settings/rules?level=${p.level}`)
     : undefined
@@ -139,7 +141,7 @@ export function Profile() {
               {/* The owner's order: the level beside its savings rule; under the level, what to set
                   aside beside this month so far; the workings last, across the whole width. */}
               <LevelHero p={p} cached={{ isCached: q.isCached, cachedAt: q.cachedAt }} onChangeRule={openRules} />
-              <RuleTile p={p} onChange={openRules} />
+              <RuleTile p={p} onChange={openRules} onRecalc={openRules ? () => setRecalcOpen(true) : undefined} />
               {/* An older server sends no "so far" figures — then "set aside" takes the row alone. */}
               <SetAsideTile p={p} full={!hasSoFar} onHome={() => navigate('/')} onSavings={() => navigate('/savings')} />
               {hasSoFar && <SoFarTile p={p} />}
@@ -148,6 +150,9 @@ export function Profile() {
           ) : null}
         </TileGrid>
       </div>
+      {/* Re-decides this month's rule from today's situation — only when the owner applies it. */}
+      <RecalcSheet open={recalcOpen} onClose={() => setRecalcOpen(false)} onApplied={q.refetch}
+        cutoff={p?.rule?.cutoff ?? null} />
     </div>
   )
 }
@@ -415,8 +420,14 @@ function SoFarTile({ p }: { p: ProfileResponse }) {
 const isSituation = (r: ProfileReason | undefined): r is LevelSituation =>
   !!r && (LEVEL_SITUATIONS as readonly string[]).includes(r)
 
-function RuleTile({ p, onChange }: { p: ProfileResponse; onChange?: () => void }) {
-  const { t } = useLang()
+function RuleTile({ p, onChange, onRecalc }: {
+  p: ProfileResponse
+  onChange?: () => void
+  /** Opens "Recalculate"; absent on a server without Savings rules. */
+  onRecalc?: () => void
+}) {
+  const { t, lang } = useLang()
+  const recalcAt = p.ruleRecalculatedAt ? formatDate(p.ruleRecalculatedAt.slice(0, 10), lang, 'dayShort') : null
   const reason = p.rule?.reason
   // Why these percentages (and next month's) is said in "How it is worked out"; here only which
   // situation they are for, in words — and, on a server with levels, where to change them.
@@ -447,6 +458,11 @@ function RuleTile({ p, onChange }: { p: ProfileResponse; onChange?: () => void }
           <span className="text-sm font-semibold tabular-nums text-slate-900">{percentText(p.totalPercent)}%</span>
         </li>
       </ul>
+      {recalcAt && <p className="mt-2 text-xs text-slate-500">{t('rc.when', { date: recalcAt })}</p>}
+      {onRecalc && p.level != null && (
+        <Button size="sm" label={t('rc.button')} onClick={onRecalc} className="mt-3 w-full sm:w-auto"
+          icon={<RefreshCw className="h-4 w-4" aria-hidden="true" />} />
+      )}
     </Tile>
   )
 }

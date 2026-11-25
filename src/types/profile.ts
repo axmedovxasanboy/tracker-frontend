@@ -139,6 +139,8 @@ export interface ProfileResponse extends ProfileLevelFields {
   totalAmount: number
   normalMonthTotal: number
   nextMonth: ProfileNextMonth | null
+  /** When the owner last recalculated this month's rule (ISO local date-time); absent/null when never. */
+  ruleRecalculatedAt?: string | null
   /** This month so far. Absent on an older server. */
   incomeThisMonth?: ProfileIncomeThisMonth
   allocatedThisMonth?: ProfileAllocatedThisMonth

@@ -99,4 +99,20 @@ export const en_levels = {
   'own.deleted': '{name} deleted.',
   'own.errName': 'Give it a name.',
   'own.money': 'About {amount} a month on your income now.',
+
+  // ── Recalculate this month's rule (RECALC-SPEC §2) ─────────────────────────────────────────────────
+  'rc.button': 'Recalculate',
+  'rc.title': 'Recalculate {month}',
+  'rc.intro': 'What {month} sets aside now, beside what your situation today would give.',
+  'rc.now': 'Now',
+  'rc.today': 'From your situation today',
+  'rc.total': 'In all',
+  'rc.same': 'Your situation has not changed — the rule stays the same.',
+  'rc.apply': 'Apply for {month}',
+  'rc.applying': 'Applying…',
+  'rc.note': 'Only this month changes. On the 1st the next month\'s rule is decided by itself again.',
+  'rc.applied': 'Applied: {month} now sets aside {total}% in all.',
+  'rc.when': 'Recalculated on {date}',
+  'rc.changed': 'Changed',
+  'rc.retry': 'Try again',
 } as const

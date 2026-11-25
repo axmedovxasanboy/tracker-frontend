@@ -157,3 +157,31 @@ export interface ProfileLevelFields {
   /** YYYY-MM — `from` of the rules version in force this month. */
   ruleFrom?: string | null
 }
+
+/** One side of the recalculation: a month's rule — level, situation and its percentages. */
+export interface RecalcRule {
+  level: number
+  situation: LevelSituation
+  percents: { donation: number; emergency: number; investments: number }
+  /** Every own saving, in the same order on both sides; 0 = not asked by this rule. */
+  own: Array<{ id: number; name: string; percent: number }>
+  /** All of them together. */
+  total: number
+  /** The level's tight/comfortable line, when the server sends it (names the split situations). */
+  cutoff?: number | null
+}
+
+/**
+ * GET/POST /levels/recalculate (RECALC-SPEC §1): this month's fixed rule beside the one today's
+ * situation gives. POST applies the second; the answer after it has `changed: false`.
+ */
+export interface RecalcResponse {
+  /** YYYY-MM. */
+  month: string
+  current: RecalcRule
+  recalculated: RecalcRule
+  /** Level or situation differs. */
+  changed: boolean
+  /** When the owner last recalculated this month (ISO local date-time); null when never. */
+  recalculatedAt: string | null
+}

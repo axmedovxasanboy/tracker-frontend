@@ -1,5 +1,5 @@
 import { apiClient } from './client'
-import type { LevelNotice, LevelRulesRequest, LevelsResponse, OwnSavingRequest } from '../types/levels'
+import type { LevelNotice, LevelRulesRequest, LevelsResponse, OwnSavingRequest, RecalcResponse } from '../types/levels'
 import { todayLocal } from '../utils/format'
 
 export const levelsApi = {
@@ -30,4 +30,12 @@ export const levelsApi = {
   /** Mark a level change as shown on the web; the bot keeps its own mark. */
   seen: (id: number) =>
     apiClient.post(`/levels/notice/${id}/seen`, null, { params: { client: 'WEB' }, _silent: true }),
+
+  /** This month's rule beside the one today's situation gives (RECALC-SPEC §1). */
+  recalcPreview: () =>
+    apiClient.get<RecalcResponse>('/levels/recalculate', { params: { date: todayLocal() }, _silent: true }),
+
+  /** Re-decides this month's rule from today's situation — only when the owner confirms. */
+  recalculate: () =>
+    apiClient.post<RecalcResponse>('/levels/recalculate', null, { params: { date: todayLocal() } }),
 }
