@@ -92,6 +92,8 @@ export function Profile() {
   const { available } = useLevels()
   const rulesAvailable = available === true || p?.baseLevel !== undefined
   const [recalcOpen, setRecalcOpen] = useState(false)
+  // "Recalculate" opens today's "Why?"; "Why this rule?" opens this month's.
+  const [whyOpen, setWhyOpen] = useState<'now' | 'today'>('today')
   const openRules = rulesAvailable && p?.level != null
     ? () => navigate(`/settings/rules?level=${p.level}`)
     : undefined
@@ -141,7 +143,9 @@ export function Profile() {
               {/* The owner's order: the level beside its savings rule; under the level, what to set
                   aside beside this month so far; the workings last, across the whole width. */}
               <LevelHero p={p} cached={{ isCached: q.isCached, cachedAt: q.cachedAt }} onChangeRule={openRules} />
-              <RuleTile p={p} onChange={openRules} onRecalc={openRules ? () => setRecalcOpen(true) : undefined} />
+              <RuleTile p={p} onChange={openRules}
+                onRecalc={openRules ? () => { setWhyOpen('today'); setRecalcOpen(true) } : undefined}
+                onWhy={openRules ? () => { setWhyOpen('now'); setRecalcOpen(true) } : undefined} />
               {/* An older server sends no "so far" figures — then "set aside" takes the row alone. */}
               <SetAsideTile p={p} full={!hasSoFar} onHome={() => navigate('/')} onSavings={() => navigate('/savings')} />
               {hasSoFar && <SoFarTile p={p} />}
@@ -152,7 +156,7 @@ export function Profile() {
       </div>
       {/* Re-decides this month's rule from today's situation — only when the owner applies it. */}
       <RecalcSheet open={recalcOpen} onClose={() => setRecalcOpen(false)} onApplied={q.refetch}
-        cutoff={p?.rule?.cutoff ?? null} />
+        cutoff={p?.rule?.cutoff ?? null} whyOpen={whyOpen} />
     </div>
   )
 }
@@ -420,11 +424,13 @@ function SoFarTile({ p }: { p: ProfileResponse }) {
 const isSituation = (r: ProfileReason | undefined): r is LevelSituation =>
   !!r && (LEVEL_SITUATIONS as readonly string[]).includes(r)
 
-function RuleTile({ p, onChange, onRecalc }: {
+function RuleTile({ p, onChange, onRecalc, onWhy }: {
   p: ProfileResponse
   onChange?: () => void
   /** Opens "Recalculate"; absent on a server without Savings rules. */
   onRecalc?: () => void
+  /** Opens the same sheet with this month's "Why?" open. */
+  onWhy?: () => void
 }) {
   const { t, lang } = useLang()
   const recalcAt = p.ruleRecalculatedAt ? formatDate(p.ruleRecalculatedAt.slice(0, 10), lang, 'dayShort') : null
@@ -460,8 +466,12 @@ function RuleTile({ p, onChange, onRecalc }: {
       </ul>
       {recalcAt && <p className="mt-2 text-xs text-slate-500">{t('rc.when', { date: recalcAt })}</p>}
       {onRecalc && p.level != null && (
-        <Button size="sm" label={t('rc.button')} onClick={onRecalc} className="mt-3 w-full sm:w-auto"
-          icon={<RefreshCw className="h-4 w-4" aria-hidden="true" />} />
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+          <Button size="sm" label={t('rc.button')} onClick={onRecalc} className="w-full sm:w-auto"
+            icon={<RefreshCw className="h-4 w-4" aria-hidden="true" />} />
+          {/* The same sheet: its "Why?" lines say how this month's rule came out. */}
+          {onWhy && <LinkButton label={t('rw.link')} onClick={onWhy} />}
+        </div>
       )}
     </Tile>
   )

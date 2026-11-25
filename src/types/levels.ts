@@ -169,6 +169,61 @@ export interface RecalcRule {
   total: number
   /** The level's tight/comfortable line, when the server sends it (names the split situations). */
   cutoff?: number | null
+  /** Every figure the rule was decided from (RECALC-SPEC §4) — absent on an older server. */
+  why?: RecalcWhy | null
+}
+
+/** Why a loan's ask is what it is: null = counted as is. */
+export type RecalcWhyNote = 'SMALL_MONTHLY' | 'NASIYA_LATER' | 'NOT_STARTED' | 'AFTER_CUT'
+
+export interface RecalcWhyLoan {
+  kind: 'LOAN' | 'DEBT'
+  id: number
+  name: string
+  type: 'MONTHLY' | 'ASAP' | 'NASIYA'
+  /** Left at the day it was decided from. */
+  left: number
+  /** What the month asks of it (0 when it does not count). */
+  ask: number
+  note: RecalcWhyNote | null
+  /** A nasiya's deadline (YYYY-MM-DD), when the server sends it. */
+  dueDate?: string | null
+}
+
+/** RECALC-SPEC §4: the trace of `ruleAsOf` — read-only, the same figures the choice used. */
+export interface RecalcWhy {
+  /** MONTH_START (decided on the 1st), RECALCULATED (by the owner), TODAY (the preview). */
+  basis: 'MONTH_START' | 'RECALCULATED' | 'TODAY'
+  /** YYYY-MM-DD — the day whose figures decided it. */
+  asOf: string
+  /** False when the data changed since, so today's data for that day no longer gives the stored rule. */
+  exact: boolean
+  income: number
+  bills: number
+  leftAfterBills: number
+  levelFrom: number | null
+  /** Null at the top level. */
+  levelTo: number | null
+  /** YYYY-MM when a Level 5 period gives the level. */
+  level5Since: string | null
+  bankLoans: Array<{ id: number; name: string; monthly: number }>
+  bankMonthly: number
+  loans: RecalcWhyLoan[]
+  asksTotal: number
+  monthlyAsks: number
+  /** 10% of income. */
+  smallMonthlyLimit: number
+  /** Monthly loan payments are > 0 and ≤ the 10% line: the rule does not count them as money owed. */
+  smallMonthlyIgnored: boolean
+  peopleDebtForRule: number
+  /** (bank + every ask) ÷ income × 100, one decimal. */
+  debtShare: number
+  heavyLine: number
+  /** What is left after bills, bank loans and loan asks — what the tight/comfortable split reads. */
+  leftAfterLoans: number
+  cutoff: number | null
+  hasBank: boolean
+  hasPeopleDebt: boolean
 }
 
 /**

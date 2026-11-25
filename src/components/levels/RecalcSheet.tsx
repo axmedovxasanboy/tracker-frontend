@@ -8,6 +8,7 @@ import { levelsApi } from '../../api/levels'
 import { extractErrorMessage } from '../../api/client'
 import { formatDate, formatNumber } from '../../utils/format'
 import { situationName } from './levelWords'
+import { RuleWhy } from './RuleWhy'
 import { savingLook } from '../savings/SavingsThisMonth'
 import type { RecalcResponse, RecalcRule } from '../../types/levels'
 
@@ -40,8 +41,10 @@ function rowsOf(r: RecalcResponse): Row[] {
  * situation today gives. Nothing changes until the owner presses Apply; the next month's 1st decides
  * the next month by itself as always.
  */
-export function RecalcSheet({ open, onClose, onApplied, cutoff }: {
+export function RecalcSheet({ open, onClose, onApplied, cutoff, whyOpen = 'today' }: {
   open: boolean
+  /** Which side's "Why?" starts open: today's (Recalculate) or this month's (Profile's "Why this rule?"). */
+  whyOpen?: 'now' | 'today'
   onClose: () => void
   /** After the rule was applied: reload whatever shows this month's amounts. */
   onApplied: () => void
@@ -119,6 +122,8 @@ export function RecalcSheet({ open, onClose, onApplied, cutoff }: {
             )
           })}
         </ul>
+        {/* Why it came out this way — open on the side the owner came for. */}
+        <RuleWhy key={`${which}-${whyOpen}`} rule={rule} defaultOpen={which === whyOpen} id={`rc-why-${which}`} />
       </section>
     )
   }
