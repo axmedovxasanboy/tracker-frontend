@@ -19,17 +19,22 @@ const FORM_ID = 'investment-goal-form'
 
 /** The accounts grouped by where they are (broker / provider), the biggest group first. */
 export function groupByProvider(accounts: InvestmentResponse[], otherLabel: string) {
-  const groups = new Map<string, InvestmentResponse[]>()
+  // The provider is the account's "Where" (broker); with none, its name without a trailing number
+  // ("OPEN BANK 2" → "OPEN BANK"), so an account never falls into "Other" just for a blank field.
+  // Spelling is ignored when grouping: "Open Bank", "OPEN BANK" and "openbank" are one provider.
+  const groups = new Map<string, { label: string; list: InvestmentResponse[] }>()
   for (const a of accounts) {
-    const key = a.broker?.trim() || ''
-    groups.set(key, [...(groups.get(key) ?? []), a])
+    const label = a.broker?.trim() || a.name.replace(/[\s#№\-–._]*\d+$/u, '').trim()
+    const key = label.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, '')
+    const g = groups.get(key)
+    if (g) g.list.push(a); else groups.set(key, { label, list: [a] })
   }
   return [...groups.entries()]
-    .map(([key, list]) => {
+    .map(([key, { label, list }]) => {
       const sorted = [...list].sort((a, b) => growthOf(b).value - growthOf(a).value)
       return {
         key,
-        label: key || otherLabel,
+        label: key ? label : otherLabel,
         accounts: sorted,
         total: snap(sorted.reduce((s, a) => s + growthOf(a).value, 0)),
       }
