@@ -37,8 +37,6 @@ export const uz_components: Partial<Record<keyof typeof en_components, string>> 
   'cmp.investmentType.business': 'Biznes',
   'cmp.investmentType.islamicBank': 'Islomiy bank',
   'cmp.investmentType.realEstate': 'Koʻchmas mulk',
-  'cmp.investmentType.bonds': 'Obligatsiyalar',
-  'cmp.investmentType.mutualFund': 'Investitsiya fondi',
   'cmp.investmentType.gold': 'Oltin',
   'cmp.investmentType.other': 'Boshqa',
 

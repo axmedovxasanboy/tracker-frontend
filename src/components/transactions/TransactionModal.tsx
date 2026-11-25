@@ -189,8 +189,6 @@ export function TransactionModal({ open, onClose, onSaved, transaction, defaultC
     BUSINESS: translate('cmp.investmentType.business'),
     ISLAMIC_BANK: translate('cmp.investmentType.islamicBank'),
     REAL_ESTATE: translate('cmp.investmentType.realEstate'),
-    BONDS: translate('cmp.investmentType.bonds'),
-    MUTUAL_FUND: translate('cmp.investmentType.mutualFund'),
     GOLD: translate('cmp.investmentType.gold'),
     OTHER: translate('cmp.investmentType.other'),
   }

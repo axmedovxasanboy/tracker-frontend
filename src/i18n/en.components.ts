@@ -36,8 +36,6 @@ export const en_components = {
   'cmp.investmentType.business': 'Business',
   'cmp.investmentType.islamicBank': 'Islamic bank',
   'cmp.investmentType.realEstate': 'Real estate',
-  'cmp.investmentType.bonds': 'Bonds',
-  'cmp.investmentType.mutualFund': 'Mutual fund',
   'cmp.investmentType.gold': 'Gold',
   'cmp.investmentType.other': 'Other',
 

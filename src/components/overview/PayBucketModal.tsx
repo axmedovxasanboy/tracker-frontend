@@ -105,8 +105,6 @@ export function PayBucketModal({
     BUSINESS: t('cmp.investmentType.business'),
     ISLAMIC_BANK: t('cmp.investmentType.islamicBank'),
     REAL_ESTATE: t('cmp.investmentType.realEstate'),
-    BONDS: t('cmp.investmentType.bonds'),
-    MUTUAL_FUND: t('cmp.investmentType.mutualFund'),
     GOLD: t('cmp.investmentType.gold'),
     OTHER: t('cmp.investmentType.other'),
   }

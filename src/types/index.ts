@@ -18,10 +18,10 @@ export type Currency = 'UZS' | 'USD' | 'EUR'
 export type CategoryType = 'INCOME' | 'EXPENSE' | 'BOTH'
 export type CardType = 'UZCARD' | 'HUMO' | 'VISA' | 'CASH'
 export type RecordStatus = 'PENDING' | 'PARTIALLY_PAID' | 'PAID' | 'OVERDUE'
-export type InvestmentType = 'BUSINESS' | 'ISLAMIC_BANK' | 'REAL_ESTATE' | 'BONDS' | 'MUTUAL_FUND' | 'GOLD' | 'OTHER'
+export type InvestmentType = 'BUSINESS' | 'ISLAMIC_BANK' | 'REAL_ESTATE' | 'GOLD' | 'OTHER'
 
 /** Every investment type, the two the owner uses (a business, an Islamic bank) first. */
-export const INVESTMENT_TYPES: InvestmentType[] = ['BUSINESS', 'ISLAMIC_BANK', 'REAL_ESTATE', 'BONDS', 'MUTUAL_FUND', 'GOLD', 'OTHER']
+export const INVESTMENT_TYPES: InvestmentType[] = ['BUSINESS', 'ISLAMIC_BANK', 'REAL_ESTATE', 'GOLD', 'OTHER']
 
 export interface Category {
   id: number
@@ -456,6 +456,42 @@ export interface InvestmentResponse {
   /** The latest day money moved in or out of it — a put-in, a take-out or a move (YYYY-MM-DD).
    *  Null when nothing has; absent on an older server. */
   lastMovedAt?: string | null
+  /** The investment goal this account saves for (INVEST-SPEC.md §5); null when none. Absent on an older server. */
+  investmentGoalId?: number | null
+  investmentGoalName?: string | null
+}
+
+/** An investment goal: a name, a rough target, and the investment accounts saving for it (INVEST-SPEC.md §5). */
+export interface InvestmentGoalRequest {
+  name: string
+  targetAmount: number
+  note?: string
+  /** Exactly the accounts that save for it; an account in another goal moves here. */
+  investmentIds: number[]
+}
+
+export interface InvestmentGoalAccount {
+  id: number
+  name: string
+  broker: string | null
+  type: InvestmentType
+  value: number
+}
+
+export interface InvestmentGoalResponse {
+  id: number
+  name: string
+  targetAmount: number
+  currency: Currency
+  note: string | null
+  /** What its accounts are worth now. */
+  saved: number
+  /** max(0, target − saved). */
+  left: number
+  /** saved ÷ target × 100, one decimal; may pass 100. */
+  progressPercent: number
+  reached: boolean
+  investments: InvestmentGoalAccount[]
 }
 
 /** Move money from one investment to another (INVEST-SPEC.md §1b): no wallet, no transaction. */

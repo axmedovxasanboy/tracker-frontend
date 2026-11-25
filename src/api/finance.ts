@@ -9,6 +9,7 @@ import type {
   InvestmentRequest, InvestmentResponse,
   InvestmentContributeRequest, InvestmentValueRequest, InvestmentWithdrawRequest,
   InvestmentTransferRequest, InvestmentTransferResponse,
+  InvestmentGoalRequest, InvestmentGoalResponse,
   RepaymentRequest,
   Transaction,
 } from '../types'
@@ -83,6 +84,14 @@ export const financeApi = {
   getInvestmentTransfers: (params?: { investmentId?: number; limit?: number }) =>
     apiClient.get<InvestmentTransferResponse[]>(`${base}/investments/transfers`, { params }),
   deleteInvestmentTransfer: (id: number) => apiClient.delete(`${base}/investments/transfers/${id}`),
+
+  // Investment goals (INVEST-SPEC.md §5): a target and the accounts saving for it.
+  getInvestmentGoals: () => apiClient.get<InvestmentGoalResponse[]>(`${base}/investment-goals`),
+  createInvestmentGoal: (d: InvestmentGoalRequest) =>
+    apiClient.post<InvestmentGoalResponse>(`${base}/investment-goals`, d),
+  updateInvestmentGoal: (id: number, d: InvestmentGoalRequest) =>
+    apiClient.put<InvestmentGoalResponse>(`${base}/investment-goals/${id}`, d),
+  deleteInvestmentGoal: (id: number) => apiClient.delete(`${base}/investment-goals/${id}`),
 
   // Repayments
   repayLoanTaken: (id: number, d: RepaymentRequest) =>

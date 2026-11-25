@@ -45,8 +45,6 @@ export function AddInvestmentSheet({ open, onClose, onSaved, investment, default
     BUSINESS: t('cmp.investmentType.business'),
     ISLAMIC_BANK: t('cmp.investmentType.islamicBank'),
     REAL_ESTATE: t('cmp.investmentType.realEstate'),
-    BONDS: t('cmp.investmentType.bonds'),
-    MUTUAL_FUND: t('cmp.investmentType.mutualFund'),
     GOLD: t('cmp.investmentType.gold'),
     OTHER: t('cmp.investmentType.other'),
   }
@@ -139,6 +137,15 @@ export function AddInvestmentSheet({ open, onClose, onSaved, investment, default
     } finally { setSaving(false) }
   }
 
+  // Where the money is (the provider: IMAN, Open Bank…). On the Investments page it is asked up
+  // front — accounts are grouped by it there (INVEST-SPEC.md §6); Savings keeps it under "More".
+  const brokerField = (
+    <Field id="inv-broker" label={optional(t(typeUpfront ? 'invest.brokerLabel' : 'page.investments.brokerLabel'))}>
+      <input value={broker} onChange={e => setBroker(e.target.value)} className={CONTROL}
+        placeholder={typeUpfront ? t('invest.brokerPlaceholder') : undefined} />
+    </Field>
+  )
+
   return (
     <Sheet
       open={open}
@@ -164,6 +171,7 @@ export function AddInvestmentSheet({ open, onClose, onSaved, investment, default
         </Field>
 
         {typeUpfront && typeField}
+        {typeUpfront && brokerField}
 
         {!editing && (
           <>
@@ -199,9 +207,7 @@ export function AddInvestmentSheet({ open, onClose, onSaved, investment, default
           {moreOpen && (
             <div className="mt-2 space-y-4">
               {!typeUpfront && typeField}
-              <Field id="inv-broker" label={optional(t('page.investments.brokerLabel'))}>
-                <input value={broker} onChange={e => setBroker(e.target.value)} className={CONTROL} />
-              </Field>
+              {!typeUpfront && brokerField}
               <Field id="inv-description" label={optional(t('tx.description'))}>
                 <textarea rows={2} value={description} onChange={e => setDescription(e.target.value)} className={TEXTAREA} />
               </Field>
