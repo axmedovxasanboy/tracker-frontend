@@ -161,6 +161,8 @@ export interface BreakdownLine {
   otherMonth: { date: string; amount: number }[]
   /** `out[]` categories: the 3 largest itemised everyday rows. */
   top: LineTop[]
+  /** `out[]` Family & support lines: every person given to, total and row count, largest first. */
+  people: { name: string; amount: number; count: number }[]
   /** Null when no History filter selects exactly this line's rows (and always in a range). */
   history: LineHistory | null
   children: BreakdownLine[]
@@ -336,6 +338,7 @@ function lineOf(raw: DeepPartial<BreakdownLine> | null | undefined): BreakdownLi
     top: list(l.top).map(t => ({
       id: num(t?.id), date: str(t?.date), description: str(t?.description), amount: num(t?.amount),
     })),
+    people: list(l.people).map(p => ({ name: str(p?.name), amount: num(p?.amount), count: num(p?.count) })),
     history: historyOf(l.history),
     children: list(l.children).map(lineOf),
   }

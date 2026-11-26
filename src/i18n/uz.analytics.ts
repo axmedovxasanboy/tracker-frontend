@@ -88,6 +88,7 @@ export const uz_analytics: Record<keyof typeof en_analytics, string> = {
   'an.itemisedOnly': 'Tafsilotli: {amount}',
   'an.smaller': 'Kichikroqlari ({count})',
   'an.allInHistory': 'Hammasi Tarixda',
+  'an.person.row': '{name} ({count} ta)',
   'an.throughMonth': 'Oy davomida',
   'an.table.days': 'Kunlar',
   'an.table.itemised': 'Tafsilotli',

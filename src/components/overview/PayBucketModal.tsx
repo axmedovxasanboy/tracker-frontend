@@ -160,12 +160,22 @@ export function PayBucketModal({
     const run = ++loadRun.current
     setAccountsState('loading')
     setAccountsError(null)
-    financeApi.getInvestments().then(r => {
+    // For Investments the month's split (INVEST-SPEC.md §9) says which account still needs the most;
+    // a server without it, or a failed read, leaves today's default.
+    const splitRead = b === 'INVESTMENTS'
+      ? financeApi.getInvestmentSplit({ month: defaultMonth }).then(r => r.data).catch(() => null)
+      : Promise.resolve(null)
+    Promise.all([financeApi.getInvestments(), splitRead]).then(([r, split]) => {
       if (loadRun.current !== run) return
       const accounts = accountsFor(b, currency, r.data, last)
       setHoldings(accounts)
       setAccountsState('ready')
-      if (!targetTouched.current) setTarget(defaultTarget(b, accounts, last))
+      if (targetTouched.current) return
+      const ids = new Set(accounts.map(a => a.id))
+      const most = (split?.rows ?? [])
+        .filter(row => row.left > 0 && ids.has(row.investmentId))
+        .sort((x, y) => y.left - x.left)[0]
+      setTarget(most ? String(most.investmentId) : defaultTarget(b, accounts, last))
     }).catch(err => {
       if (loadRun.current !== run) return
       setAccountsError(extractErrorMessage(err))
@@ -173,7 +183,7 @@ export function PayBucketModal({
       // The fund needs no account; a new one still asks for its name first.
       if (!targetTouched.current) setTarget(b === 'EMERGENCY' ? FUND : NEW)
     })
-  }, [currency])
+  }, [currency, defaultMonth])
 
   useEffect(() => {
     if (!open || !bucket) return

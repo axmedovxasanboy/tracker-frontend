@@ -90,6 +90,7 @@ export const en_analytics = {
   'an.itemisedOnly': 'Itemised: {amount}',
   'an.smaller': 'Smaller ({count})',
   'an.allInHistory': 'All in History',
+  'an.person.row': '{name} ({count})',
   'an.throughMonth': 'Through the month',
   'an.table.days': 'Days',
   'an.table.itemised': 'Itemised',

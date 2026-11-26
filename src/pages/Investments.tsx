@@ -1,6 +1,6 @@
 import { Fragment, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { ArrowDownToLine, ArrowLeftRight, Landmark, Pencil, Plus, Target, Trash2, TrendingUp, Undo2 } from 'lucide-react'
+import { ArrowDownToLine, ArrowLeftRight, Check, Landmark, Pencil, PieChart, Plus, Target, Trash2, TrendingUp, Undo2 } from 'lucide-react'
 import { PageHeader } from '../components/ui/PageHeader'
 import { Button } from '../components/ui/Button'
 import { Tile, TileGrid } from '../components/ui/Tile'
@@ -18,6 +18,7 @@ import { HoldingHistorySheet } from '../components/savings/HoldingHistorySheet'
 import { GrowthChip, growthOf } from '../components/savings/growth'
 import { MoveInvestmentSheet, investmentIcon } from '../components/investments/MoveInvestmentSheet'
 import { InvestmentGoalSheet, groupByProvider } from '../components/investments/InvestmentGoalSheet'
+import { SplitSheet } from '../components/investments/SplitSheet'
 import { TileHead } from '../components/home/HomeTiles'
 import { useApi } from '../hooks/useApi'
 import { useToast } from '../context/ToastContext'
@@ -27,7 +28,9 @@ import type { TKey } from '../i18n/LanguageContext'
 import { financeApi } from '../api/finance'
 import { extractErrorMessage } from '../api/client'
 import { formatDate, formatNumber, money, moneyFull, snap } from '../utils/format'
-import type { InvestmentGoalResponse, InvestmentResponse, InvestmentTransferResponse, InvestmentType } from '../types'
+import type {
+  InvestmentGoalResponse, InvestmentResponse, InvestmentSplitResponse, InvestmentTransferResponse, InvestmentType,
+} from '../types'
 
 /** A full-width row of the twelve-column page grid. */
 const FULL = 'md:col-span-6 xl:col-span-12'
@@ -87,16 +90,23 @@ export function Investments() {
     [],
   )
 
+  // Likewise the month's split (INVEST-SPEC.md §8): without it the page has no split tile.
+  const split = useApi(
+    () => financeApi.getInvestmentSplit().catch(() => ({ data: null as InvestmentSplitResponse | null })),
+    [],
+  )
+
+  const [splitOpen, setSplitOpen] = useState(false)
   const [goalForm, setGoalForm] = useState<{ goal: InvestmentGoalResponse | null } | null>(null)
   const [form, setForm] = useState<{ investment: InvestmentResponse | null } | null>(null)
   const [moveFrom, setMoveFrom] = useState<{ fromId: number | null } | null>(null)
-  const [contributeFor, setContributeFor] = useState<InvestmentResponse | null>(null)
+  const [contributeFor, setContributeFor] = useState<{ investment: InvestmentResponse; amount?: number } | null>(null)
   const [valueFor, setValueFor] = useState<InvestmentResponse | null>(null)
   const [withdrawFor, setWithdrawFor] = useState<InvestmentResponse | null>(null)
   const [historyFor, setHistoryFor] = useState<InvestmentResponse | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
 
-  const refetchAll = () => { investments.refetch(); transfers.refetch(); goals.refetch() }
+  const refetchAll = () => { investments.refetch(); transfers.refetch(); goals.refetch(); split.refetch() }
   const savedToast = () => { refetchAll(); showSuccess(t('page.investments.savedToast')) }
 
   const holdings = (investments.data ?? [])
@@ -166,7 +176,7 @@ export function Investments() {
     },
   ]
 
-  const staleError = [investments, transfers, goals].find(q => q.error && q.data)?.error ?? null
+  const staleError = [investments, transfers, goals, split].find(q => q.error && q.data)?.error ?? null
 
   return (
     <div className="p-4 sm:p-6">
@@ -226,6 +236,13 @@ export function Investments() {
               )}
               <p className="mt-3 text-xs text-slate-500">{t('invest.hint')}</p>
             </Tile>
+
+            {/* ── This month's split ── which account each part of the month's Investments money goes to. */}
+            {split.data && (
+              <SplitTile split={split.data} holdings={holdings}
+                onEdit={() => setSplitOpen(true)}
+                onPutIn={(i, amount) => setContributeFor({ investment: i, amount: amount > 0 ? amount : undefined })} />
+            )}
 
             {/* ── Investment goals ── a target and the accounts saving for it; hidden while there are none. */}
             {goalList.length > 0 && (
@@ -342,7 +359,7 @@ export function Investments() {
                   <div className="mt-3 flex flex-wrap items-center gap-2">
                     <Button size="sm" label={t('cmp.action.topUp')} aria-describedby={nameId}
                       icon={<Plus className="h-3.5 w-3.5" aria-hidden="true" />}
-                      onClick={() => setContributeFor(i)} />
+                      onClick={() => setContributeFor({ investment: i })} />
                     <Button size="sm" label={t('invest.move')} aria-describedby={nameId}
                       icon={<ArrowLeftRight className="h-3.5 w-3.5" aria-hidden="true" />}
                       disabled={!canMove || g.value <= 0}
@@ -397,6 +414,10 @@ export function Investments() {
         open={!!form} investment={form?.investment ?? null} defaultType="ISLAMIC_BANK"
         onClose={() => setForm(null)} onSaved={refetchAll}
       />
+      <SplitSheet
+        open={splitOpen} split={split.data ?? null} accounts={holdings}
+        onClose={() => setSplitOpen(false)} onSaved={refetchAll}
+      />
       <InvestmentGoalSheet
         open={!!goalForm} goal={goalForm?.goal ?? null} accounts={holdings}
         onClose={() => setGoalForm(null)} onSaved={refetchAll}
@@ -406,7 +427,7 @@ export function Investments() {
         onClose={() => setMoveFrom(null)} onSaved={refetchAll}
       />
       <ContributeInvestmentModal
-        open={!!contributeFor} investment={contributeFor}
+        open={!!contributeFor} investment={contributeFor?.investment ?? null} defaultAmount={contributeFor?.amount}
         onClose={() => setContributeFor(null)} onSaved={savedToast}
       />
       <UpdateValueModal
@@ -415,7 +436,7 @@ export function Investments() {
         onAddMoney={() => {
           const inv = valueFor
           setValueFor(null)
-          if (inv) setTimeout(() => setContributeFor(inv), 0)
+          if (inv) setTimeout(() => setContributeFor({ investment: inv }), 0)
         }}
       />
       <WithdrawInvestmentModal
@@ -424,5 +445,109 @@ export function Investments() {
       />
       <HoldingHistorySheet investment={historyFor} onClose={() => setHistoryFor(null)} />
     </div>
+  )
+}
+
+/**
+ * This month's split (INVEST-SPEC.md §9): the month's Investments figure, what is put in so far,
+ * and each account's part — grouped by provider like the account tiles — with a Put in that starts
+ * on what that account still needs this month.
+ */
+function SplitTile({ split, holdings, onEdit, onPutIn }: {
+  split: InvestmentSplitResponse
+  holdings: InvestmentResponse[]
+  onEdit: () => void
+  onPutIn: (i: InvestmentResponse, amount: number) => void
+}) {
+  const { t } = useLang()
+  const rows = new Map(split.rows.map(r => [r.investmentId, r]))
+  const groups = groupByProvider(holdings.filter(h => rows.has(h.id)), t('invest.otherProvider'))
+  const hasTarget = split.target > 0
+  const pct = hasTarget ? Math.min(100, (split.paid / split.target) * 100) : 0
+  const titleId = 'invest-split-title'
+  return (
+    <Tile span={12} as="section">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <IconChip tone="teal"><PieChart className="h-4 w-4" aria-hidden="true" /></IconChip>
+          <h2 id={titleId} className="text-title text-slate-900">{t('invest.split.title')}</h2>
+          <span className={`rounded-chip px-2 py-0.5 text-xs font-medium ${split.custom ? 'bg-indigo-50 text-indigo-700' : 'bg-slate-100 text-slate-600'}`}>
+            {split.custom ? t('invest.split.custom') : t('invest.split.equalBadge')}
+          </span>
+        </div>
+        <Button size="sm" label={t('invest.split.edit')} icon={<Pencil className="h-3.5 w-3.5" aria-hidden="true" />}
+          onClick={onEdit} />
+      </div>
+
+      {hasTarget ? (
+        <>
+          <p className="mt-3 flex flex-wrap gap-x-2 gap-y-0.5 text-sm tabular-nums text-slate-700">
+            <span className="font-semibold text-slate-900">{t('invest.split.target', { amount: moneyFull(split.target, 'UZS') })}</span>
+            <span aria-hidden="true">·</span>
+            <span>{t('invest.split.paid', { amount: moneyFull(split.paid, 'UZS') })}</span>
+            <span aria-hidden="true">·</span>
+            <span className={split.left > 0 ? '' : 'font-semibold text-emerald-700'}>
+              {split.left > 0 ? t('invest.split.left', { amount: moneyFull(split.left, 'UZS') }) : t('invest.split.done')}
+            </span>
+          </p>
+          <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100" role="progressbar"
+            aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pct)} aria-labelledby={titleId}>
+            <div className={`h-full rounded-full ${split.left > 0 ? 'bg-teal-500' : 'bg-emerald-500'}`} style={{ width: `${pct}%` }} />
+          </div>
+          {split.paidOutside > 0 && (
+            <p className="mt-1 text-xs tabular-nums text-slate-500">
+              {t('invest.split.paidOutside', { amount: moneyFull(split.paidOutside, 'UZS') })}
+            </p>
+          )}
+        </>
+      ) : (
+        <p className="mt-3 text-sm text-slate-500">{t('invest.split.noTarget')}</p>
+      )}
+
+      <div className="mt-3 space-y-3">
+        {groups.map(gr => (
+          <div key={gr.key || '—'}>
+            <p className="truncate text-xs font-semibold uppercase text-slate-500">{gr.label}</p>
+            <ul className="divide-y divide-hairline">
+              {gr.accounts.map(i => {
+                const r = rows.get(i.id)!
+                const nameId = `split-row-${i.id}`
+                return (
+                  <li key={i.id} className="flex min-h-[56px] flex-wrap items-center gap-x-3 gap-y-1 py-2">
+                    <div className="min-w-0 flex-1">
+                      <p id={nameId} className="truncate text-sm font-medium text-slate-900">
+                        {i.name}
+                        <span className="ml-2 text-xs font-normal tabular-nums text-slate-500">
+                          {t('invest.split.pct', { pct: formatNumber(r.percent, Number.isInteger(r.percent) ? 0 : 1) })}
+                        </span>
+                      </p>
+                      {hasTarget && (
+                        <p className="truncate text-xs tabular-nums text-slate-500">
+                          {t('invest.split.rowPaid', { amount: moneyFull(r.paid, 'UZS') })}
+                          {' · '}
+                          {r.left > 0
+                            ? <span>{t('invest.split.left', { amount: moneyFull(r.left, 'UZS') })}</span>
+                            : <span className="inline-flex items-center gap-0.5 font-semibold text-emerald-700">
+                                <Check className="h-3 w-3" aria-hidden="true" />{t('invest.split.rowDone')}
+                              </span>}
+                        </p>
+                      )}
+                    </div>
+                    {hasTarget && (
+                      <p className="shrink-0 text-sm font-semibold tabular-nums text-slate-900">{moneyFull(r.amount, 'UZS')}</p>
+                    )}
+                    {hasTarget && r.left > 0 && (
+                      <Button size="sm" label={t('cmp.action.topUp')} aria-describedby={nameId}
+                        icon={<Plus className="h-3.5 w-3.5" aria-hidden="true" />}
+                        onClick={() => onPutIn(i, r.left)} />
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </Tile>
   )
 }

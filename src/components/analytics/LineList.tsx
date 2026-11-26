@@ -186,8 +186,18 @@ export function LineList({ lines, mode, base, open, month, months, slots, total,
             />
           )
         })}
-        {/* The three largest itemised everyday entries; bills are already listed above them. */}
-        {line.top.map(e => (
+        {/* Family & support: every person given to — their total and how many times. */}
+        {line.people.map(p => (
+          <TextRow
+            key={`person-${p.name}`}
+            label={t('an.person.row', { name: p.name, count: String(p.count) })}
+            amount={mode === 'range' ? formatNumber(p.amount) : compact(p.amount)}
+            to={mode === 'month' ? historyHref(month, { ...(line.history ?? {}), search: p.name }) : null}
+          />
+        ))}
+        {/* The three largest itemised everyday entries; bills are already listed above them.
+            A line that lists its people does not repeat their biggest gifts. */}
+        {line.people.length === 0 && line.top.map(e => (
           <TextRow
             key={`top-${e.id}`}
             label={`${e.description || '—'} · ${dayWord(e.date, lang)}`}

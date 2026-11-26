@@ -494,6 +494,43 @@ export interface InvestmentGoalResponse {
   investments: InvestmentGoalAccount[]
 }
 
+/** One account's part of the month's Investments money (INVEST-SPEC.md §8). */
+export interface InvestmentSplitRow {
+  investmentId: number
+  name: string
+  broker: string | null
+  type: InvestmentType
+  /** Its share, one decimal. */
+  percent: number
+  /** Its part of the month's figure, in whole 1.000s; the parts add up to the figure. */
+  amount: number
+  /** Put in this month, counted for the Investments bucket. */
+  paid: number
+  /** max(0, amount − paid). */
+  left: number
+}
+
+/** How the month's Investments money is split across the accounts (INVEST-SPEC.md §8). */
+export interface InvestmentSplitResponse {
+  /** YYYY-MM */
+  month: string
+  /** What the app asks for Investments this month; 0 when nothing is asked. */
+  target: number
+  /** The bucket's paid this month, all of it. */
+  paid: number
+  /** Paid this month not linked to any listed account. */
+  paidOutside: number
+  left: number
+  /** False = the equal split; true = shares the owner set. */
+  custom: boolean
+  rows: InvestmentSplitRow[]
+}
+
+/** The owner's shares: the typed numbers, stored as weights (share = weight ÷ Σ). */
+export interface InvestmentSplitRequest {
+  weights: { investmentId: number; weight: number }[]
+}
+
 /** Move money from one investment to another (INVEST-SPEC.md §1b): no wallet, no transaction. */
 export interface InvestmentTransferRequest {
   fromId: number
